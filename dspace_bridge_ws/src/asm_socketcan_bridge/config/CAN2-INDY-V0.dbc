@@ -1,0 +1,825 @@
+VERSION ""
+
+
+NS_ : 
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: VecTor__XXX
+
+
+VAL_TABLE_ Alternator_LIN_Diag 5 "<echanical Fault" 4 "Temperature Fault" 3 "Electrical Fault" 2 "COM Error" 1 "LIN Timeout" 0 "OK" ;
+VAL_TABLE_ Brake_State_PDM_Enumeration -1 "Sensor_Fault" 0 "Unknown" 1 "Off" 2 "On" ;
+VAL_TABLE_ Ignition_Timing_State_Enumeratio 3 "Limit_Advance" 4 "Limit_Retard" 0 "Normal" 2 "Check_Timing" 1 "Cranking" 7 "Launch" 5 "Idle" 6 "Engine_Overrun" 8 "Gear_Shift" 9 "Anti_Lag" ;
+VAL_TABLE_ Ignition_Cut_State_Enumeration 0 "None" 1 "Anti_Lag" 2 "Gear_Shift" 3 "Engine_Speed_Limit" ;
+VAL_TABLE_ Warning_Source_Enumeration 23 "Exhaust_Temperature_Diagnostic" 35 "Boost_Control_Diagnostic" 36 "Coolant_Pressure_Sensor_Diagnostic" 21 "Exhaust_Lambda_Bank_1_Collector_Diagnostic" 24 "Throttle_Pedal_Sensor_Diagnostic" 25 "Throttle_Position_Sensor_Diagnostic" 26 "Throttle_Servo_Bank_1_Position_Sensor_Diagnostic" 27 "Throttle_Servo_Bank_2_Position_Sensor_Diagnostic" 37 "Inlet_Camshaft_Bank_1_Position_Diagnostic" 60 "Fuel_Cylinder_8_Secondary_Pin_Diagnostic" 64 "Fuel_Cylinder_12_Secondary_Pin_Diagnostic" 52 "Fuel_Cylinder_12_Primary_Pin_Diagnostic" 66 "CAN_Bus_2_Diagnostic" 65 "CAN_Bus_1_Diagnostic" 63 "Fuel_Cylinder_11_Secondary_Pin_Diagnostic" 38 "Inlet_Camshaft_Bank_2_Position_Diagnostic" 62 "Fuel_Cylinder_10_Secondary_Pin_Diagnostic" 30 "Fuel_Temperature_Sensor_Diagnostic" 17 "Brake_Vacuum_Pressure_Sensor_Diagnostic" 59 "Fuel_Cylinder_7_Secondary_Pin_Diagnostic" 18 "Inlet_Air_Temperature_Sensor_Diagnostic" 19 "Engine_Crankcase_Pressure_Sensor_Diagnostic" 20 "Engine_Oil_Temperature_Sensor_Diagnostic" 56 "Fuel_Cylinder_4_Secondary_Pin_Diagnostic" 48 "Fuel_Cylinder_8_Primary_Pin_Diagnostic" 49 "Fuel_Cylinder_9_Primary_Pin_Diagnostic" 45 "Fuel_Cylinder_5_Primary_Pin_Diagnostic" 50 "Fuel_Cylinder_10_Primary_Pin_Diagnostic" 51 "Fuel_Cylinder_11_Primary_Pin_Diagnostic" 57 "Fuel_Cylinder_5_Secondary_Pin_Diagnostic" 58 "Fuel_Cylinder_6_Secondary_Pin_Diagnostic" 14 "Engine_Oil_Pressure_Sensor_Diagnostic" 11 "Coolant_Pressure_Warning" 13 "Inlet_Manifold_Pressure_Sensor_Diagnostic" 12 "Engine_Speed_Warning" 28 "Boost_Pressure_Sensor_Diagnostic" 39 "Exhaust_Camshaft_Bank_1_Position_Diagnostic" 67 "CAN_Bus_3_Diagnostic" 70 "GPS_Diagnostic" 41 "Fuel_Cylinder_1_Primary_Pin_Diagnostic" 42 "Fuel_Cylinder_2_Primary_Pin_Diagnostic" 43 "Fuel_Cylinder_3_Primary_Pin_Diagnostic" 44 "Fuel_Cylinder_4_Primary_Pin_Diagnostic" 33 "Throttle_Servo_Bank_1_Diagnostic" 34 "Throttle_Servo_Bank_2_Diagnostic" 32 "Fuel_Closed_Loop_Diagnostic" 31 "Ambient_Pressure_Sensor_Diagnostic" 53 "Fuel_Cylinder_1_Secondary_Pin_Diagnostic" 55 "Fuel_Cylinder_3_Secondary_Pin_Diagnostic" 22 "Exhaust_Lambda_Bank_2_Collector_Diagnostic" 0 "None" 16 "Fuel_Pressure_Sensor_Diagnostic" 54 "Fuel_Cylinder_2_Secondary_Pin_Diagnostic" 2 "Knock_Warning" 3 "Engine_Crankcase_Pressure_Warning" 4 "Fuel_Pressure_Warning" 6 "Coolant_Temperature_Warning" 7 "Inlet_Air_Temperature_Warning" 8 "Engine_Oil_Temperature_Warning" 61 "Fuel_Cylinder_9_Secondary_Pin_Diagnostic" 10 "Exhaust_Temperature_Warning" 9 "Exhaust_Lambda_Warning" 46 "Fuel_Cylinder_6_Primary_Pin_Diagnostic" 47 "Fuel_Cylinder_7_Primary_Pin_Diagnostic" 15 "Coolant_Temperature_Sensor_Diagnostic" 40 "Exhaust_Camshaft_Bank_2_Position_Diagnostic" 68 "RS232_Diagnostic" 69 "Engine_Speed_Reference_Diagnostic" 1 "Engine_Oil_Pressure_Warning" 71 "Engine_Speed_Reference_State" 72 "Vehicle_Acceleration_Lateral_Sensor_Diagnostic" 5 "Alternative_Fuel_Pressure_Warning" 29 "Fuel_Composition_Sensor_Diagnostic" ;
+VAL_TABLE_ Engine_State_Enumeration 0 "Startup" 1 "Stop" 2 "Run" 3 "Crank" ;
+VAL_TABLE_ Fuel_Pump_State_Enumeration 0 "Off" 1 "On" 2 "Prime" 3 "Hold" 4 "Test" ;
+VAL_TABLE_ Anti_Lag_State_Enumeration 1 "Armed" 0 "Disabled" 2 "Enabled" 3 "Recover" ;
+VAL_TABLE_ Launch_State_Enumeration 0 "Disabled" 1 "Enabled" ;
+VAL_TABLE_ Boost_Aim_State_Enumeration 0 "Normal" 1 "Anti_Lag" 2 "Launch" ;
+VAL_TABLE_ Engine_Overrun_State_Enumeration 0 "Disabled" 1 "Retard_Ignition" 2 "Enabled" 3 "Advance_Ignition" ;
+VAL_TABLE_ Fuel_State_Enumeration 5 "Cut_Cylinder_2_Test" 1 "Enabled" 2 "Cut_Bank_1_Test" 3 "Cut_Bank_2_Test" 4 "Cut_Cylinder_1_Test" 6 "Cut_Cylinder_3_Test" 7 "Cut_Cylinder_4_Test" 8 "Cut_Cylinder_5_Test" 9 "Cut_Cylinder_6_Test" 10 "Cut_Cylinder_7_Test" 11 "Cut_Cylinder_8_Test" 12 "Cut_Cylinder_9_Test" 13 "Cut_Cylinder_10_Test" 14 "Cut_Cylinder_11_Test" 15 "Cut_Cylinder_12_Test" 0 "Disabled" ;
+VAL_TABLE_ Knock_State_Enumeration 0 "Disabled" 1 "Enabled" 2 "Transient" ;
+VAL_TABLE_ Throttle_Aim_State_Enumeration 5 "Test" 1 "Idle" 0 "Pedal" 2 "Anti_Lag" 3 "Throttle_Limit" 4 "Gear_Shift" ;
+VAL_TABLE_ Fuel_Closed_Loop_State_Enumerati -1 "Fault" 0 "Disabled" 1 "Shutdown" 2 "Wait" 3 "Sample" ;
+VAL_TABLE_ Engine_Speed_Reference_State_Enu 0 "Open" 1 "Initialise" 2 "Stall" 3 "First Edge" 4 "First Period" 5 "Search" 6 "Pattern Lock" 7 "Cycle Lock" 8 "Error" 9 "Exit" 10 "Test" ;
+VAL_TABLE_ Gear_Enumeration -2 "Default" -1 "Reverse" 0 "Neutral" 1 "First" 2 "Second" 3 "Third" 4 "Fourth" 5 "Fifth" 6 "Sixth" 7 "Seventh" ;
+VAL_TABLE_ Engine_Speed_Limit_State_Enumera 0 "Maximum" 2 "Throttle_Servo_Fault" 3 "Coolant_Temperature" 7 "Engine_Output_Test" 4 "Traction_Control" 5 "Launch" 6 "Vehicle_Speed_Limit" 1 "Engine_Load_Average" 8 "Anti_Lag" 10 "Coolant_Temperature_Warning" 11 "Coolant_Pressure_Warning" 12 "Engine_Speed_Warning" 13 "Engine_Oil_Temperature_Warning" 14 "Engine_Oil_Pressure_Warning" 15 "Engine_Crankcase_Pressure_Warning" 16 "Fuel_Pressure_Warning" 9 "Gear_Shift" 17 "Inlet_Air_Temperature_Warning" 18 "Exhaust_Lambda_Warning" 19 "Exhaust_Temperature_Warning" 20 "Experimental_Reference_Mode" 21 "Alternative_Fuel_Pressure_Warning" 22 "Boost_Servo_Fault" ;
+VAL_TABLE_ Anti_Lag_Diagnostic_Enumeration 3 "Exhaust_Temperature_High" 2 "Time_Limit" 4 "Coolant_Temperature_High" 0 "Not_in_Use" 1 "OK" ;
+VAL_TABLE_ Launch_Diagnostic_Enumeration 0 "Not_in_Use" 1 "OK" 2 "Exhaust_Temperature_High" 3 "Coolant_Temperature_High" ;
+VAL_TABLE_ Boost_Control_Diagnostic_Enumera -1 "Maximum" 0 "Not_in_Use" 1 "Off" 2 "Active" 3 "Under_Margin" 4 "Over_Margin" 5 "Test" ;
+VAL_TABLE_ Fuel_Cut_State_Enumeration 0 "None" 1 "Anti_Lag" 2 "Engine_Overrun" 3 "Flooded_Throttle_Position" 4 "Boost_Control_Diagnostic" 5 "Gear_Shift" 6 "Engine_Speed_Limit" ;
+VAL_TABLE_ Fuel_Closed_Loop_Diagnostic_Enum -1 "Control_Failure" 0 "Sensor_Unavailable" 1 "OK" 2 "Single_Sensor" ;
+VAL_TABLE_ Brake_State_Enumeration -1 "Sensor_Fault" 0 "Unknown" 1 "Off" 2 "On" ;
+VAL_TABLE_ Driver_Rotary_Switch_1_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_2_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_3_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_4_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_5_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_6_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_7_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Driver_Rotary_Switch_8_Enumerati -1 "Default" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" 0 "Zero" ;
+VAL_TABLE_ Alternative_Fuel_Mode_Enumeratio 2 "Secondary Fuel" 1 "Flex Fuel" 0 "Not in Use" ;
+VAL_TABLE_ Fuel_Composition_Sensor_Diag_Enu -3 "Communications_Timeout" -2 "Low_Fault" -1 "High_Fault" 0 "Not_in_Use" 1 "OK" 2 "Low_Warning" 3 "High_Warning" 4 "Translation_Minimum" 5 "Translation_Maximum" ;
+VAL_TABLE_ Alt_Fuel_Pump_State_Enumeration 0 "Off" 1 "On" 2 "Prime" 3 "Hold" 4 "Test" ;
+VAL_TABLE_ Boost_Aim_State_Diesel_Enumerati 0 "Normal" 1 "Anti_Lag" 2 "Launch" ;
+VAL_TABLE_ Boost_Control_Diagnostic_Diesel_ 3 "Enabled" 4 "Active" 0 "Maximum" 1 "Not_in_Use" 2 "Off" 5 "Under_Margin" 6 "Over_Margin" 7 "Test" ;
+VAL_TABLE_ Fuel_Cut_State_Diesel_Enumeratio 0 "None" 1 "Anti_Lag" 2 "Engine_Overrun" 3 "Flooded_Throttle_Position" 4 "Boost_Control_Diagnostic" 5 "Gear_Shift" 6 "Engine_Speed_Limit" ;
+VAL_TABLE_ Gear_AT_Enumeration -1 "Reverse" 0 "Neutral" 1 "First" 2 "Second" 3 "Third" 4 "Fourth" 5 "Fifth" 6 "Sixth" 7 "Seventh" ;
+VAL_TABLE_ Neutral_Switch_AT_Enumeration 0 "Off" 1 "On" ;
+VAL_TABLE_ Gear_Shift_State_Enumeration 0 "Not_in_Use" 1 "Idle" 2 "Down_Shifting" 3 "Up_Shifting" ;
+VAL_TABLE_ Gear_Shift_Request_Enumeration 0 "Not_in_Use" 1 "Idle" 2 "Lockout" 3 "Down" 4 "Up" 5 "Upshift_Denied" 6 "Downshift_Denied" ;
+VAL_TABLE_ Gear_Shift_Request_Mode_Enumerat 0 "Automatic" 1 "Manual" ;
+VAL_TABLE_ Gear_Shift_Request_Mode_Switch_E 0 "Off" 1 "On" ;
+VAL_TABLE_ Gear_Shift_Request_Up_Switch_Enu 0 "Off" 1 "On" ;
+VAL_TABLE_ Gear_Shift_Request_Down_Switch_E 0 "Off" 1 "On" ;
+VAL_TABLE_ Gear_Shift_Request_Up_Diag_Enume 0 "Not_in_Use" 1 "Ok" 2 "Shift_in_Progress" 3 "Highest_Gear_Selected" ;
+VAL_TABLE_ Gear_Shift_Request_Down_Diag_Enu 0 "Not_in_Use" 1 "Ok" 2 "Shift_in_Progress" 3 "Lowest_Gear_Selected" 4 "Post_Shift_Engine_Speed_Above_Max" 5 "Shift_Conflict" ;
+VAL_TABLE_ Gear_Shift_Request_Set_Switch_En -1 "Default" 0 "Zero" 1 "One" 2 "Two" 3 "Three" 4 "Four" 5 "Five" 6 "Six" 7 "Seven" 8 "Eight" 9 "Nine" ;
+VAL_TABLE_ Gear_Range_Selector_Enumeration -4 "Default" -3 "Park" -2 "Reverse" -1 "Neutral" 0 "Drive" 1 "Drive_3" 2 "Drive_2" 3 "Drive_L" ;
+VAL_TABLE_ Gear_Slip_Warning_Enumeration 0 "Inactive" 1 "Active" ;
+VAL_TABLE_ Trans_Temperature_Warning_Enumer 0 "Inactive" 1 "Active" ;
+VAL_TABLE_ Trans_Pressure_Warning_Enumerati 0 "Inactive" 1 "Active" ;
+VAL_TABLE_ Trans_Cooler_Fan_Enable_Enumerat 0 "Disabled" 1 "Enabled" ;
+VAL_TABLE_ Trans_Shift_Lock_Sol_State_Enume 0 "Off" 1 "On" ;
+VAL_TABLE_ Trans_Tq_Conv_Lock_Clu_Enumerati 0 "Not_in_Use" 1 "Released" 2 "Initial_Apply" 3 "Applying" 4 "Applied" 5 "Releasing" 6 "Final_Release" ;
+VAL_TABLE_ Trans_Tq_Conv_Lock_Clu_Diag_Enum -1 "Unknown" 0 "Not_in_Use" 1 "Transfer_Case_Selector_Outside_of_Allowable_Range" 2 "Range_Selector_Below_Minimum" 3 "Launch_Enabled" 4 "Transmission_Oil_Temperature_Below_Minimum" 5 "Vehicle_Speed_Below_Minimum" 6 "Brake_On" 7 "Throttle_Pedal_Outside_of_Allowable_Range" 8 "Shift_in_Progress" 9 "Torque_Converter_Slip_Outside_of_Allowable_Range" 10 "Application_Delayed" 11 "Ok" ;
+VAL_TABLE_ Trans_Tq_Conv_Slip_Warning_Enume 0 "Inactive" 1 "Active" ;
+VAL_TABLE_ Transfer_Case_Selector_Enumerati -1 "Default" 0 "High_Range" 1 "Neutral" 2 "Low_Range" ;
+
+
+
+BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
+ SG_ Exhaust_Lambda_Estimate : 7|10@0+ (0.01,0) [0|0] "la" Vector__XXX
+ SG_ Exhaust_Lambda_Large : 13|10@0+ (0.01,0) [0|0] "LA" Vector__XXX
+ SG_ Engine_Charge : 19|16@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Engine_Charge_Estimate : 35|16@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Fuel_Cut : 51|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Cut_State_Diesel : 59|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Boost_Maximum : 7|16@0+ (0.1,0) [0|0] "kPa" Vector__XXX
+ SG_ Boost_Limit_State : 23|4@0+ (1,0) [0|0] "Enum" Vector__XXX
+ SG_ Boost_Aim_State_Diesel : 19|4@0+ (1,0) [0|0] "Enum" Vector__XXX
+ SG_ Boost_Control : 31|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Boost_Control_Diagnostic_Diesel : 39|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Boost_Servo_Actuator_Position : 35|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Turbocharger_Speed : 43|16@0+ (10,0) [0|0] "rpm" Vector__XXX
+ SG_ Fuel_Pres_Prim_HP5S_Pump : 7|16@0+ (0.1,0) [0|0] "MPa" Vector__XXX
+ SG_ Fuel_Pres_Prim_HP5S_Pump_Aim : 23|16@0+ (0.1,0) [0|0] "MPa" Vector__XXX
+ SG_ Fuel_Pres_Prim_HP5S_Ctrl : 39|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_HP5S_FF : 47|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_HP5S_Prop : 55|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_HP5S_Int : 63|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B2 : 7|16@0+ (0.1,0) [0|0] "MPa" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B2_Aim : 23|16@0+ (0.1,0) [0|0] "MPa" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B2_Ctrl : 39|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B2_FF : 47|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B2_Prop : 55|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B2_Int : 63|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B1 : 7|16@0+ (0.1,0) [0|0] "MPa" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B1_Aim : 23|16@0+ (0.1,0) [0|0] "MPa" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B1_Ctrl : 39|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B1_FF : 47|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B1_Prop : 55|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Pres_Prim_Direct_B1_Int : 63|8@0- (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Timing_Primary_Pilot_1 : 7|12@0- (0.1,0) [0|0] "Deg" Vector__XXX
+ SG_ Fuel_Timing_Primary_Pilot_2 : 11|12@0- (0.1,0) [0|0] "Deg" Vector__XXX
+ SG_ Fuel_Timing_Primary_Main : 31|12@0- (0.1,0) [0|0] "Deg" Vector__XXX
+ SG_ Fuel_Timing_Primary_Post : 35|12@0- (0.1,0) [0|0] "Deg" Vector__XXX
+ SG_ Exhaust_Gas_Recirc_Actuator_Ctrl : 55|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Exhaust_Gas_Recirc_Actuator_FBck : 63|8@0+ (0.5,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Cyl_1_Prim_Out_PW_1 : 7|16@0+ (0.1,0) [0|0] "us" Vector__XXX
+ SG_ Fuel_Cyl_1_Prim_Out_PW_2 : 23|16@0+ (0.1,0) [0|0] "us" Vector__XXX
+ SG_ Fuel_Cyl_1_Prim_Out_PW_3 : 39|16@0+ (0.1,0) [0|0] "us" Vector__XXX
+ SG_ Fuel_Cyl_1_Prim_Out_PW_4 : 55|16@0+ (0.1,0) [0|0] "us" Vector__XXX
+ SG_ Fuel_Mass : 7|16@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Fuel_Mass_Source : 23|8@0- (1,0) [0|0] "Enum" Vector__XXX
+ SG_ Fuel_Mass_Pilot_1 : 31|8@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Fuel_Mass_Pilot_2 : 39|8@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Fuel_Mass_Main : 47|16@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Fuel_Mass_Post : 63|8@0+ (0.1,0) [0|0] "mg" Vector__XXX
+ SG_ Honda_Alternator_Diagnostic : 23|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Alternator_Excitation_Duty : 15|8@0- (0.01,0) [-1.28|1.27] "ratio" Vector__XXX
+ SG_ Alternator_Excitation_Current : 7|8@0+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Engine_Speed_PDM : 7|8@0+ (100,0) [0|25500] "RPM" Vector__XXX
+ SG_ Throttle_Position_PDM : 15|8@0+ (1,0) [0|255] "%" Vector__XXX
+ SG_ Vehicle_Speed_PDM : 23|8@0+ (1,0) [0|255] "km/h" Vector__XXX
+ SG_ Coolant_Temperature_PDM : 31|8@0+ (1,0) [0|255] "C" Vector__XXX
+ SG_ Engine_Oil_Temperature_PDM : 39|8@0+ (1,0) [0|255] "C" Vector__XXX
+ SG_ Fuel_Temperature_PDM : 47|8@0+ (1,0) [0|255] "C" Vector__XXX
+ SG_ Transmission_Temperature_PDM : 55|8@0+ (1,0) [0|255] "C" Vector__XXX
+ SG_ Differential_Temperature_PDM : 63|8@0+ (1,0) [0|255] "C" Vector__XXX
+ SG_ Fuel_Pressure_PDM : 7|8@0+ (10,0) [0|2550] "kPa" Vector__XXX
+ SG_ Steering_Angle_PDM : 23|16@0- (0.1,0) [-3276|3276] "deg" Vector__XXX
+ SG_ Engine_Run_Switch_PDM : 32|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Pit_Switch_PDM : 33|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Clutch_State_PDM : 34|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Clutch_Switch_PDM : 35|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Neutral_Switch_PDM : 36|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Brake_State_PDM : 37|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Warning_Source_PDM : 38|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Engine_State_PDM : 39|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Driver_Switch_2_PDM : 41|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Driver_Switch_1_PDM : 40|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_04 : 2|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_02 : 1|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_01 : 0|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_20 : 5|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_10 : 4|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_08 : 3|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_01 : 8|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_80 : 7|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_0_Mask_40 : 6|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_08 : 11|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_04 : 10|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_02 : 9|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_40 : 14|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_20 : 13|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_10 : 12|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_02 : 17|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_01 : 16|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_1_Mask_80 : 15|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_10 : 20|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_08 : 19|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_04 : 18|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_80 : 23|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_40 : 22|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ PDM_Byte_2_Mask_20 : 21|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Engine_Speed_ADR : 7|16@0+ (6,0) [0|393210] "RPM" Vector__XXX
+ SG_ Throttle_Position_ADR : 23|16@0+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ Brake_Pressure_Front_ADR : 39|16@0+ (1,0) [0|65535] "kPa" Vector__XXX
+ SG_ Brake_Pressure_Rear_ADR : 55|16@0+ (1,0) [0|65535] "kPa" Vector__XXX
+ SG_ Wheel_Speed_Front_Left_ADR : 7|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Wheel_Speed_Front_Right_ADR : 23|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Wheel_Speed_Rear_Left_ADR : 39|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Wheel_Speed_Rear_Right_ADR : 55|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Steering_Angle_ADR : 7|16@0- (0.1,0) [0|0] "deg" Vector__XXX
+ SG_ Ignition_Cylinder_1_Knock_Level : 7|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_2_Knock_Level : 15|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_3_Knock_Level : 23|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_4_Knock_Level : 31|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_5_Knock_Level : 39|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_6_Knock_Level : 47|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_7_Knock_Level : 55|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_8_Knock_Level : 63|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ M1_General_0x6A0_Version : 7|8@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Paddle_Position_Sensor : 7|16@0- (0.0001,0) [0|0] "" Vector__XXX
+ SG_ Gear_Level_Force_Sensor_632 : 23|16@0- (0.1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Paddle_Up_Switch_632 : 32|1@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Paddle_Down_Switch_632 : 33|1@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Lever_Up_Switch_632 : 34|1@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Lever_Down_Switch_632 : 35|1@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Clutch_Switch_632 : 36|1@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Brake_Switch_632 : 37|1@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Lever_632 : 43|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Paddle_632 : 47|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Lever_Diagnostic_632 : 51|4@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Paddle_Diagnostic_632 : 55|4@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Mode : 3|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Mode_Switch_Position : 15|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Result : 19|4@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_State_0633 : 23|4@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Diagnostic : 31|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Transfer_Case_Ratio : 7|16@0+ (0.001,0) [0|653.535] "" Vector__XXX
+ SG_ Transfer_Case_Selector : 23|4@0+ (1,1) [-1|6] "" Vector__XXX
+ SG_ Trans_Tq_Conv_Lock_Clu : 7|4@0+ (1,0) [0|7] "" Vector__XXX
+ SG_ Trans_Tq_Conv_Lock_Clu_Diag : 15|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ Trans_Tq_Conv_Lock_Clu_Sw_Duty : 23|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Tq_Conv_Lock_Clu_Pro_Duty : 31|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Tq_Conv_Slip : 39|16@0- (0.1,0) [-32676.8|32676.7] "rpm" Vector__XXX
+ SG_ Trans_Tq_Conv_Slip_Warning : 55|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Trans_Pres_Line_Sol_Duty_Cycle : 7|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Pres_Sol_1_Duty_Cycle : 15|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Pres_Sol_2_Duty_Cycle : 23|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Pres_Sol_3_Duty_Cycle : 31|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Shift_Sol_1_Duty_Cycle : 39|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Shift_Sol_2_Duty_Cycle : 47|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Shift_Sol_3_Duty_Cycle : 55|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Shift_Lock_Sol_State : 63|1@0- (1,0) [0|1] "" Vector__XXX
+ SG_ Trans_Temperature : 7|16@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Trans_Pressure : 15|16@0+ (1,0) [0|653535] "kPa" Vector__XXX
+ SG_ Trans_Cooler_Temperature : 31|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Trans_Cooler_Pressure : 39|16@0+ (1,0) [0|653535] "kPa" Vector__XXX
+ SG_ Trans_Cooler_Fan_Duty_Cycle : 55|8@0- (1,0) [-100|100] "%" Vector__XXX
+ SG_ Trans_Temperature_Warning : 63|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Trans_Pressure_Warning : 62|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Trans_Cooler_Fan_Enable : 61|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Input_Shaft_Speed_AT : 7|16@0+ (0.1,0) [0|65353.5] "rpm" Vector__XXX
+ SG_ Gear_Output_Shaft_Speed_AT : 23|16@0+ (0.1,0) [0|65353.5] "rpm" Vector__XXX
+ SG_ Gear_Slip : 39|16@0- (0.1,0) [-32676.8|32676.7] "rpm" Vector__XXX
+ SG_ Gear_Slip_Warning : 55|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ M1_General_0x6B0_Version : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ Gear_AT : 15|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Neutral_Switch_AT : 11|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Ratio : 23|16@0+ (0.001,0) [0|653.535] "" Vector__XXX
+ SG_ Gear_Shift_State : 21|2@0+ (1,0) [0|3] "" Vector__XXX
+ SG_ Gear_Shift_Request : 19|4@0+ (1,0) [0|7] "" Vector__XXX
+ SG_ Gear_Shift_Request_Mode : 31|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Shift_Request_Mode_Switch : 30|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Shift_Request_Up_Switch : 29|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Shift_Request_Down_Switch : 28|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Gear_Shift_Request_Up_Diag : 39|4@0+ (1,0) [0|7] "" Vector__XXX
+ SG_ Gear_Shift_Request_Down_Diag : 35|4@0+ (1,0) [0|7] "" Vector__XXX
+ SG_ Gear_Shift_Request_Set_Switch : 47|8@0- (1,0) [-128|127] "" Vector__XXX
+ SG_ Gear_Range_Selector : 55|8@0- (1,0) [-128|127] "" Vector__XXX
+ SG_ Gear_Lever_Force_Sensor : 63|8@0- (5,0) [-635|635] "N" Vector__XXX
+ SG_ Exhaust_Temperature : 7|16@0+ (0.1,0) [0|1200] "C" Vector__XXX
+ SG_ Ignition_Cut_State : 43|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Ignition_Timing_State : 47|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Fuel_Cyl_1_Prim_Output_Pls_Wdth : 39|8@0+ (0.1,0) [0|25.5] "ms" Vector__XXX
+ SG_ Fuel_Output_Cut_Average : 31|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Ignition_Output_Cut_Average : 23|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Fuel_Output_Cut_Count : 15|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ Ignition_Output_Cut_Count : 7|8@0+ (1,0) [0|255] "" Vector__XXX
+ SG_ Inlet_Camshaft_Aim : 7|16@0- (0.1,0) [-60|60] "deg" Vector__XXX
+ SG_ Inlet_Camshaft_Bank_1_Position : 23|16@0- (0.1,0) [-60|60] "deg" Vector__XXX
+ SG_ TransmissionOilPressure : 39|16@0+ (0.1,0) [0|1000] "kPa" Vector__XXX
+ SG_ Inlet_Cam_Bk_1_Output_Duty_Cycle : 55|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Inlet_Cam_Bk_2_Output_Duty_Cycle : 63|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Exhaust_Camshaft_Aim : 7|16@0- (0.1,0) [-60|60] "deg" Vector__XXX
+ SG_ Exhaust_Camshaft_Bank_1_Position : 23|16@0- (0.1,0) [-60|60] "deg" Vector__XXX
+ SG_ Exhaust_Camshaft_Bank_2_Position : 39|16@0- (0.1,0) [-60|60] "deg" Vector__XXX
+ SG_ Exh_Cam_Bk_1_Output_Duty_Cycle : 55|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Exh_Cam_Bk_2_Output_Duty_Cycle : 63|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Fuel_Temperature : 23|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Airbox_Temperature : 39|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Engine_Load_Average : 23|16@0+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ Engine_Speed_Limit : 39|16@0+ (1,0) [0|16000] "RPM" Vector__XXX
+ SG_ Ambient_Pressure : 55|16@0- (0.1,0) [60|110] "kPa" Vector__XXX
+ SG_ Ignition_Cyl_1_Trim_Knock : 7|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_2_Trim_Knock : 15|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_3_Trim_Knock : 23|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_4_Trim_Knock : 31|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_5_Trim_Knock : 39|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_6_Trim_Knock : 47|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_7_Trim_Knock : 55|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_8_Trim_Knock : 63|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Anti_Lag_Diagnostic : 7|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Launch_Diagnostic : 3|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Boost_Control_Diagnostic : 15|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Fuel_Cut_State : 11|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Fuel_Closed_Loop_Diagnostic : 23|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Engine_Oil_Pressure_Low_Switch : 31|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Pit_Switch : 30|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Launch_Switch : 29|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Traction_Switch : 28|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Brake_State : 27|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Anti_Lag_Switch : 26|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Engine_Run_Switch : 25|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Neutral_Switch : 24|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Driver_Anti_Lag_Mode_Sw : 39|2@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Aux_Time_Switch : 37|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Boost_Limit_Disable_Sw : 36|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Eng_Spd_Limit_Max_Sw : 35|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Fuel_Mix_Aim_Main_Sw : 34|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Gear_Shift_Sw : 33|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Gear_Shift_Auto_Drag_Sw : 32|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Ign_Timing_Main_Sw : 47|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Race_Time_Rest_Sw : 46|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Throttle_Pedal_Trans_Sw : 45|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Trans_Brake_Bump_Sw : 44|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Wheel_Circumference_Sw : 43|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ M1_General_0x640_Version : 63|8@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Fuel_Tank_Level : 47|8@0+ (1,0) [0|255] "l" Vector__XXX
+ SG_ Fuel_Closed_Loop_Ctrl_Bk_2_Trim : 31|8@0+ (0.005,0) [0|1.275] "ratio" Vector__XXX
+ SG_ Fuel_Closed_Loop_Ctrl_Bk_1_Trim : 23|8@0+ (0.005,0) [0|1.275] "ratio" Vector__XXX
+ SG_ Gearbox_Temperature : 39|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Driver_Rotary_Switch_6 : 47|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Rotary_Switch_5 : 39|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Rotary_Switch_4 : 31|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Rotary_Switch_3 : 23|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Rotary_Switch_2 : 15|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Rotary_Switch_1 : 7|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Switch_8 : 56|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Switch_7 : 57|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Switch_6 : 58|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Switch_5 : 59|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Switch_4 : 60|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Exhaust_Temperature_Bank_2 : 55|16@0+ (0.1,0) [0|1200] "C" Vector__XXX
+ SG_ Exhaust_Temperature_Bank_1 : 39|16@0+ (0.1,0) [0|1200] "C" Vector__XXX
+ SG_ Exhaust_Lambda_Bank_2 : 31|8@0+ (0.01,0) [0|0] "LA" Vector__XXX
+ SG_ Exhaust_Lambda_Bank_1 : 23|8@0+ (0.01,0) [0|0] "LA" Vector__XXX
+ SG_ Fuel_Injector_Sec_Contribution : 7|16@0+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ Fuel_Timing_Secondary : 23|16@0- (0.1,0) [-720|720] "deg" Vector__XXX
+ SG_ Fuel_Injector_Duty_Cycle_Secdry : 39|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B2 : 7|16@0+ (1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B2_Aim : 23|16@0+ (1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B2_Control : 39|8@0+ (0.5,0) [0|100] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B2_Feed_Fwd : 47|8@0- (1,0) [-128|127] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B2_Prop : 55|8@0- (1,0) [-128|127] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B2_Integral : 63|8@0- (1,0) [-128|127] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B1_Integral : 63|8@0- (1,0) [-128|127] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B1_Prop : 55|8@0- (1,0) [-128|127] "%" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B1_Feed_Fwd : 47|8@0- (1,0) [-128|127] "%" Vector__XXX
+ SG_ Brake_Pressure_Front : 7|16@0- (1,0) [-32768|32767] "kPa" Vector__XXX
+ SG_ Brake_Pressure_Rear : 23|16@0- (1,0) [-32768|32767] "kPa" Vector__XXX
+ SG_ Coolant_Pressure : 39|16@0- (0.1,0) [-3276.8|3276.7] "kPa" Vector__XXX
+ SG_ Steering_Pressure : 55|16@0- (1,0) [-32768|32767] "kPa" Vector__XXX
+ SG_ Steering_Angle : 7|16@0- (0.1,0) [0|0] "deg" Vector__XXX
+ SG_ Inlet_Mass_Flow : 23|16@0+ (0.1,0) [0|0] "g/s" Vector__XXX
+ SG_ Airbox_Mass_Flow : 39|16@0+ (0.1,0) [0|0] "g/s" Vector__XXX
+ SG_ Fuel_Flow : 55|16@0+ (0.01,0) [0|0] "ml/s" Vector__XXX
+ SG_ Fuel_Injector_Primary_Pressure : 7|16@0- (0.1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Fuel_Injector_Secondary_Pressure : 23|16@0- (0.1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Gear_Input_Shaft_Speed : 39|16@0+ (1,0) [0|0] "RPM" Vector__XXX
+ SG_ Gear_Output_Shaft_Speed : 55|16@0+ (1,0) [0|0] "RPM" Vector__XXX
+ SG_ Vehicle_Accel_Lateral : 7|16@0- (0.001,0) [0|0] "g" Vector__XXX
+ SG_ Vehicle_Accel_Longitudinal : 23|16@0- (0.001,0) [0|0] "g" Vector__XXX
+ SG_ Vehicle_Accel_Vertical : 39|16@0- (0.001,0) [0|0] "g" Vector__XXX
+ SG_ Ignition_Cylinder_12_Knock_Level : 31|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_11_Knock_Level : 23|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_10_Knock_Level : 15|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cylinder_9_Knock_Level : 7|8@0+ (1,0) [0|200] "%" Vector__XXX
+ SG_ Ignition_Cyl_9_Trim_Knock : 7|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_10_Trim_Knock : 15|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_11_Trim_Knock : 23|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ Ignition_Cyl_12_Trim_Knock : 31|8@0+ (0.1,0) [0|25.5] "deg" Vector__XXX
+ SG_ M1_General_0x650_Version : 39|8@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Lap_Time : 7|16@0+ (0.01,0) [0|0] "s" Vector__XXX
+ SG_ Lap_Time_Running : 23|16@0+ (0.01,0) [0|0] "s" Vector__XXX
+ SG_ Lap_Number : 39|16@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Lap_Distance : 55|16@0+ (1,0) [0|0] "m" Vector__XXX
+ SG_ Differential_Temperature : 7|16@0- (0.1,0) [-30|160] "C" Vector__XXX
+ SG_ Driver_Rotary_Switch_7 : 23|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Driver_Rotary_Switch_8 : 31|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Exhaust_Pressure_Bank_1 : 7|16@0- (0.1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Exhaust_Pressure_Bank_2 : 23|16@0- (0.1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Engine_Crank_Case_Pressure : 39|16@0- (0.1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Knock_Threshold : 7|16@0+ (0.1,0) [0|200] "%" Vector__XXX
+ SG_ Logging_System_1_Used : 23|16@0+ (0.1,0) [0|0] "%" Vector__XXX
+ SG_ Vehicle_Speed_Limit : 39|16@0+ (0.1,0) [0|6553.5] "km/h" Vector__XXX
+ SG_ Alternative_Fuel_Mode : 7|4@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Fuel_Composition_Sensor_Diag : 3|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Alt_Fuel_Timing_Primary_Blend : 15|8@0+ (1,0) [0|0] "%" Vector__XXX
+ SG_ Alt_Fuel_Timing_Secondary_Blend : 23|8@0+ (1,0) [0|0] "%" Vector__XXX
+ SG_ Alt_Fuel_Ignition_Timing_Blend : 31|8@0+ (1,0) [0|0] "%" Vector__XXX
+ SG_ Alt_Fuel_Mixture_Aim_Blend : 39|8@0+ (1,0) [0|0] "%" Vector__XXX
+ SG_ Fuel_Composition : 47|8@0+ (1,0) [0|0] "%" Vector__XXX
+ SG_ Alt_Fuel_Ignition_Timing : 55|8@0- (0.5,0) [0|0] "deg" Vector__XXX
+ SG_ Alt_Fuel_Timing_Primary : 7|16@0- (0.1,0) [-720|720] "deg" Vector__XXX
+ SG_ Alt_Fuel_Timing_Secondary : 23|16@0- (0.1,0) [-720|720] "deg" Vector__XXX
+ SG_ Alt_Fuel_Mixture_Aim : 39|16@0+ (0.01,0) [0|2] "LA" Vector__XXX
+ SG_ Alt_Fuel_Pressure_Sensor : 7|16@0+ (0.1,0) [0|1000] "kPa" Vector__XXX
+ SG_ Alt_Fuel_Temperature : 23|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Alt_Fuel_Contribution_Efficiency : 31|8@0+ (1,0) [0|0] "%" Vector__XXX
+ SG_ Alt_Fuel_Pump_State : 39|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Alt_Fuel_Pressure_Warning : 33|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Alt_Fuel_Pump_On : 32|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Auxillary_Output_1_Duty_Cycle : 7|16@0- (0.1,0) [0|0] "%" Vector__XXX
+ SG_ Auxillary_Output_2_Duty_Cycle : 23|16@0- (0.1,0) [0|0] "%" Vector__XXX
+ SG_ Auxillary_Output_3_Duty_Cycle : 39|16@0- (0.1,0) [0|0] "%" Vector__XXX
+ SG_ Auxillary_Output_4_Duty_Cycle : 55|16@0- (0.1,0) [0|0] "%" Vector__XXX
+ SG_ Auxillary_Output_5_Duty_Cycle : 7|16@0+ (0.1,0) [0|0] "%" Vector__XXX
+ SG_ Gear_Pos_Main_Voltage : 39|16@0+ (0.001,0) [0|0] "" Vector__XXX
+ SG_ Gear_Estimate_Ratio : 23|16@0+ (0.001,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Type : 59|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Req_Auto_Priority : 51|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Req_Source : 43|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Estimate : 15|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Source : 3|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Actuator_Position : 15|16@0- (0.0001,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Actuator_Down_State : 1|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shtft_Actuator_Up_State : 2|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Actuator_Pump_Relay_State : 3|1@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Actuator_State : 7|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Actuator_Pressure : 31|16@0+ (0.1,0) [0|0] "" Vector__XXX
+ SG_ Boost_Actuator_Output_Duty_Cycle : 55|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Fuel_Volume : 7|16@0+ (1,0) [0|500] "ul" Vector__XXX
+ SG_ Fuel_Mixture_Aim : 23|16@0+ (0.01,0) [0|2] "LA" Vector__XXX
+ SG_ Fuel_Injector_Primary_Duty_Cycle : 55|8@0+ (1,0) [0|100] "%" Vector__XXX
+ SG_ Ignition_Timing_MoTeC : 39|16@0- (0.1,0) [100|-100] "deg" Vector__XXX
+ SG_ Fuel_Timing_Primary_MoTeC : 55|16@0- (0.1,0) [-720|720] "deg" Vector__XXX
+ SG_ Anti_Lag_State : 15|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Fuel_Purge_State : 39|4@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Fuel_State : 27|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Engine_Overrun_State : 31|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Fuel_Closed_Loop_State : 43|4@0+ (1,0) [0|15] "" Vector__XXX
+
+BO_ 1600 M1_General_0x640_640: 8 Vector__XXX
+ SG_ Engine_Speed_MoTeC : 7|16@0+ (1,0) [0|16000] "RPM" Vector__XXX
+ SG_ Inlet_Manifold_Pressure_MoTeC : 23|16@0+ (0.1,0) [0|500] "kPa" Vector__XXX
+ SG_ Inlet_Air_Temperature_MoTeC : 39|16@0- (0.1,0) [-40|120] "C" Vector__XXX
+ SG_ Throttle_Position_MoTeC : 55|16@0+ (0.1,0) [0|100] "%" Vector__XXX
+
+BO_ 1601 M1_General_0x641_641: 8 Vector__XXX
+ SG_ Fuel_Pressure_Sensor : 39|16@0+ (0.1,0) [0|1000] "kPa" Vector__XXX
+ SG_ Engine_Efficiency : 63|8@0+ (1,0) [0|160] "%" Vector__XXX
+
+BO_ 1602 M1_General_0x642_642: 8 Vector__XXX
+ SG_ Throttle_Pedal_MoTeC : 7|16@0+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ Engine_Load_MoTeC : 23|16@0+ (1,0) [0|1000] "mg" Vector__XXX
+
+BO_ 1604 M1_General_0x644_644: 8 Vector__XXX
+ SG_ Engine_Oil_Pressure_MoTeC : 55|16@0+ (0.1,0) [0|0] "kPa" Vector__XXX
+
+BO_ 1605 M1_General_0x645_645: 8 Vector__XXX
+ SG_ Boost_Pressure_MoTeC : 7|16@0- (0.1,0) [0|1000] "kPa" Vector__XXX
+ SG_ Boost_Aim_MoTeC : 23|16@0+ (0.1,0) [0|1000] "kPa" Vector__XXX
+
+BO_ 1608 M1_General_0x648_648: 8 Vector__XXX
+ SG_ Wheel_Speed_Front_Left_MoTeC : 7|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Wheel_Speed_Front_Right_MoTeC : 23|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Wheel_Speed_Rear_Left_MoTeC : 39|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+ SG_ Wheel_Speed_Rear_Right_MoTeC : 55|16@0+ (0.1,0) [0|340] "km/h" Vector__XXX
+
+BO_ 1609 M1_General_0x649_649: 8 Vector__XXX
+ SG_ Coolant_Temperature_MoTeC : 7|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Engine_Oil_Temperature_MoTeC : 15|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ Ambient_Temperature_MoTeC : 31|8@0+ (1,-40) [-40|215] "C" Vector__XXX
+ SG_ ECU_Battery_Voltage_MoTeC : 47|8@0+ (0.1,0) [0|25.5] "V" Vector__XXX
+ SG_ Fuel_Used_MoTeC : 55|16@0+ (0.01,0) [0|655.35] "l" Vector__XXX
+
+BO_ 1612 M1_General_0x64C_64C: 8 Vector__XXX
+ SG_ Engine_Run_Time_MoTeC : 7|16@0+ (1,0) [0|65535] "s" Vector__XXX
+ SG_ ECU_Up_Time_MoTeC : 23|16@0+ (1,0) [0|65535] "s" Vector__XXX
+ SG_ Warning_Source_MoTeC : 39|8@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Coolant_Temperature_Warning : 47|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Coolant_Pressure_Warning : 46|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Engine_Speed_Warning : 45|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Engine_Oil_Temperature_Warning : 44|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Engine_Oil_Pressure_Warning : 43|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Crankcase_Pressure_Warning : 41|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Fuel_Pressure_Warning : 40|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Knock_Warning : 55|1@0+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1613 M1_General_0x64D_64D: 8 Vector__XXX
+ SG_ Engine_State : 7|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Fuel_Pump_State : 3|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Launch_State : 11|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Boost_Aim_State : 23|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Knock_State : 35|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Throttle_Aim_State : 47|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Engine_Speed_Reference_State : 55|4@0+ (1,0) [0|15] "" Vector__XXX
+ SG_ Gear : 51|4@0- (1,0) [-8|7] "" Vector__XXX
+ SG_ Engine_Speed_Limit_State : 63|8@0+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 1615 M1_General_0x64F_64F: 8 Vector__XXX
+ SG_ Engine_Run_Time_Total : 7|16@0+ (0.1,0) [0|6553.5] "hour" Vector__XXX
+
+BO_ 1616 M1_General_0x650_650: 8 Vector__XXX
+ SG_ Driver_Switch_1 : 63|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Driver_Switch_2 : 62|1@0+ (1,0) [0|1] "" Vector__XXX
+ SG_ Driver_Switch_3 : 61|1@0+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 1617 M1_General_0x651_651: 8 Vector__XXX
+ SG_ Exhaust_Lambda : 7|8@0+ (0.01,0) [0|0] "LA" Vector__XXX
+
+BO_ 1619 M1_General_0x653_653: 8 Vector__XXX
+ SG_ Fuel_Pressure_Direct_B1 : 7|16@0+ (1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B1_Aim : 23|16@0+ (1,0) [0|24000] "kPa" Vector__XXX
+ SG_ Fuel_Pressure_Direct_B1_Control : 39|8@0+ (0.5,0) [0|100] "%" Vector__XXX
+
+BO_ 1625 M1_General_0x659_659: 8 Vector__XXX
+ SG_ Vehicle_Speed_MoTeC : 39|16@0+ (0.1,0) [0|6553.5] "km/h" Vector__XXX
+
+BO_ 1584 M1_Gear_0x630: 8 Vector__XXX
+ SG_ GearRatio : 7|16@0+ (0.001,0) [0|653.535] "" Vector__XXX
+
+BO_ 1585 M1_Gear_0x631: 8 Vector__XXX
+ SG_ Gear_100Hz_MoTeC : 23|8@0- (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift : 27|4@0+ (1,0) [0|0] "" Vector__XXX
+ SG_ Gear_Shift_Req : 35|4@0+ (1,0) [0|0] "" Vector__XXX
+
+BO_ 1640 M1_General_0x668_668: 8 Vector__XXX
+ SG_ Torque_Wheels_MoTeC : 39|16@0- (1,0) [0|0] "" Vector__XXX
+
+BO_ 24 Wheel_Speed_Faults: 8 Vector__XXX
+ SG_ FR_Wheel_Speed_Sensor_Fault : 40|1@1+ (1,0) [0|0] "" Vector__XXX
+ SG_ FL_Wheel_Speed_Sensor_Fault : 41|1@1+ (1,0) [0|0] "" Vector__XXX
+ SG_ RR_Wheel_Speed_Sensor_Fault : 42|1@1+ (1,0) [0|0] "" Vector__XXX
+ SG_ RL_Wheel_Speed_Sensor_Fault : 43|1@1+ (1,0) [0|0] "" Vector__XXX
+
+
+
+CM_ SG_ 3221225472 Exhaust_Lambda_Estimate "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Exhaust_Lambda_Large "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Engine_Charge "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Engine_Charge_Estimate "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Cut "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Cut_State_Diesel "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Boost_Maximum "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Boost_Limit_State "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Boost_Aim_State_Diesel "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Boost_Control "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Boost_Control_Diagnostic_Diesel "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Boost_Servo_Actuator_Position "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Turbocharger_Speed "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_HP5S_Pump "Only transmitted by Diesel packages with Fuel Pressure Primary Direct HP5S Pump";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_HP5S_Pump_Aim "Only transmitted by Diesel packages with Fuel Pressure Primary Direct HP5S Pump";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_HP5S_Ctrl "Only transmitted by Diesel packages with Fuel Pressure Primary Direct HP5S Pump";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_HP5S_FF "Only transmitted by Diesel packages with Fuel Pressure Primary Direct HP5S Pump";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_HP5S_Prop "Only transmitted by Diesel packages with Fuel Pressure Primary Direct HP5S Pump";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_HP5S_Int "Only transmitted by Diesel packages with Fuel Pressure Primary Direct HP5S Pump";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B2 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B2_Aim "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B2_Ctrl "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B2_FF "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B2_Prop "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B2_Int "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B1 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B1_Aim "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B1_Ctrl "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B1_FF "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B1_Prop "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Pres_Prim_Direct_B1_Int "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Timing_Primary_Pilot_1 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Timing_Primary_Pilot_2 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Timing_Primary_Main "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Timing_Primary_Post "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Exhaust_Gas_Recirc_Actuator_Ctrl "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Exhaust_Gas_Recirc_Actuator_FBck "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Cyl_1_Prim_Out_PW_1 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Cyl_1_Prim_Out_PW_2 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Cyl_1_Prim_Out_PW_3 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Cyl_1_Prim_Out_PW_4 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Mass "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Mass_Source "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Mass_Pilot_1 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Mass_Pilot_2 "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Mass_Main "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Mass_Post "Only transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_1_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_2_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_3_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_4_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_5_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_6_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_7_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_8_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 M1_General_0x6A0_Version "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Transfer_Case_Ratio "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Transfer_Case_Selector "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Tq_Conv_Lock_Clu "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Tq_Conv_Lock_Clu_Diag "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Tq_Conv_Lock_Clu_Sw_Duty "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Tq_Conv_Lock_Clu_Pro_Duty "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Tq_Conv_Slip "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Tq_Conv_Slip_Warning "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Pres_Line_Sol_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Pres_Sol_1_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Pres_Sol_2_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Pres_Sol_3_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Shift_Sol_1_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Shift_Sol_2_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Shift_Sol_3_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Shift_Lock_Sol_State "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Temperature "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Pressure "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Cooler_Temperature "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Cooler_Pressure "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Cooler_Fan_Duty_Cycle "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Temperature_Warning "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Pressure_Warning "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Trans_Cooler_Fan_Enable "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Input_Shaft_Speed_AT "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Output_Shaft_Speed_AT "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Slip "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Slip_Warning "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 M1_General_0x6B0_Version "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_AT "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Neutral_Switch_AT "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Ratio "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_State "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Mode "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Mode_Switch "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Up_Switch "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Down_Switch "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Up_Diag "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Down_Diag "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Shift_Request_Set_Switch "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Range_Selector "Only transmitted by Automatic Transmission packages";
+CM_ SG_ 3221225472 Gear_Lever_Force_Sensor "Only transmitted by packages with Gear Lever Force";
+CM_ SG_ 3221225472 Ignition_Cut_State "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Timing_State "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Output_Cut_Average "Rolls over at 255;";
+CM_ SG_ 3221225472 Ignition_Output_Cut_Average "Rolls over at 255";
+CM_ SG_ 3221225472 Inlet_Camshaft_Aim "-ve means BTDC;";
+CM_ SG_ 3221225472 Inlet_Camshaft_Bank_1_Position "-ve means BTDC;";
+CM_ SG_ 3221225472 TransmissionOilPressure "--Modified for IAC;
+";
+CM_ SG_ 3221225472 Exhaust_Camshaft_Aim "-ve means BTDC;";
+CM_ SG_ 3221225472 Exhaust_Camshaft_Bank_1_Position "-ve means BTDC;";
+CM_ SG_ 3221225472 Exhaust_Camshaft_Bank_2_Position "-ve means BTDC;";
+CM_ SG_ 3221225472 Ignition_Cyl_1_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_2_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_3_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_4_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_5_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_6_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_7_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_8_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Anti_Lag_Diagnostic "Only transmitted by packages with Anti Lag";
+CM_ SG_ 3221225472 Launch_Diagnostic "Only transmitted by packages with Launch";
+CM_ SG_ 3221225472 Launch_Switch "Only transmitted by packages with Launch";
+CM_ SG_ 3221225472 Traction_Switch "Only transmitted by packages with Traction";
+CM_ SG_ 3221225472 Anti_Lag_Switch "Only transmitted by packages with Anti Lag";
+CM_ SG_ 3221225472 Driver_Anti_Lag_Mode_Sw "Only transmitted by packages with Anti Lag; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Aux_Time_Switch "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Boost_Limit_Disable_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Eng_Spd_Limit_Max_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Fuel_Mix_Aim_Main_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Gear_Shift_Sw "Only transmitted by packages with Gear Shift; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Gear_Shift_Auto_Drag_Sw "Only transmitted by packages with Gear Paddle; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Ign_Timing_Main_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Race_Time_Rest_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Throttle_Pedal_Trans_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Trans_Brake_Bump_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Wheel_Circumference_Sw "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Closed_Loop_Ctrl_Bk_2_Trim "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Closed_Loop_Ctrl_Bk_1_Trim "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Exhaust_Temperature_Bank_2 "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Exhaust_Temperature_Bank_1 "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Injector_Sec_Contribution "Only transmitted by packages with Fuel Secondary Injector";
+CM_ SG_ 3221225472 Fuel_Timing_Secondary "-ve means BTDC; Only transmitted by packages with Fuel Secondary Injector";
+CM_ SG_ 3221225472 Fuel_Injector_Duty_Cycle_Secdry "Only transmitted by packages with Fuel Secondary Injector";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B2 "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B2_Aim "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B2_Control "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B2_Feed_Fwd "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B2_Prop "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B2_Integral "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B1_Integral "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B1_Prop "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Pressure_Direct_B1_Feed_Fwd "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 3221225472 Fuel_Injector_Secondary_Pressure "Only transmitted by packages with Fuel Secondary Injector";
+CM_ SG_ 3221225472 Ignition_Cylinder_12_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_11_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_10_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cylinder_9_Knock_Level "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_9_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_10_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_11_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Ignition_Cyl_12_Trim_Knock "+ve means ATDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 M1_General_0x650_Version "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Rotary_Switch_7 "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Driver_Rotary_Switch_8 "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Knock_Threshold "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alternative_Fuel_Mode "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Composition_Sensor_Diag "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Timing_Primary_Blend "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Timing_Secondary_Blend "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Ignition_Timing_Blend "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Mixture_Aim_Blend "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Fuel_Composition "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Ignition_Timing "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Timing_Primary "-ve means BTDC; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Timing_Secondary "-ve means BTDC; Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Mixture_Aim "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Pressure_Sensor "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Temperature "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Contribution_Efficiency "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Pump_State "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Pressure_Warning "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Alt_Fuel_Pump_On "Only transmitted by packages with Fuel Secondary Injector; Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Auxillary_Output_1_Duty_Cycle "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Auxillary_Output_2_Duty_Cycle "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Auxillary_Output_3_Duty_Cycle "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Auxillary_Output_4_Duty_Cycle "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Auxillary_Output_5_Duty_Cycle "Not transmitted by Diesel packages";
+CM_ SG_ 3221225472 Gear_Shift_Actuator_State "";
+CM_ SG_ 3221225472 Boost_Actuator_Output_Duty_Cycle "Only transmitted by packages with Boost";
+CM_ SG_ 3221225472 Fuel_Mixture_Aim "Fuel Mixture Reference in Diesel packages";
+CM_ SG_ 3221225472 Ignition_Timing_MoTeC "-ve means BTDC;";
+CM_ SG_ 3221225472 Fuel_Timing_Primary_MoTeC "Timing of Main pulse in Diesel packages";
+CM_ SG_ 3221225472 Anti_Lag_State "Only transmitted by packages with Anti Lag";
+CM_ SG_ 3221225472 Fuel_Purge_State "Only transmitted by packages with Fuel Purge";
+CM_ SG_ 3221225472 Fuel_Closed_Loop_State "Not transmitted by Diesel packages";
+CM_ BO_ 1600 "Engine speed, manifold pressure, inlet air temp, throttle position
+Message Tx Rate: 100Hz
+";
+CM_ BO_ 1601 "Fuel pressure, engine efficiency
+Message Tx Rate: 100Hz
+";
+CM_ BO_ 1602 "Throttle pedal feedback, engine load
+Message Tx Rate: 100Hz";
+CM_ SG_ 1602 Engine_Load_MoTeC "Engine Charge in Diesel packages";
+CM_ BO_ 1604 "Oil pressure
+Message Tx Rate: 50Hz
+";
+CM_ BO_ 1605 "Boost pressure, boost aim
+Message Tx Rate: 50Hz";
+CM_ BO_ 1608 "Wheel speeds as reported by MoTeC
+Message Tx Rate: 100Hz";
+CM_ BO_ 1609 "Coolant temp, oil temp, ambient temp, ECU battery voltage,fuel used
+Message Tx Rate: 20Hz";
+CM_ SG_ 1609 ECU_Battery_Voltage_MoTeC "Battery voltage as measured on MoTeC. Can be treated as a check if MoTeC is receiving power
+
+";
+CM_ SG_ 1609 Fuel_Used_MoTeC "Fuel used since ECU started. Could potentially be a way for teams to report fuel used in a particular session.";
+CM_ BO_ 1612 "Engine run time, ECU Up time, Warnings.. 
+Message Tx Rate: 10Hz";
+CM_ SG_ 1612 Engine_Run_Time_MoTeC "Does not roll over;";
+CM_ SG_ 1612 ECU_Up_Time_MoTeC "Does not roll over;";
+CM_ SG_ 1612 Knock_Warning "Not transmitted by Diesel packages";
+CM_ BO_ 1613 "Some important states to track
+Message Tx Rate: 10Hz";
+CM_ SG_ 1613 Launch_State "Only transmitted by packages with Launch";
+CM_ BO_ 1615 "The total runtime of your engine in hours.
+Message Tx Rate: 10Hz";
+CM_ SG_ 1615 Engine_Run_Time_Total "Does not roll over;";
+CM_ BO_ 1616 "Track these switches for estimating delays between message Tx from dspace to Rx on MoTeC. 
+Message Tx Rate: 100Hz";
+CM_ SG_ 1616 Driver_Switch_1 "Upshift Switch";
+CM_ SG_ 1616 Driver_Switch_2 "Downshift Switch";
+CM_ SG_ 1616 Driver_Switch_3 "Run Switch";
+CM_ BO_ 1617 "Air fuel ratio.
+Message Tx Rate: 100Hz";
+CM_ BO_ 1619 "Track Fuel pressure direct to measure the pressure on the fuel rail (downstream of the GDI Pump)
+
+Message Tx Rate: 100Hz";
+CM_ SG_ 1619 Fuel_Pressure_Direct_B1 "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 1619 Fuel_Pressure_Direct_B1_Aim "Only transmitted by packages with Fuel Pressure Direct";
+CM_ SG_ 1619 Fuel_Pressure_Direct_B1_Control "Only transmitted by packages with Fuel Pressure Direct";
+CM_ BO_ 1625 "Vehicle speed as reported by MoTeC. 
+Strategy for calculating vehicle speed on MoTec:
+Vehicle speed is the highest measured front wheel speed. If no front wheel speed data is available, vehicle speed is the lowest measured rear wheel speed.
+Message Tx Rate: 100Hz";
+CM_ BO_ 1584 "Gear Ratio
+Added based on M1 Build. Not present on original DBC file from MoTeC but data exists on the bus.
+Message Tx Rate: 100Hz";
+CM_ BO_ 1585 "Gear Pos, Gear Shift, Gear Shift Req
+Added based on M1 Build. Not present on original DBC file from MoTeC but data exists on the bus.
+
+Message Tx Rate: 100Hz ";
+CM_ SG_ 1585 Gear_Shift_Req "Track this to identify when/if MoTeC received the gear shift req as commanded by the controller";
+CM_ BO_ 1640 "Added based on M1 Build. Not present on original DBC file from MoTeC but data exists on the bus.
+Message Tx Rate: 100Hz";
+CM_ SG_ 1640 Torque_Wheels_MoTeC "Torque reported by MoTeC in Nm. Not multiplied by gear ratio. Considers all efficiencies.";
+CM_ BO_ 24 "Wheel speed faults are computed on IPS32 to identify a faulty/missing wheel speed sensor. 
+The respective wheel speed fault will be set if vehicle speed motec is more than zero and the given wheel speed is zero. MoTeC outputs wheel speed as zero if it doesn't find a sensor value.
+
+Message Tx Rate: 50Hz";
+BA_DEF_  "BusType" STRING ;
+BA_DEF_ BU_  "NodeLayerModules" STRING ;
+BA_DEF_ BU_  "ECU" STRING ;
+BA_DEF_ BU_  "CANoeJitterMax" INT 0 0;
+BA_DEF_ BU_  "CANoeJitterMin" INT 0 0;
+BA_DEF_ BU_  "CANoeDrift" INT 0 0;
+BA_DEF_ BU_  "CANoeStartDelay" INT 0 0;
+BA_DEF_DEF_  "BusType" "";
+BA_DEF_DEF_  "NodeLayerModules" "";
+BA_DEF_DEF_  "ECU" "";
+BA_DEF_DEF_  "CANoeJitterMax" 0;
+BA_DEF_DEF_  "CANoeJitterMin" 0;
+BA_DEF_DEF_  "CANoeDrift" 0;
+BA_DEF_DEF_  "CANoeStartDelay" 0;
+VAL_ 1612 Warning_Source_MoTeC 23 "Exhaust_Temperature_Diagnostic" 35 "Boost_Control_Diagnostic" 36 "Coolant_Pressure_Sensor_Diagnostic" 21 "Exhaust_Lambda_Bank_1_Collector_Diagnostic" 24 "Throttle_Pedal_Sensor_Diagnostic" 25 "Throttle_Position_Sensor_Diagnostic" 26 "Throttle_Servo_Bank_1_Position_Sensor_Diagnostic" 27 "Throttle_Servo_Bank_2_Position_Sensor_Diagnostic" 37 "Inlet_Camshaft_Bank_1_Position_Diagnostic" 60 "Fuel_Cylinder_8_Secondary_Pin_Diagnostic" 64 "Fuel_Cylinder_12_Secondary_Pin_Diagnostic" 52 "Fuel_Cylinder_12_Primary_Pin_Diagnostic" 66 "CAN_Bus_2_Diagnostic" 65 "CAN_Bus_1_Diagnostic" 63 "Fuel_Cylinder_11_Secondary_Pin_Diagnostic" 38 "Inlet_Camshaft_Bank_2_Position_Diagnostic" 62 "Fuel_Cylinder_10_Secondary_Pin_Diagnostic" 30 "Fuel_Temperature_Sensor_Diagnostic" 17 "Brake_Vacuum_Pressure_Sensor_Diagnostic" 59 "Fuel_Cylinder_7_Secondary_Pin_Diagnostic" 18 "Inlet_Air_Temperature_Sensor_Diagnostic" 19 "Engine_Crankcase_Pressure_Sensor_Diagnostic" 20 "Engine_Oil_Temperature_Sensor_Diagnostic" 56 "Fuel_Cylinder_4_Secondary_Pin_Diagnostic" 48 "Fuel_Cylinder_8_Primary_Pin_Diagnostic" 49 "Fuel_Cylinder_9_Primary_Pin_Diagnostic" 45 "Fuel_Cylinder_5_Primary_Pin_Diagnostic" 50 "Fuel_Cylinder_10_Primary_Pin_Diagnostic" 51 "Fuel_Cylinder_11_Primary_Pin_Diagnostic" 57 "Fuel_Cylinder_5_Secondary_Pin_Diagnostic" 58 "Fuel_Cylinder_6_Secondary_Pin_Diagnostic" 14 "Engine_Oil_Pressure_Sensor_Diagnostic" 11 "Coolant_Pressure_Warning" 13 "Inlet_Manifold_Pressure_Sensor_Diagnostic" 12 "Engine_Speed_Warning" 28 "Boost_Pressure_Sensor_Diagnostic" 39 "Exhaust_Camshaft_Bank_1_Position_Diagnostic" 67 "CAN_Bus_3_Diagnostic" 70 "GPS_Diagnostic" 41 "Fuel_Cylinder_1_Primary_Pin_Diagnostic" 42 "Fuel_Cylinder_2_Primary_Pin_Diagnostic" 43 "Fuel_Cylinder_3_Primary_Pin_Diagnostic" 44 "Fuel_Cylinder_4_Primary_Pin_Diagnostic" 33 "Throttle_Servo_Bank_1_Diagnostic" 34 "Throttle_Servo_Bank_2_Diagnostic" 32 "Fuel_Closed_Loop_Diagnostic" 31 "Ambient_Pressure_Sensor_Diagnostic" 53 "Fuel_Cylinder_1_Secondary_Pin_Diagnostic" 55 "Fuel_Cylinder_3_Secondary_Pin_Diagnostic" 22 "Exhaust_Lambda_Bank_2_Collector_Diagnostic" 0 "None" 16 "Fuel_Pressure_Sensor_Diagnostic" 54 "Fuel_Cylinder_2_Secondary_Pin_Diagnostic" 2 "Knock_Warning" 3 "Engine_Crankcase_Pressure_Warning" 4 "Fuel_Pressure_Warning" 6 "Coolant_Temperature_Warning" 7 "Inlet_Air_Temperature_Warning" 8 "Engine_Oil_Temperature_Warning" 61 "Fuel_Cylinder_9_Secondary_Pin_Diagnostic" 10 "Exhaust_Temperature_Warning" 9 "Exhaust_Lambda_Warning" 46 "Fuel_Cylinder_6_Primary_Pin_Diagnostic" 47 "Fuel_Cylinder_7_Primary_Pin_Diagnostic" 15 "Coolant_Temperature_Sensor_Diagnostic" 40 "Exhaust_Camshaft_Bank_2_Position_Diagnostic" 68 "RS232_Diagnostic" 69 "Engine_Speed_Reference_Diagnostic" 1 "Engine_Oil_Pressure_Warning" 71 "Engine_Speed_Reference_State" 72 "Vehicle_Acceleration_Lateral_Sensor_Diagnostic" 5 "Alternative_Fuel_Pressure_Warning" 29 "Fuel_Composition_Sensor_Diagnostic" ;
+VAL_ 1613 Engine_State 0 "Startup" 1 "Stop" 2 "Run" 3 "Crank" ;
+VAL_ 1613 Fuel_Pump_State 0 "Off" 1 "On" 2 "Prime" 3 "Hold" 4 "Test" ;
+VAL_ 1613 Launch_State 0 "Disabled" 1 "Enabled" ;
+VAL_ 1613 Boost_Aim_State 0 "Normal" 1 "Anti_Lag" 2 "Launch" ;
+VAL_ 1613 Knock_State 0 "Disabled" 1 "Enabled" 2 "Transient" ;
+VAL_ 1613 Throttle_Aim_State 5 "Test" 1 "Idle" 0 "Pedal" 2 "Anti_Lag" 3 "Throttle_Limit" 4 "Gear_Shift" ;
+VAL_ 1613 Engine_Speed_Reference_State 0 "Open" 1 "Initialise" 2 "Stall" 3 "First Edge" 4 "First Period" 5 "Search" 6 "Pattern Lock" 7 "Cycle Lock" 8 "Error" 9 "Exit" 10 "Test" ;
+VAL_ 1613 Gear -2 "Default" -1 "Reverse" 0 "Neutral" 1 "First" 2 "Second" 3 "Third" 4 "Fourth" 5 "Fifth" 6 "Sixth" 7 "Seventh" ;
+VAL_ 1613 Engine_Speed_Limit_State 0 "Maximum" 2 "Throttle_Servo_Fault" 3 "Coolant_Temperature" 7 "Engine_Output_Test" 4 "Traction_Control" 5 "Launch" 6 "Vehicle_Speed_Limit" 1 "Engine_Load_Average" 8 "Anti_Lag" 10 "Coolant_Temperature_Warning" 11 "Coolant_Pressure_Warning" 12 "Engine_Speed_Warning" 13 "Engine_Oil_Temperature_Warning" 14 "Engine_Oil_Pressure_Warning" 15 "Engine_Crankcase_Pressure_Warning" 16 "Fuel_Pressure_Warning" 9 "Gear_Shift" 17 "Inlet_Air_Temperature_Warning" 18 "Exhaust_Lambda_Warning" 19 "Exhaust_Temperature_Warning" 20 "Experimental_Reference_Mode" 21 "Alternative_Fuel_Pressure_Warning" 22 "Boost_Servo_Fault" ;
+
