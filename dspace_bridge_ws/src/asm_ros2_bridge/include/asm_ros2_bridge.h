@@ -161,6 +161,8 @@ namespace asm_ros2_bridge
         uint32_t pubIntervalVectorNavData;
         uint32_t pubIntervalNovatelData;
         uint32_t pubIntervalFoxgloveMap;
+        uint32_t pubIntervalNovatelImuData;
+        uint32_t pubIntervalVectorNavImuData;
 
         // Custom Structures
         VESIResultData feedbackCmds;
@@ -191,6 +193,8 @@ namespace asm_ros2_bridge
         void publishGroundTruthArray();
         void publishVectorNavData();
         void publishNovatelData(uint8_t novatelID);
+        void publishNovatelImuData(uint8_t novatelID);
+        void publishVectorNavImuData();
 
     };
 } // namespace asm_ros2_bridge

@@ -62,6 +62,16 @@ namespace asm_ros2_bridge {
     } else {
       this->pubIntervalNovatelData = 10;
     }
+    if (std::getenv("PUB_ITV_NOVATEL_IMU_DATA")){
+      this->pubIntervalNovatelImuData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_NOVATEL_IMU_DATA"))));
+    } else {
+      this->pubIntervalNovatelImuData = 10;
+    }
+    if (std::getenv("PUB_ITV_VECTOR_NAV_IMU_DATA")){
+      this->pubIntervalVectorNavImuData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_VECTOR_NAV_IMU_DATA"))));
+    } else {
+      this->pubIntervalVectorNavImuData = 10;
+    }
     if (std::getenv("PUB_ITV_FOXGLOVE_MAP")){
       this->pubIntervalFoxgloveMap = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_FOXGLOVE_MAP"))));
     } else {
@@ -145,8 +155,8 @@ namespace asm_ros2_bridge {
       this->verctorNavAttitudeGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::AttitudeGroup>("vectornav/raw/attitude", qos);
       this->verctorNavImuGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::ImuGroup>("vectornav/raw/imu", qos);
       this->verctorNavInsGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::InsGroup>("vectornav/raw/ins", qos);
-      this->verctorNavGpsGroupLeftPublisher_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps_left", qos);
-      this->verctorNavGpsGroupRightPublisher_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps_right", qos);
+      this->verctorNavGpsGroupLeftPublisher_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps", qos);
+      this->verctorNavGpsGroupRightPublisher_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps2", qos);
       this->verctorNavTimeGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::TimeGroup>("vectornav/raw/time", qos);
 
       this->novaTelBestPosPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_top/bestpos", qos);
@@ -398,6 +408,13 @@ namespace asm_ros2_bridge {
         {            
             AsmRos2BridgeNode::publishNovatelData(1);
             AsmRos2BridgeNode::publishNovatelData(2);
+        }
+        if(this->simTotalMsec % (this->pubIntervalNovatelImuData) == 0){
+            AsmRos2BridgeNode::publishNovatelImuData(1);
+            AsmRos2BridgeNode::publishNovatelImuData(2);
+        }
+        if(this->simTotalMsec % (this->pubIntervalVectorNavImuData) == 0){
+            AsmRos2BridgeNode::publishVectorNavImuData();
         }
 
         if(this->simTotalMsec % (this->pubIntervalFoxgloveMap) == 0)
@@ -920,12 +937,139 @@ namespace asm_ros2_bridge {
     if (this->verbosePrinting)
       RCLCPP_INFO(this->get_logger(), "publishVectorNavData");
 
+    auto gpsGroup = vectornav_msgs::msg::GpsGroup();
+    auto timeGroup = vectornav_msgs::msg::TimeGroup();
+
+    for(int i=0;i<2;i++)
+    {
+      gps_group currentGPS;
+      if (i == 0)
+      {
+        currentGPS = this->canBus->sim_interface_var.vector_nav_vn1_var.gps_group1_var;
+        this->verctorNavGpsGroupPublisher = this->verctorNavGpsGroupLeftPublisher_;
+        }
+      else if (i == 1)
+      {
+        currentGPS = this->canBus->sim_interface_var.vector_nav_vn1_var.gps_group2_var;
+        this->verctorNavGpsGroupPublisher = this->verctorNavGpsGroupRightPublisher_;
+      }
+      else
+      {
+        RCLCPP_ERROR(this->get_logger(), "Only two Vectornav GPS antennas are supported.");
+      }
+      
+      // Header
+      gpsGroup.header.frame_id = "world";
+
+      if(this->simModeEnabled)
+      {
+        gpsGroup.header.stamp.sec = this->sec;
+        gpsGroup.header.stamp.nanosec = this->nsec;
+      }
+      else
+      {
+        gpsGroup.header.stamp.sec = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+        gpsGroup.header.stamp.nanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - (gpsGroup.header.stamp.sec*1000000000);
+      }
+
+
+      gpsGroup.utc.year = currentGPS.utc_var.year;
+      gpsGroup.utc.month = currentGPS.utc_var.month;
+      gpsGroup.utc.day = currentGPS.utc_var.day;
+      gpsGroup.utc.hour = currentGPS.utc_var.hour;
+      gpsGroup.utc.min = currentGPS.utc_var.min;
+      gpsGroup.utc.sec = currentGPS.utc_var.sec;
+      gpsGroup.utc.ms = currentGPS.utc_var.ms;
+
+      gpsGroup.tow = currentGPS.tow;
+      gpsGroup.week = currentGPS.week;
+      gpsGroup.numsats = currentGPS.numsats;
+      gpsGroup.fix = currentGPS.fix;
+
+      gpsGroup.poslla.x = currentGPS.poslla_var.x;
+      gpsGroup.poslla.y = currentGPS.poslla_var.y;
+      gpsGroup.poslla.z = currentGPS.poslla_var.z;
+
+      gpsGroup.posecef.x = currentGPS.posecef_var.x;
+      gpsGroup.posecef.y = currentGPS.posecef_var.y;
+      gpsGroup.posecef.z = currentGPS.posecef_var.z;
+
+      gpsGroup.velned.x = currentGPS.velned_var.x;
+      gpsGroup.velned.y = currentGPS.velned_var.y;
+      gpsGroup.velned.z = currentGPS.velned_var.z;
+
+      gpsGroup.velecef.x = currentGPS.velecef_var.x;
+      gpsGroup.velecef.y = currentGPS.velecef_var.y;
+      gpsGroup.velecef.z = currentGPS.velecef_var.z;
+
+      gpsGroup.posu.x = currentGPS.posu_var.x;
+      gpsGroup.posu.y = currentGPS.posu_var.y;
+      gpsGroup.posu.z = currentGPS.posu_var.z;
+
+      gpsGroup.velu = currentGPS.velu;
+      gpsGroup.timeu = currentGPS.timeu;
+      gpsGroup.timeinfo_status = currentGPS.timeinfo_status;
+      gpsGroup.timeinfo_leapseconds = currentGPS.timeinfo_leapseconds;
+
+      gpsGroup.dop.g = currentGPS.dop_var.g;
+      gpsGroup.dop.p = currentGPS.dop_var.p;
+      gpsGroup.dop.t = currentGPS.dop_var.t;
+      gpsGroup.dop.v = currentGPS.dop_var.v;
+      gpsGroup.dop.h = currentGPS.dop_var.h;
+      gpsGroup.dop.n = currentGPS.dop_var.n;
+      gpsGroup.dop.e = currentGPS.dop_var.e;
+
+      this->verctorNavGpsGroupPublisher->publish(gpsGroup);
+    }
+    
+    // Header
+    timeGroup.header.frame_id = "";
+    
+    if(this->simModeEnabled)
+    {
+      timeGroup.header.stamp.sec = this->sec;
+      timeGroup.header.stamp.nanosec = this->nsec;
+    }
+    else
+    {
+      timeGroup.header.stamp.sec = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+      timeGroup.header.stamp.nanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - (timeGroup.header.stamp.sec*1000000000);
+    }
+
+    timeGroup.timestartup = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestartup;
+    timeGroup.timegps = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timegps;
+    timeGroup.gpstow = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.gpstow;
+    timeGroup.gpsweek = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.gpsweek;
+    timeGroup.timesyncin = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timesyncin;
+    timeGroup.timegpspps = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timegpspps;
+
+    timeGroup.timeutc.year = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.year;
+    timeGroup.timeutc.month = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.month;
+    timeGroup.timeutc.day = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.day;
+    timeGroup.timeutc.hour = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.hour;
+    timeGroup.timeutc.min = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.min;
+    timeGroup.timeutc.sec = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.sec;
+    timeGroup.timeutc.ms = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.ms;
+
+    timeGroup.syncincnt = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.syncincnt;
+    timeGroup.syncoutcnt = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.syncoutcnt;
+
+    timeGroup.timestatus.time_ok = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestatus_var.time_ok;
+    timeGroup.timestatus.date_ok = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestatus_var.date_ok;
+    timeGroup.timestatus.utctime_ok = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestatus_var.utctime_ok;
+
+    this->verctorNavTimeGroupPublisher_->publish(timeGroup);
+  }
+
+  void AsmRos2BridgeNode::publishVectorNavImuData()
+  {
+    if (this->verbosePrinting)
+      RCLCPP_INFO(this->get_logger(), "publishVectorNavImuData");
+
     auto attitudeGroup = vectornav_msgs::msg::AttitudeGroup();
     auto commonGroup = vectornav_msgs::msg::CommonGroup();
     auto imuGroup = vectornav_msgs::msg::ImuGroup();
-    auto gpsGroup = vectornav_msgs::msg::GpsGroup();
     auto insGroup = vectornav_msgs::msg::InsGroup();
-    auto timeGroup = vectornav_msgs::msg::TimeGroup();
 
     // Header
     attitudeGroup.header.frame_id = "world";
@@ -1132,89 +1276,6 @@ namespace asm_ros2_bridge {
 
     this->verctorNavImuGroupPublisher_->publish(imuGroup);
     
-
-    for(int i=0;i<2;i++)
-    {
-      gps_group currentGPS;
-      if (i == 0)
-      {
-        currentGPS = this->canBus->sim_interface_var.vector_nav_vn1_var.gps_group1_var;
-        this->verctorNavGpsGroupPublisher = this->verctorNavGpsGroupLeftPublisher_;
-        }
-      else if (i == 1)
-      {
-        currentGPS = this->canBus->sim_interface_var.vector_nav_vn1_var.gps_group2_var;
-        this->verctorNavGpsGroupPublisher = this->verctorNavGpsGroupRightPublisher_;
-      }
-      else
-      {
-        RCLCPP_ERROR(this->get_logger(), "Only two Vectornav GPS antennas are supported.");
-      }
-      
-      // Header
-      gpsGroup.header.frame_id = "world";
-
-      if(this->simModeEnabled)
-      {
-        gpsGroup.header.stamp.sec = this->sec;
-        gpsGroup.header.stamp.nanosec = this->nsec;
-      }
-      else
-      {
-        gpsGroup.header.stamp.sec = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count();
-        gpsGroup.header.stamp.nanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - (gpsGroup.header.stamp.sec*1000000000);
-      }
-
-
-      gpsGroup.utc.year = currentGPS.utc_var.year;
-      gpsGroup.utc.month = currentGPS.utc_var.month;
-      gpsGroup.utc.day = currentGPS.utc_var.day;
-      gpsGroup.utc.hour = currentGPS.utc_var.hour;
-      gpsGroup.utc.min = currentGPS.utc_var.min;
-      gpsGroup.utc.sec = currentGPS.utc_var.sec;
-      gpsGroup.utc.ms = currentGPS.utc_var.ms;
-
-      gpsGroup.tow = currentGPS.tow;
-      gpsGroup.week = currentGPS.week;
-      gpsGroup.numsats = currentGPS.numsats;
-      gpsGroup.fix = currentGPS.fix;
-
-      gpsGroup.poslla.x = currentGPS.poslla_var.x;
-      gpsGroup.poslla.y = currentGPS.poslla_var.y;
-      gpsGroup.poslla.z = currentGPS.poslla_var.z;
-
-      gpsGroup.posecef.x = currentGPS.posecef_var.x;
-      gpsGroup.posecef.y = currentGPS.posecef_var.y;
-      gpsGroup.posecef.z = currentGPS.posecef_var.z;
-
-      gpsGroup.velned.x = currentGPS.velned_var.x;
-      gpsGroup.velned.y = currentGPS.velned_var.y;
-      gpsGroup.velned.z = currentGPS.velned_var.z;
-
-      gpsGroup.velecef.x = currentGPS.velecef_var.x;
-      gpsGroup.velecef.y = currentGPS.velecef_var.y;
-      gpsGroup.velecef.z = currentGPS.velecef_var.z;
-
-      gpsGroup.posu.x = currentGPS.posu_var.x;
-      gpsGroup.posu.y = currentGPS.posu_var.y;
-      gpsGroup.posu.z = currentGPS.posu_var.z;
-
-      gpsGroup.velu = currentGPS.velu;
-      gpsGroup.timeu = currentGPS.timeu;
-      gpsGroup.timeinfo_status = currentGPS.timeinfo_status;
-      gpsGroup.timeinfo_leapseconds = currentGPS.timeinfo_leapseconds;
-
-      gpsGroup.dop.g = currentGPS.dop_var.g;
-      gpsGroup.dop.p = currentGPS.dop_var.p;
-      gpsGroup.dop.t = currentGPS.dop_var.t;
-      gpsGroup.dop.v = currentGPS.dop_var.v;
-      gpsGroup.dop.h = currentGPS.dop_var.h;
-      gpsGroup.dop.n = currentGPS.dop_var.n;
-      gpsGroup.dop.e = currentGPS.dop_var.e;
-
-      this->verctorNavGpsGroupPublisher->publish(gpsGroup);
-    }
-    
     // Header
     insGroup.header.frame_id = "world";
 
@@ -1273,44 +1334,6 @@ namespace asm_ros2_bridge {
     insGroup.velu = this->canBus->sim_interface_var.vector_nav_vn1_var.ins_group_var.velu;
 
     this->verctorNavInsGroupPublisher_->publish(insGroup);
-    
-    // Header
-    timeGroup.header.frame_id = "";
-    
-    if(this->simModeEnabled)
-    {
-      timeGroup.header.stamp.sec = this->sec;
-      timeGroup.header.stamp.nanosec = this->nsec;
-    }
-    else
-    {
-      timeGroup.header.stamp.sec = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count();
-      timeGroup.header.stamp.nanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - (timeGroup.header.stamp.sec*1000000000);
-    }
-
-    timeGroup.timestartup = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestartup;
-    timeGroup.timegps = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timegps;
-    timeGroup.gpstow = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.gpstow;
-    timeGroup.gpsweek = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.gpsweek;
-    timeGroup.timesyncin = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timesyncin;
-    timeGroup.timegpspps = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timegpspps;
-
-    timeGroup.timeutc.year = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.year;
-    timeGroup.timeutc.month = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.month;
-    timeGroup.timeutc.day = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.day;
-    timeGroup.timeutc.hour = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.hour;
-    timeGroup.timeutc.min = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.min;
-    timeGroup.timeutc.sec = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.sec;
-    timeGroup.timeutc.ms = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timeutc_var.ms;
-
-    timeGroup.syncincnt = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.syncincnt;
-    timeGroup.syncoutcnt = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.syncoutcnt;
-
-    timeGroup.timestatus.time_ok = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestatus_var.time_ok;
-    timeGroup.timestatus.date_ok = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestatus_var.date_ok;
-    timeGroup.timestatus.utctime_ok = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var.timestatus_var.utctime_ok;
-
-    this->verctorNavTimeGroupPublisher_->publish(timeGroup);
   }
 
   void AsmRos2BridgeNode::publishNovatelData(uint8_t novatelID)
@@ -1329,8 +1352,6 @@ namespace asm_ros2_bridge {
       this->novaTelBestGNSSVelPublisher = this->novaTelBestGNSSVelPublisher1_;
       this->novaTelInspvaPublisher = this->novaTelInspvaPublisher1_;
       this->novaTelHeading2Publisher = this->novaTelHeading2Publisher1_;
-      this->novaTelRawImuPublisher = this->novaTelRawImuPublisher1_;
-      this->novaTelRawImuXPublisher = this->novaTelRawImuXPublisher1_;
       }
     else if (novatelID == 2)
     {
@@ -1341,8 +1362,6 @@ namespace asm_ros2_bridge {
       this->novaTelBestGNSSVelPublisher = this->novaTelBestGNSSVelPublisher2_;
       this->novaTelInspvaPublisher = this->novaTelInspvaPublisher2_;
       this->novaTelHeading2Publisher = this->novaTelHeading2Publisher2_;
-      this->novaTelRawImuPublisher = this->novaTelRawImuPublisher2_;
-      this->novaTelRawImuXPublisher = this->novaTelRawImuXPublisher2_;
     }
     else
     {
@@ -1543,6 +1562,32 @@ namespace asm_ros2_bridge {
     }
 
     this->novaTelHeading2Publisher->publish(heading2);
+  }
+
+  void AsmRos2BridgeNode::publishNovatelImuData(uint8_t novatelID)
+  {
+    if (this->verbosePrinting)
+      RCLCPP_INFO(this->get_logger(), "publishNovatelImuData");
+    
+    nova_tel_pwr_pak currentNovatel;
+    
+    if (novatelID == 1)
+    {
+      currentNovatel = this->canBus->sim_interface_var.nova_tel_pwr_pak1_var;
+      this->novaTelRawImuPublisher = this->novaTelRawImuPublisher1_;
+      this->novaTelRawImuXPublisher = this->novaTelRawImuXPublisher1_;
+      }
+    else if (novatelID == 2)
+    {
+      currentNovatel = this->canBus->sim_interface_var.nova_tel_pwr_pak2_var;
+      this->novaTelRawImuPublisher = this->novaTelRawImuPublisher2_;
+      this->novaTelRawImuXPublisher = this->novaTelRawImuXPublisher2_;
+    }
+    else
+    {
+        RCLCPP_ERROR(this->get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+    }
+    
 
     // Raw IMU
     auto rawImu = novatel_oem7_msgs::msg::RAWIMU();
