@@ -7,6 +7,7 @@ namespace asm_socketcan_bridge {
 
   AsmSocketCanBridgeNode::AsmSocketCanBridgeNode() : Node("asm_socketcan_bridge_node")
   {
+    this->canBus = nullptr;
     if (std::getenv("VESI_IP")){
       this->api.setSimManagerHost(std::getenv("VESI_IP"));
       RCLCPP_INFO(this->get_logger(), "Set SimManager Host IP to: %s", std::getenv("VESI_IP"));
@@ -259,6 +260,18 @@ namespace asm_socketcan_bridge {
     RCLCPP_INFO(this->get_logger(), "Setup done.");
   }
 
+  AsmSocketCanBridgeNode::~AsmSocketCanBridgeNode()
+  {
+    stop_reader_.store(true);
+    if (can_socket >= 0) {
+      close(can_socket);
+      can_socket = -1;
+    }
+    if (reader_thread1.joinable()) {
+      reader_thread1.join();
+    }
+  }
+
   template <typename T>
   void AsmSocketCanBridgeNode::insertBits(uint8_t* data, Signal signal_information, T physical_value)
   {
@@ -306,10 +319,13 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::initializeFeedback()
   {
+    std::lock_guard<std::mutex> lock(feedback_mutex_);
     if (this->verbosePrinting)
       RCLCPP_INFO(this->get_logger(), "initializeFeedback");
 
     this->maneuverStarted = false;
+    this->feedbackDataAvailabe = false;
+    this->raptorDataAvailabe = false;
 
     // Throttle command (%)
     this->feedbackCmd.vehicle_inputs.throttle_cmd = 0.0;
@@ -381,214 +397,240 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::can_reader_loop(int sock, const std::string &bus_id)
   {
     RCLCPP_INFO(this->get_logger(), "Can reader loop started for %s", bus_id.c_str());
-    struct can_frame in_frame;
-    while (rclcpp::ok()) {
+    struct can_frame in_frame{};
+    while (rclcpp::ok() && !stop_reader_.load()) {
       if (this->receivedMessagePrinting)
         RCLCPP_INFO(this->get_logger(), "Can reader loop...");
 
       int nbytes = read(sock, &in_frame, sizeof(in_frame));
-      if (nbytes > 0) {
+      if (nbytes < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        if (stop_reader_.load()) {
+          break;
+        }
+        RCLCPP_ERROR(this->get_logger(), "CAN read failed: %s", strerror(errno));
+        continue;
+      }
+      if (nbytes == 0) {
+        continue;
+      }
+
+      if (this->receivedMessagePrinting)
+        RCLCPP_INFO(this->get_logger(), "received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
+      for (int i = 0; i < in_frame.can_dlc; i++) {
         if (this->receivedMessagePrinting)
-          RCLCPP_INFO(this->get_logger(), "received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
-        for (int i = 0; i < in_frame.can_dlc; i++) {
+          RCLCPP_INFO(this->get_logger(), "received: %02X ",in_frame.data[i]);
+      }
+
+      switch (in_frame.can_id) {
+        case 1400: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "received: %02X ",in_frame.data[i]);
+            RCLCPP_INFO(this->get_logger(), "brake_pressure_cmd");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "brk_pressure_cmd_counter")
+                  this->feedbackCmd.vehicle_inputs.brake_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "F_brake_pressure_cmd")
+                  this->feedbackCmd.vehicle_inputs.brake_cmd_front = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "R_brake_pressure_cmd")
+                  this->feedbackCmd.vehicle_inputs.brake_cmd_rear = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+              }
+              this->feedbackCmd.vehicle_inputs.enable_brake_cmd = 1;
+              this->feedbackDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "brake_cmd_count: %d  brake_cmd_front: %f  brake_cmd_rear: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count, this->feedbackCmd.vehicle_inputs.brake_cmd_front, this->feedbackCmd.vehicle_inputs.brake_cmd_rear, this->feedbackCmd.vehicle_inputs.enable_brake_cmd);
+              break;
+            }
+          }
+          break;
         }
-        switch (in_frame.can_id) {
-          case 1400:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "brake_pressure_cmd");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "brk_pressure_cmd_counter")
-                    this->feedbackCmd.vehicle_inputs.brake_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "F_brake_pressure_cmd")
-                    // TODO ASM: change datatype to int16, to match dbc
-                    this->feedbackCmd.vehicle_inputs.brake_cmd_front = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "R_brake_pressure_cmd")
-                    // TODO ASM: change datatype to int16, to match dbc
-                    this->feedbackCmd.vehicle_inputs.brake_cmd_rear = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                }
-                this->feedbackCmd.vehicle_inputs.enable_brake_cmd = 1;
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "brake_cmd_count: %d  brake_cmd_front: %f  brake_cmd_rear: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count, this->feedbackCmd.vehicle_inputs.brake_cmd_front, this->feedbackCmd.vehicle_inputs.brake_cmd_rear, this->feedbackCmd.vehicle_inputs.enable_brake_cmd);
-                break;
+        case 1401: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "accelerator_cmd");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "acc_pedal_cmd_counter")
+                  this->feedbackCmd.vehicle_inputs.throttle_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "acc_pedal_cmd")
+                  this->feedbackCmd.vehicle_inputs.throttle_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
               }
+              this->feedbackCmd.vehicle_inputs.enable_throttle_cmd = 1;
+              this->feedbackDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "throttle_cmd_count: %d  throttle_cmd: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.throttle_cmd_count, this->feedbackCmd.vehicle_inputs.throttle_cmd, this->feedbackCmd.vehicle_inputs.enable_throttle_cmd);
+              break;
             }
-            break;
-          case 1401:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "accelerator_cmd");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "acc_pedal_cmd_counter")
-                    this->feedbackCmd.vehicle_inputs.throttle_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "acc_pedal_cmd")
-                    this->feedbackCmd.vehicle_inputs.throttle_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  }
-                this->feedbackCmd.vehicle_inputs.enable_throttle_cmd = 1;
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "throttle_cmd_count: %d  throttle_cmd: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.throttle_cmd_count, this->feedbackCmd.vehicle_inputs.throttle_cmd, this->feedbackCmd.vehicle_inputs.enable_throttle_cmd);
-                break;
-              }
-            }            
-            break;
-          case 1402:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "steering_cmd");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                float driver_steering_P_cmd;
-                float driver_steering_I_cmd;
-                float driver_steering_D_cmd;
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "steering_motor_cmd_counter")
-                    this->feedbackCmd.vehicle_inputs.steering_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "steering_motor_ang_cmd")
-                    // TODO ASM: change datatype to int16, to match dbc
-                    this->feedbackCmd.vehicle_inputs.steering_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  // TODO ASM: Read additional signals from CAN message and forward to ASM
-                  if (current_signal.name == "driver_steering_P_cmd")
-                    driver_steering_P_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  if (current_signal.name == "driver_steering_I_cmd")
-                    driver_steering_I_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  if (current_signal.name == "driver_steering_D_cmd")
-                    driver_steering_D_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  }
-                this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ", this->feedbackCmd.vehicle_inputs.steering_cmd_count, this->feedbackCmd.vehicle_inputs.steering_cmd, this->feedbackCmd.vehicle_inputs.enable_steering_cmd, driver_steering_P_cmd, driver_steering_I_cmd, driver_steering_D_cmd);
-                break;
-              }
-            }
-            break;
-          case 1403:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "gear_shift_cmd");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "desired_gear")
-                    this->feedbackCmd.vehicle_inputs.brake_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  }
-                this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "desired_gear: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count);
-                break;
-              }
-            }
-            break;
-          case 1404:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "ct_report");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "track_cond_ack")
-                    // TODO ASM: change datatype to uint16, to match dbc
-                    // TODO: before changing clarify handling of ct_report_2 messages because there is a mismatch in datatypes
-                    this->feedbackCmd.to_raptor.track_cond_ack = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "veh_sig_ack")
-                    this->feedbackCmd.to_raptor.veh_sig_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "ct_state")
-                    // TODO ASM: change datatype to uint16, to match dbc
-                    this->feedbackCmd.to_raptor.ct_state = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "ct_state_rolling_counter")
-                    this->feedbackCmd.to_raptor.rolling_counter = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "veh_num")
-                    this->feedbackCmd.to_raptor.veh_num = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  }
-                this->raptorDataAvailabe = true;
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "track_cond_ack: %d  veh_sig_ack: %d  ct_state: %d  ct_state_rolling_counter: %d  veh_num: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, this->feedbackCmd.to_raptor.ct_state, this->feedbackCmd.to_raptor.rolling_counter, this->feedbackCmd.to_raptor.veh_num);
-                break;
-              }
-            }
-            break;
-          case 1405:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "ct_report_2");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                // TODO ASM: Read additional signals from CAN message and forward to ASM
-                uint8_t marelli_sector_flag_ack;
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "marelli_track_flag_ack")
-                    // TODO: Clarify with IAC what should happen if ct_report and ct_report_2 are sent
-                    this->feedbackCmd.to_raptor.track_cond_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "marelli_vehicle_flag_ack")
-                    this->feedbackCmd.to_raptor.veh_sig_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "marelli_sector_flag_ack")
-                    // TODO ASM: Read additional signals from CAN message and forward to ASM
-                    marelli_sector_flag_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  }
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "marelli_track_flag_ack: %d  marelli_vehicle_flag_ack: %d  marelli_sector_flag_ack: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, marelli_sector_flag_ack);
-                break;
-              }
-            }
-            break;
-          case 1406:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "dash_switches_cmd");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                // TODO ASM: Read additional signals from CAN message and forward to ASM
-                uint8_t driver_traction_aim_switch;
-                uint8_t driver_traction_range_switch;
-                uint8_t drive_steering_gain_cntrl_switch;
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "brake_bias_aim_switch")
-                    this->feedbackCmd.vehicle_inputs.brake_bias_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "push2pass_request")
-                    // TODO ASM: change datatype to uint8, to match dbc
-                    this->feedbackCmd.to_raptor.push2pass_request = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "driver_traction_aim_switch")
-                    driver_traction_aim_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "driver_traction_range_switch")
-                    driver_traction_range_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  if (current_signal.name == "drive_steering_gain_cntrl_switch")
-                    drive_steering_gain_cntrl_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                  }
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d", this->feedbackCmd.vehicle_inputs.brake_bias_switch, this->feedbackCmd.to_raptor.push2pass_request, driver_traction_aim_switch, driver_traction_range_switch, drive_steering_gain_cntrl_switch);
-                break;
-              }
-            }
-            break;
-          case 1450:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "ct_vehicle_acc_feedback");
-            for (const auto& current_message : can_message_info){
-              if (current_message.id == in_frame.can_id){
-                // TODO ASM: Read additional signals from CAN message and forward to ASM
-                float long_ct_vehicle_acc_fbk;
-                float lat_ct_vehicle_acc_fbk;
-                float vertical_ct_vehicle_acc_fbk;
-                for (const auto& current_signal : current_message.signals){
-                  if (current_signal.name == "long_ct_vehicle_acc_fbk")
-                    long_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  if (current_signal.name == "lat_ct_vehicle_acc_fbk")
-                    lat_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  if (current_signal.name == "vertical_ct_vehicle_acc_fbk")
-                    vertical_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                  }
-                if (this->receivedDecodedMessagePrinting)
-                  RCLCPP_INFO(this->get_logger(), "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f", long_ct_vehicle_acc_fbk, lat_ct_vehicle_acc_fbk, vertical_ct_vehicle_acc_fbk);
-                break;
-              }
-            }
-            break;
-          default:
-            if (this->receivedMessagePrinting)
-              RCLCPP_INFO(this->get_logger(), "Message with unknown CAN ID received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
-          this->feedbackDataAvailabe = true;
+          }
+          break;
         }
+        case 1402: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "steering_cmd");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              float driver_steering_P_cmd = 0.0f;
+              float driver_steering_I_cmd = 0.0f;
+              float driver_steering_D_cmd = 0.0f;
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "steering_motor_cmd_counter")
+                  this->feedbackCmd.vehicle_inputs.steering_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "steering_motor_ang_cmd")
+                  this->feedbackCmd.vehicle_inputs.steering_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+                if (current_signal.name == "driver_steering_P_cmd")
+                  driver_steering_P_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+                if (current_signal.name == "driver_steering_I_cmd")
+                  driver_steering_I_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+                if (current_signal.name == "driver_steering_D_cmd")
+                  driver_steering_D_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+              }
+              this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
+              this->feedbackDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ", this->feedbackCmd.vehicle_inputs.steering_cmd_count, this->feedbackCmd.vehicle_inputs.steering_cmd, this->feedbackCmd.vehicle_inputs.enable_steering_cmd, driver_steering_P_cmd, driver_steering_I_cmd, driver_steering_D_cmd);
+              break;
+            }
+          }
+          break;
+        }
+        case 1403: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "gear_shift_cmd");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "desired_gear")
+                  this->feedbackCmd.vehicle_inputs.brake_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+              }
+              this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
+              this->feedbackDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "desired_gear: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count);
+              break;
+            }
+          }
+          break;
+        }
+        case 1404: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "ct_report");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "track_cond_ack")
+                  this->feedbackCmd.to_raptor.track_cond_ack = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "veh_sig_ack")
+                  this->feedbackCmd.to_raptor.veh_sig_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "ct_state")
+                  this->feedbackCmd.to_raptor.ct_state = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "ct_state_rolling_counter")
+                  this->feedbackCmd.to_raptor.rolling_counter = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "veh_num")
+                  this->feedbackCmd.to_raptor.veh_num = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+              }
+              this->raptorDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "track_cond_ack: %d  veh_sig_ack: %d  ct_state: %d  ct_state_rolling_counter: %d  veh_num: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, this->feedbackCmd.to_raptor.ct_state, this->feedbackCmd.to_raptor.rolling_counter, this->feedbackCmd.to_raptor.veh_num);
+              break;
+            }
+          }
+          break;
+        }
+        case 1405: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "ct_report_2");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              uint8_t marelli_sector_flag_ack = 0U;
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "marelli_track_flag_ack")
+                  this->feedbackCmd.to_raptor.track_cond_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "marelli_vehicle_flag_ack")
+                  this->feedbackCmd.to_raptor.veh_sig_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "marelli_sector_flag_ack")
+                  marelli_sector_flag_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+              }
+              this->raptorDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "marelli_track_flag_ack: %d  marelli_vehicle_flag_ack: %d  marelli_sector_flag_ack: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, marelli_sector_flag_ack);
+              break;
+            }
+          }
+          break;
+        }
+        case 1406: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "dash_switches_cmd");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              uint8_t driver_traction_aim_switch = 0U;
+              uint8_t driver_traction_range_switch = 0U;
+              uint8_t drive_steering_gain_cntrl_switch = 0U;
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "brake_bias_aim_switch")
+                  this->feedbackCmd.vehicle_inputs.brake_bias_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "push2pass_request")
+                  this->feedbackCmd.to_raptor.push2pass_request = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "driver_traction_aim_switch")
+                  driver_traction_aim_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "driver_traction_range_switch")
+                  driver_traction_range_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+                if (current_signal.name == "drive_steering_gain_cntrl_switch")
+                  drive_steering_gain_cntrl_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
+              }
+              this->feedbackDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d", this->feedbackCmd.vehicle_inputs.brake_bias_switch, this->feedbackCmd.to_raptor.push2pass_request, driver_traction_aim_switch, driver_traction_range_switch, drive_steering_gain_cntrl_switch);
+              break;
+            }
+          }
+          break;
+        }
+        case 1450: {
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "ct_vehicle_acc_feedback");
+          std::lock_guard<std::mutex> lock(feedback_mutex_);
+          for (const auto& current_message : can_message_info){
+            if (current_message.id == in_frame.can_id){
+              float long_ct_vehicle_acc_fbk = 0.0f;
+              float lat_ct_vehicle_acc_fbk = 0.0f;
+              float vertical_ct_vehicle_acc_fbk = 0.0f;
+              for (const auto& current_signal : current_message.signals){
+                if (current_signal.name == "long_ct_vehicle_acc_fbk")
+                  long_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+                if (current_signal.name == "lat_ct_vehicle_acc_fbk")
+                  lat_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+                if (current_signal.name == "vertical_ct_vehicle_acc_fbk")
+                  vertical_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
+              }
+              this->feedbackDataAvailabe = true;
+              if (this->receivedDecodedMessagePrinting)
+                RCLCPP_INFO(this->get_logger(), "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f", long_ct_vehicle_acc_fbk, lat_ct_vehicle_acc_fbk, vertical_ct_vehicle_acc_fbk);
+              break;
+            }
+          }
+          break;
+        }
+        default:
+          if (this->receivedMessagePrinting)
+            RCLCPP_INFO(this->get_logger(), "Message with unknown CAN ID received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
+          break;
       }
     }
-    close(sock);
+
+    if (!stop_reader_.load() && sock >= 0) {
+      close(sock);
+    }
   }
 
   void AsmSocketCanBridgeNode::can_write(int sock, struct can_frame frame)
@@ -643,7 +685,6 @@ namespace asm_socketcan_bridge {
 
     try
     {
-      std::vector<uint8_t> canbus_raw;
 
       if (this->maneuverStarted == true)
       {
@@ -659,7 +700,7 @@ namespace asm_socketcan_bridge {
         if (this->enableTimeRecord){
           this->timeStartNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
         }
-        this->api.requestCustomData(&canbus_raw);
+        this->api.requestCustomData(&canbus_raw_buffer_);
         if (this->enableTimeRecord){
           this->timeEndNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
           this->measured_vesi_times.push_back((int64_t(this->timeEndNanosec) - int64_t(this->timeStartNanosec)) / 1000000.0);
@@ -678,15 +719,15 @@ namespace asm_socketcan_bridge {
       }
       else
       {
-        this->api.requestCustomData(&canbus_raw);
+        this->api.requestCustomData(&canbus_raw_buffer_);
       }
 
       if (this->enableTimeRecord){
         this->timeStartNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
       }
-      if (canbus_raw.empty()==false)
+      if (!canbus_raw_buffer_.empty())
       {
-        this->canBus = reinterpret_cast<ASMBus*>(canbus_raw.data());
+        this->canBus = reinterpret_cast<ASMBus*>(canbus_raw_buffer_.data());
         if (this->canBus->asm_bus_var.environment.maneuver.maneuverScheduler.info.maneuverState == 3 && this->maneuverStarted == false)
         {
           this->maneuverStarted = true;
@@ -702,7 +743,11 @@ namespace asm_socketcan_bridge {
         this->vesiDataAvailabe = true;
       }
       else 
+      {
+        this->canBus = nullptr;
+        this->vesiDataAvailabe = false;
         RCLCPP_WARN(this->get_logger(), "No Custom Data available.");
+      }
       if (this->enableTimeRecord){
         this->timeEndNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
         this->measured_vesi_times.push_back((int64_t(this->timeEndNanosec) - int64_t(this->timeStartNanosec)) / 1000000.0);
@@ -863,29 +908,33 @@ namespace asm_socketcan_bridge {
   {
     if (this->verbosePrinting)
       RCLCPP_INFO(this->get_logger(), "sendVehicleFeedbackToSimulation");
-    if (this->raptorDataAvailabe == false && this->stackRaptorConnectionWarningSent == false)
     {
-      RCLCPP_WARN(this->get_logger(), "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
-      this->stackRaptorConnectionWarningSent = true;
-    }
-    else if (this->raptorDataAvailabe == true && this->stackRaptorConnectionWarningSent == true)
-    {
-      RCLCPP_INFO(this->get_logger(), "to_raptor message received.");
-      this->stackRaptorConnectionWarningSent = false;
-    }
+      std::lock_guard<std::mutex> lock(feedback_mutex_);
 
-    if (this->feedbackDataAvailabe == false && this->stackFeedbackConnectionWarningSent == false)
-    {
-      RCLCPP_WARN(this->get_logger(), "Did not receive vehicle_inputs message. The vehicle might move in an unexpected way. Check that your stack is alive.");
-      this->stackFeedbackConnectionWarningSent = true;
-    }
-    else if (this->feedbackDataAvailabe == true && this->stackFeedbackConnectionWarningSent == true)
-    {
-      RCLCPP_INFO(this->get_logger(), "vehicle_inputs message received.");
-      this->stackFeedbackConnectionWarningSent = false;
-    }
+      if (this->raptorDataAvailabe == false && this->stackRaptorConnectionWarningSent == false)
+      {
+        RCLCPP_WARN(this->get_logger(), "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
+        this->stackRaptorConnectionWarningSent = true;
+      }
+      else if (this->raptorDataAvailabe == true && this->stackRaptorConnectionWarningSent == true)
+      {
+        RCLCPP_INFO(this->get_logger(), "to_raptor message received.");
+        this->stackRaptorConnectionWarningSent = false;
+      }
 
-    this->api.sendControlData(22222,std::addressof(this->feedbackCmd),sizeof(this->feedbackCmd));
+      if (this->feedbackDataAvailabe == false && this->stackFeedbackConnectionWarningSent == false)
+      {
+        RCLCPP_WARN(this->get_logger(), "Did not receive vehicle_inputs message. The vehicle might move in an unexpected way. Check that your stack is alive.");
+        this->stackFeedbackConnectionWarningSent = true;
+      }
+      else if (this->feedbackDataAvailabe == true && this->stackFeedbackConnectionWarningSent == true)
+      {
+        RCLCPP_INFO(this->get_logger(), "vehicle_inputs message received.");
+        this->stackFeedbackConnectionWarningSent = false;
+      }
+
+      this->api.sendControlData(22222,std::addressof(this->feedbackCmd),sizeof(this->feedbackCmd));
+    }
     if(this->simModeEnabled)
       this->api.increaseSimulationTime(0.001);
     else

@@ -8,6 +8,9 @@
 #include <vector>
 #include <fstream>
 #include <algorithm>
+#include <mutex>
+#include <atomic>
+#include <unistd.h>
 #include <tf2/LinearMath/Quaternion.h>
 
 #include <sys/ioctl.h>
@@ -60,7 +63,7 @@ namespace asm_socketcan_bridge
 
     public:
         AsmSocketCanBridgeNode();
-        ~AsmSocketCanBridgeNode() = default;
+        ~AsmSocketCanBridgeNode() override;
 
     private:
         // Publisher
@@ -180,7 +183,7 @@ namespace asm_socketcan_bridge
         // Custom Structures
         VESIResultData feedbackCmds;
         VESIAPI api;
-        ASMBus *canBus;
+        ASMBus *canBus = nullptr;
         VESIResultData feedbackCmd;
 
         void initializeFeedback();
@@ -225,8 +228,13 @@ namespace asm_socketcan_bridge
         void insertBits(uint8_t* data, Signal signal_information, T physical_value);
         int32_t extractBits(const uint8_t* data, Signal signal_information);
 
-        int can_socket;
+        int can_socket = -1;
         struct can_frame can_out_frame;
         std::vector<Message> can_message_info;
+
+        std::vector<uint8_t> canbus_raw_buffer_;
+        std::mutex feedback_mutex_;
+        std::atomic<bool> stop_reader_{false};
     };
 } // namespace asm_socketcan_bridge
+
