@@ -31,6 +31,7 @@ FROM dspace_bridge_base AS dspace_bridge_dev
 RUN mkdir -p /root/runtime_scripts && \
     mkdir -p /root/record_log
 COPY dSPACE-IAC-simulation-bridge/runtime_scripts /root/runtime_scripts
+RUN chmod +x /root/runtime_scripts/*
 
 WORKDIR /root/runtime_scripts
 

@@ -1,12 +1,12 @@
 networks:
-    mynetwork:
+    dspace_network:
         driver: bridge
         ipam:
             config:
                 - subnet: 10.6.0.0/16
 services:
     ctun:
-        image: dspace/iac_ctun:2025-08-13
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2025-07-25
         container_name: ctun
         ports:
             - 1723:1723/udp
@@ -14,14 +14,14 @@ services:
             - NET_ADMIN
             - SYS_PTRACE
         networks:
-            mynetwork:
+            dspace_network:
                 ipv4_address: 10.6.0.8
         depends_on:
             veos:
                 condition: service_started
 
     veos:
-        image: dspace/combined_simphera_local_executor_246:race_2025-08-13
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/combined_simphera_local_executor_246:race_2025-07-18
         container_name: veos
         cap_add:
             - SYS_PTRACE
@@ -32,32 +32,32 @@ services:
             - USE_SIMPHERA=false
             - DS_START_COMMAND=deactivatepush2pass-start
             - DS_VEOS_REMOTE_CAPABLE=1
-        env_file: "scenario-executor/start_executor_env.list"
+        env_file: "start_executor_env.list"
         shm_size: 256m
         networks:
-            mynetwork:
+            dspace_network:
                 ipv4_address: 10.6.0.2
         depends_on:
             vesi:
                 condition: service_started
 
     vesi:
-        image: dspace/iac_vesi:2025-08-13
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2025-07-25
         container_name: vesi
         restart: always
         tty: true
         networks:
-            mynetwork:
+            dspace_network:
                 ipv4_address: 10.6.0.3
 
     dspace_bridge:
-        # image: dspace/iac_asm_socketcan_bridge:2025-08-13
-        # container_name: asm_socketcan_bridge
-        # image: dspace/iac_asm_ros2_bridge:2025-08-13
+        image: dspace/iac_asm_socketcan_bridge:2025-10-01
+        container_name: asm_socketcan_bridge
+        # image: dspace/iac_asm_ros2_bridge:2025-10-01
         # container_name: asm_ros2_bridge
-        image: dspace/iac_aurelion_ros2_bridge:2025-08-13
-        container_name: aurelion_ros2_bridge
-        # image: dspace/iac_dspace_bridge_dev:2025-08-13
+        # image: dspace/iac_aurelion_ros2_bridge:2025-10-01
+        # container_name: aurelion_ros2_bridge
+        # image: dspace/iac_dspace_bridge_dev:2025-10-01
         # container_name: dspace_bridge_dev
         restart: always
         environment:
@@ -69,6 +69,7 @@ services:
             - RECEIVED_MESSAGE_PRINT=false
             - SENT_MESSAGE_PRINT=false
             - RECEIVED_DECODED_MESSAGE_PRINT=true
+            - CAN_INTERFACE=dsvcan0
             # - PUB_ITV_RACE_CONTROL_DATA=10
             # - PUB_ITV_VEHICLE_DATA=10
             # - PUB_ITV_POWER_TRAIN_DATA=10
@@ -81,33 +82,30 @@ services:
             - SYS_PTRACE
             - NET_RAW
             - NET_ADMIN
-        # volumes:
-            # - ./dspace_bridge_ws/:/root/dspace_bridge_ws/
-            # - ./dSPACE-IAC-simulator-bridge/runtime_scripts:/root/runtime_scripts
         networks:
-            mynetwork:
+            dspace_network:
                 ipv4_address: 10.6.0.4
         depends_on:
             veos:
                 condition: service_healthy
 
     dspace_foxglove_bridge:
-        image: dspace/iac_dspace_bridge_foxglove:2025-08-13
+        image: dspace/iac_dspace_bridge_foxglove:2025-10-01
         container_name: foxglove_bridge
         ports:
             - 8765:8765/tcp
         networks:
-            mynetwork:
+            dspace_network:
                 ipv4_address: 10.6.0.6
 
     uva_example_driving_stack:
-        image: dspace/iac_uva_demo_av_stack:2025-08-13
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2025-07-25
         container_name: driving_stack
         environment:
             - SIM_CLOCK_MODE=false
             - CAR_NUM=78
         networks:
-            mynetwork:
+            dspace_network:
                 ipv4_address: 10.6.0.7
         depends_on:
             veos:
