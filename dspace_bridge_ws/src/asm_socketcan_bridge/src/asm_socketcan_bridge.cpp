@@ -1382,13 +1382,11 @@ namespace asm_socketcan_bridge {
         std::memset(can_out_frame.data, 0, can_out_frame.can_dlc);
         for (const auto& current_signal : current_message.signals){
           if (current_signal.name == "average_steering_ang_fdbk")
-            this->insertBits(can_out_frame.data, current_signal, 0);
+            this->insertBits(can_out_frame.data, current_signal, this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
           if (current_signal.name == "primary_steering_angle_fbk")
-            // TODO: Check the exact priority and meaning of the field and if required add value from ASM
-            this->insertBits(can_out_frame.data, current_signal, 0);
+            this->insertBits(can_out_frame.data, current_signal, this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
           if (current_signal.name == "secondary_steering_ang_fdbk")
-            // TODO: Check the exact priority and meaning of the field and if required add value from ASM
-            this->insertBits(can_out_frame.data, current_signal, 0);
+            this->insertBits(can_out_frame.data, current_signal, this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
         }
         break;
       }
