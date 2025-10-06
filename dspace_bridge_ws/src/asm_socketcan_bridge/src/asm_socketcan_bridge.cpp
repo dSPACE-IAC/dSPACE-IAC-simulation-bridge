@@ -171,8 +171,7 @@ namespace asm_socketcan_bridge {
     RCLCPP_INFO(this->get_logger(), "Trying to connect to ASM at ASM IP with CustomDataInterface set to: true");
 
     bool vesiConnection = false;
-    retries = 0;
-    while (vesiConnection == false)
+    for (int16_t attempt = 1; attempt <= max_retries; ++attempt) {
     {
       try
       {
@@ -182,23 +181,20 @@ namespace asm_socketcan_bridge {
         this->api.connect();
         RCLCPP_INFO(this->get_logger(), "V-ESI connection configured.");
         vesiConnection = true;
+        break;
       }
       catch(const std::exception& e)
       {
         RCLCPP_ERROR(this->get_logger(), "Failed to configure V-ESI: %s", e.what());
-        if (retries++ < max_retries)
-        {
-          RCLCPP_INFO(this->get_logger(), "Failed for the %d time. Try again.", retries);
-          retries++;
-          rclcpp::sleep_for(1s);
-        }
-        else
-        {
-          RCLCPP_FATAL(get_logger(), "Failed to often to initialize V-ESI connection; exiting.");
-          rclcpp::shutdown();
-          return;
-        }
+        RCLCPP_INFO(this->get_logger(), "Failed for the %d time. Try again.", retries);
+        rclcpp::sleep_for(1s);
       }
+    }
+    if (!vesiConnection)
+    {
+      RCLCPP_FATAL(get_logger(), "Failed to often to initialize V-ESI connection; exiting.");
+      rclcpp::shutdown();
+      return;
     }
 
     auto pkg_share = ament_index_cpp::get_package_share_directory("asm_socketcan_bridge");
@@ -224,18 +220,19 @@ namespace asm_socketcan_bridge {
     RCLCPP_INFO(logger, "CAN interface: %s", can_iface.c_str());
 
     // load & retry for CAN1 DBC
-    retries = 0;
-    while (retries++ < max_retries) {
+    bool dbc_found = false;
+    for (int16_t attempt = 1; attempt <= max_retries; ++attempt) {
       if (access(can1_dbc_path.c_str(), F_OK) == 0) {
         RCLCPP_INFO(this->get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
+        dbc_found = true;
         break;
       }
       RCLCPP_WARN(get_logger(),
                   "CAN1 DBC not found (%s), attempt %d/%d; retrying in 1 s",
-                  can1_dbc_path.c_str(), retries, max_retries);
+                  can1_dbc_path.c_str(), attempt, max_retries);
       std::this_thread::sleep_for(std::chrono::seconds(1));
     }
-    if (retries > max_retries) {
+    if (!dbc_found) {
       RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
       rclcpp::shutdown();
       return;
