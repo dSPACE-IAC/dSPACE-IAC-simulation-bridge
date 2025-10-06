@@ -187,6 +187,7 @@ namespace asm_socketcan_bridge
         // Custom Structures
         VESIResultData feedbackCmds;
         VESIAPI api;
+        ASMBus canBusStorage_{};
         ASMBus *canBus = nullptr;
         VESIResultData feedbackCmd;
 

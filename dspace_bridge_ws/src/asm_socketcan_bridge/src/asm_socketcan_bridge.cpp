@@ -1,5 +1,7 @@
 #include "asm_socketcan_bridge.h"
 
+#include <cstring>
+
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -486,6 +488,7 @@ namespace asm_socketcan_bridge {
 
     struct ifreq ifr {};
     strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
     if (ioctl(s, SIOCGIFINDEX, &ifr) < 0) {
       RCLCPP_ERROR(get_logger(),
                   "ioctl(SIOCGIFINDEX) failed for %s: %s",
@@ -840,9 +843,11 @@ namespace asm_socketcan_bridge {
       if (this->enableTimeRecord){
         this->timeStartNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
       }
-      if (!canbus_raw_buffer_.empty())
+      constexpr auto required_canbus_size = sizeof(ASMBus);
+      if (canbus_raw_buffer_.size() >= required_canbus_size)
       {
-        this->canBus = reinterpret_cast<ASMBus*>(canbus_raw_buffer_.data());
+        std::memcpy(&canBusStorage_, canbus_raw_buffer_.data(), required_canbus_size);
+        this->canBus = &canBusStorage_;
         if (this->canBus->asm_bus_var.environment.maneuver.maneuverScheduler.info.maneuverState == 3 && this->maneuverStarted == false)
         {
           this->maneuverStarted = true;
@@ -861,7 +866,17 @@ namespace asm_socketcan_bridge {
       {
         this->canBus = nullptr;
         this->vesiDataAvailabe = false;
-        RCLCPP_WARN(get_logger(), "No Custom Data available.");
+        if (canbus_raw_buffer_.empty())
+        {
+          RCLCPP_WARN(get_logger(), "No Custom Data available.");
+        }
+        else
+        {
+          RCLCPP_ERROR(get_logger(),
+                       "Custom data buffer size (%zu) smaller than ASMBus (%zu); ignoring frame.",
+                       canbus_raw_buffer_.size(),
+                       required_canbus_size);
+        }
       }
       if (this->enableTimeRecord){
         this->timeEndNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
