@@ -9,6 +9,19 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
     echo "[INFO] Running CAN interface setup..."
     echo "[INFO] Checking for privileged mode..."
 
+    PARAMS_FILE="${ASM_SOCKETCAN_PARAMS_FILE:-$(ros2 pkg prefix asm_socketcan_bridge)/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml}"
+
+    if [ ! -f "$PARAMS_FILE" ]; then
+        echo "[ERROR] Parameter file not found: $PARAMS_FILE"
+        exit 1
+    fi
+
+    if [ -z "$CAN_INTERFACE" ]; then
+        CAN_INTERFACE=$(awk -F':\\s*' '/can\\.interface:/ {gsub(/"/, "", $2); print $2; exit}' "$PARAMS_FILE")
+    fi
+    CAN_INTERFACE="${CAN_INTERFACE:-vcan0}"
+    echo "[INFO] Using CAN interface: $CAN_INTERFACE"
+
     # Try to create socket to test for privileges
     ip link add dev $CAN_INTERFACE type vcan 2>/dev/null
 
@@ -25,9 +38,8 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
         exit 1
     fi
 
-    echo "[INFO] Starting AsmSocketcanBridgeNode..."
-    # exec /root/dspace_bridge_ws/install/asm_socketcan_bridge/lib/asm_socketcan_bridge/AsmSocketCanBridgeNode
-    exec ros2 run asm_socketcan_bridge AsmSocketCanBridgeNode --ros-args -p use_sim_time:=$SIM_CLOCK_MODE
+    echo "[INFO] Starting AsmSocketCanBridgeNode via launch file..."
+    exec ros2 launch asm_socketcan_bridge asm_socketcan_bridge.launch.py params_file:="$PARAMS_FILE"
 
 elif  [ $BRIDGE_TYPE = "ASM_ROS2" ]; then
     echo "[INFO] Starting AsmRos2BridgeNode..."

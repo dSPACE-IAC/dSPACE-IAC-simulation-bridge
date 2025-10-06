@@ -1,0 +1,26 @@
+asm_socketcan_bridge_node:
+  ros__parameters:
+    sim_manager.host: "10.6.0.3"
+    sim_manager.port: 12345
+
+    asm.host: "10.6.0.2"
+
+    use_sim_time: false
+
+    publish_intervals.race_control_ms: 10
+    publish_intervals.vehicle_ms: 10
+    publish_intervals.powertrain_ms: 10
+    publish_intervals.ground_truth_ms: 10
+    publish_intervals.vectornav_ms: 10
+    publish_intervals.novatel_ms: 10
+    publish_intervals.foxglove_map_ms: 10
+
+    logging.path: "/root/record_log"
+    logging.cycle_time: false
+    logging.verbose: false
+    logging.received_can_frames: false
+    logging.received_decoded_frames: false
+    logging.sent_can_frames: false
+
+    can.can1_dbc_path: "config/CAN1-INDY-V23.dbc"
+    can.interface: "dsvcan0"

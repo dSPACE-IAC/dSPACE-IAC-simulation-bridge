@@ -60,22 +60,6 @@ services:
         # image: dspace/iac_dspace_bridge_dev:2025-10-01
         # container_name: dspace_bridge_dev
         restart: always
-        environment:
-            - VESI_IP=10.6.0.3
-            - ASM_IP=10.6.0.2
-            - SIMMANAGER_PORT=12345
-            - SIM_CLOCK_MODE=false
-            - VERBOSE_PRINT=false
-            - RECEIVED_MESSAGE_PRINT=false
-            - SENT_MESSAGE_PRINT=false
-            - RECEIVED_DECODED_MESSAGE_PRINT=true
-            - CAN_INTERFACE=dsvcan0
-            # - PUB_ITV_RACE_CONTROL_DATA=10
-            # - PUB_ITV_VEHICLE_DATA=10
-            # - PUB_ITV_POWER_TRAIN_DATA=10
-            # - PUB_ITV_GROUND_TRUTH_ARRAY=10
-            # - PUB_ITV_NOVATEL_DATA=10
-            # - PUB_ITV_FOXGLOVE_MAP=10
         cap_add:
             - SYS_ADMIN
             - DAC_READ_SEARCH

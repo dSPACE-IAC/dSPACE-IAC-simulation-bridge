@@ -92,6 +92,11 @@ install(
   DESTINATION share/${PROJECT_NAME}/config
 )
 
+install(
+  DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
 set_target_properties(
   ${exe_name} PROPERTIES
   INSTALL_RPATH "$ORIGIN/.."

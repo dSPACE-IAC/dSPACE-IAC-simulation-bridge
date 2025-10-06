@@ -3,106 +3,172 @@
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
+namespace {
+
+int sanitize_port_value(int64_t value,
+                        int default_value,
+                        const rclcpp::Logger &logger,
+                        const std::string &description)
+{
+  if (value < 0 || value > std::numeric_limits<int>::max()) {
+    RCLCPP_WARN(logger,
+                "%s out of range (%lld); using default %d",
+                description.c_str(),
+                static_cast<long long>(value),
+                default_value);
+    return default_value;
+  }
+  return static_cast<int>(value);
+}
+
+uint32_t sanitize_interval_value(int64_t value,
+                                 uint32_t default_value,
+                                 const rclcpp::Logger &logger,
+                                 const std::string &description)
+{
+  if (value < 0 || value > std::numeric_limits<uint32_t>::max()) {
+    RCLCPP_WARN(logger,
+                "%s out of range (%lld); using default %u",
+                description.c_str(),
+                static_cast<long long>(value),
+                default_value);
+    return default_value;
+  }
+  return static_cast<uint32_t>(value);
+}
+
+}  // namespace
+
 namespace asm_socketcan_bridge {
 
   AsmSocketCanBridgeNode::AsmSocketCanBridgeNode() : Node("asm_socketcan_bridge_node")
   {
+    const auto logger = this->get_logger();
+
     this->canBus = nullptr;
-    if (std::getenv("VESI_IP")){
-      this->api.setSimManagerHost(std::getenv("VESI_IP"));
-      RCLCPP_INFO(this->get_logger(), "Set SimManager Host IP to: %s", std::getenv("VESI_IP"));
-    } else {
-      this->api.setSimManagerHost("127.0.0.1");
-      RCLCPP_INFO(this->get_logger(), "Set SimManager Host IP to: 127.0.0.1 (default)");
+
+    const auto sim_manager_host =
+      this->declare_parameter<std::string>("sim_manager.host", "127.0.0.1");
+    RCLCPP_INFO(logger, "SimManager Host IP: %s", sim_manager_host.c_str());
+    this->api.setSimManagerHost(sim_manager_host);
+
+    const auto asm_host =
+      this->declare_parameter<std::string>("asm.host", "127.0.0.1");
+    RCLCPP_INFO(logger, "ASM Host IP: %s", asm_host.c_str());
+    this->api.setASMHost(asm_host);
+
+    const int64_t sim_manager_port_param =
+      this->declare_parameter<int64_t>("sim_manager.port", 12345);
+    const int sim_manager_port =
+      sanitize_port_value(sim_manager_port_param, 12345, logger, "SimManager port");
+    RCLCPP_INFO(logger, "SimManager Port: %d", sim_manager_port);
+    this->api.setSimManagerPort(sim_manager_port);
+
+    auto declare_interval = [this, logger](const std::string &name,
+                                           const std::string &description,
+                                           uint32_t default_value) {
+      const int64_t raw_value = this->declare_parameter<int64_t>(
+        name,
+        static_cast<int64_t>(default_value));
+      const auto sanitized =
+        sanitize_interval_value(raw_value, default_value, logger, description);
+      RCLCPP_INFO(logger, "%s: %u ms", description.c_str(), sanitized);
+      return sanitized;
+    };
+
+    RCLCPP_INFO(logger, "Configuring publish intervals (milliseconds)");
+    this->pubIntervalRaceControlData = declare_interval(
+      "publish_intervals.race_control_ms",
+      "Race control publish interval",
+      10U);
+    this->pubIntervalVehicleData = declare_interval(
+      "publish_intervals.vehicle_ms",
+      "Vehicle data publish interval",
+      10U);
+    this->pubIntervalPowertrainData = declare_interval(
+      "publish_intervals.powertrain_ms",
+      "Powertrain data publish interval",
+      10U);
+    this->pubIntervalGroundTruthArray = declare_interval(
+      "publish_intervals.ground_truth_ms",
+      "Ground truth publish interval",
+      10U);
+    this->pubIntervalVectorNavData = declare_interval(
+      "publish_intervals.vectornav_ms",
+      "VectorNav data publish interval",
+      10U);
+    this->pubIntervalNovatelData = declare_interval(
+      "publish_intervals.novatel_ms",
+      "NovAtel data publish interval",
+      10U);
+    this->pubIntervalFoxgloveMap = declare_interval(
+      "publish_intervals.foxglove_map_ms",
+      "Foxglove map publish interval",
+      10U);
+
+    this->pathTimeRecord = this->declare_parameter<std::string>(
+      "logging.path",
+      "/root/record_log");
+    RCLCPP_INFO(logger, "Execution time log path: %s", this->pathTimeRecord.c_str());
+
+    this->enableTimeRecord = this->declare_parameter<bool>(
+      "logging.cycle_time",
+      false);
+    RCLCPP_INFO(logger,
+                "Execution cycle time logging %s",
+                this->enableTimeRecord ? "enabled" : "disabled");
+
+    this->verbosePrinting = this->declare_parameter<bool>(
+      "logging.verbose",
+      false);
+    this->receivedMessagePrinting = this->declare_parameter<bool>(
+      "logging.received_can_frames",
+      false);
+    this->receivedDecodedMessagePrinting = this->declare_parameter<bool>(
+      "logging.received_decoded_frames",
+      false);
+    this->sentMessagePrinting = this->declare_parameter<bool>(
+      "logging.sent_can_frames",
+      false);
+
+    if (this->verbosePrinting) {
+      RCLCPP_INFO(logger, "Verbose printing enabled");
     }
-    
-    if (std::getenv("ASM_IP")){
-      this->api.setASMHost(std::getenv("ASM_IP"));
-      RCLCPP_INFO(this->get_logger(), "Set ASM Host IP to: %s", std::getenv("ASM_IP"));
-    } else {
-      this->api.setASMHost("127.0.0.1");
-      RCLCPP_INFO(this->get_logger(), "Set ASM Host IP to: 127.0.0.1 (default)");
+    if (this->receivedMessagePrinting) {
+      RCLCPP_INFO(logger, "Raw CAN frame logging enabled");
     }
-       
-    if (std::getenv("SIMMANAGER_PORT")){
-      this->api.setSimManagerPort(std::stoi(std::getenv("SIMMANAGER_PORT")));
-      RCLCPP_INFO(this->get_logger(), "Set SimManager Host Port to: %s", std::getenv("SIMMANAGER_PORT"));
-    } else {
-      this->api.setSimManagerPort(12345);
-      RCLCPP_INFO(this->get_logger(), "Set SimManager Host Port to: 12345 (default)");
+    if (this->receivedDecodedMessagePrinting) {
+      RCLCPP_INFO(logger, "Decoded CAN frame logging enabled");
+    }
+    if (this->sentMessagePrinting) {
+      RCLCPP_INFO(logger, "Sent CAN frame logging enabled");
     }
 
-    RCLCPP_INFO(this->get_logger(), "Set Publish intervals");
-    if (std::getenv("PUB_ITV_RACE_CONTROL_DATA")){
-      this->pubIntervalRaceControlData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_RACE_CONTROL_DATA"))));
-    } else {
-      this->pubIntervalRaceControlData = 10;
-    }
-    if (std::getenv("PUB_ITV_VEHICLE_DATA")){
-      this->pubIntervalVehicleData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_VEHICLE_DATA"))));
-    } else {
-      this->pubIntervalVehicleData = 10;
-    }
-    if (std::getenv("PUB_ITV_POWER_TRAIN_DATA")){
-      this->pubIntervalPowertrainData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_POWER_TRAIN_DATA"))));
-    } else {
-      this->pubIntervalPowertrainData = 10;
-    }
-    if (std::getenv("PUB_ITV_GROUND_TRUTH_ARRAY")){
-      this->pubIntervalGroundTruthArray = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_GROUND_TRUTH_ARRAY"))));
-    } else {
-      this->pubIntervalGroundTruthArray = 10;
-    }
-    if (std::getenv("PUB_ITV_VECTOR_NAV_DATA")){
-      this->pubIntervalVectorNavData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_VECTOR_NAV_DATA"))));
-    } else {
-      this->pubIntervalVectorNavData = 10;
-    }
-    if (std::getenv("PUB_ITV_NOVATEL_DATA")){
-      this->pubIntervalNovatelData = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_NOVATEL_DATA"))));
-    } else {
-      this->pubIntervalNovatelData = 10;
-    }
-    if (std::getenv("PUB_ITV_FOXGLOVE_MAP")){
-      this->pubIntervalFoxgloveMap = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_FOXGLOVE_MAP"))));
-    } else {
-      this->pubIntervalFoxgloveMap = 10;
+    const bool use_sim_time = this->declare_parameter<bool>("use_sim_time", false);
+    bool deprecated_sim_clock = this->declare_parameter<bool>(
+      "simulation.use_sim_clock",
+      use_sim_time);
+
+    if (deprecated_sim_clock != use_sim_time) {
+      RCLCPP_WARN(logger,
+                  "Parameter 'simulation.use_sim_clock' (%s) differs from 'use_sim_time' (%s). "
+                  "Using 'use_sim_time' as the single source of truth.",
+                  deprecated_sim_clock ? "true" : "false",
+                  use_sim_time ? "true" : "false");
+      this->set_parameter(rclcpp::Parameter("simulation.use_sim_clock", use_sim_time));
+      deprecated_sim_clock = use_sim_time;
     }
 
-    if (std::getenv("PATH_LOG")){
-      this->pathTimeRecord = std::string(std::getenv("PATH_LOG"));
-    } else {
-      this->pathTimeRecord = "/root/record_log";
-    }
-    if (std::getenv("ENABLE_LOG")){
-      if (std::string(std::getenv("ENABLE_LOG")) == "true"){
-        this->enableTimeRecord = true;
-      } else {
-        this->enableTimeRecord = false;
-      }
-    } else {
-      this->enableTimeRecord = false;
-    }
+    this->simModeEnabled = use_sim_time;
+    RCLCPP_INFO(logger,
+                "Simulation clock mode %s",
+                this->simModeEnabled ? "enabled" : "disabled");
 
     RCLCPP_INFO(this->get_logger(), "Set Custom Data required to: true");
     this->api.setCustomDataRequired(true);
 
     RCLCPP_INFO(this->get_logger(), "Trying to connect to V-ESI at SimManager IP and Port.");
     RCLCPP_INFO(this->get_logger(), "Trying to connect to ASM at ASM IP with CustomDataInterface set to: true");
-
-    if (std::getenv("VERBOSE_PRINT") && (std::string(std::getenv("VERBOSE_PRINT")) == "true"))
-      this->verbosePrinting = true;
-    if (std::getenv("RECEIVED_MESSAGE_PRINT") && (std::string(std::getenv("RECEIVED_MESSAGE_PRINT")) == "true"))
-      this->receivedMessagePrinting = true;
-    if (std::getenv("RECEIVED_DECODED_MESSAGE_PRINT") && (std::string(std::getenv("RECEIVED_DECODED_MESSAGE_PRINT")) == "true"))
-      this->receivedDecodedMessagePrinting = true;
-    if (std::getenv("SENT_MESSAGE_PRINT") && (std::string(std::getenv("SENT_MESSAGE_PRINT")) == "true"))
-      this->sentMessagePrinting = true;
-
-    if (std::getenv("SIM_CLOCK_MODE") && (std::string(std::getenv("SIM_CLOCK_MODE")) == "true"))
-    {
-        this->simModeEnabled = true;
-    }
 
     bool vesiConnection = false;
     retries = 0;
@@ -135,18 +201,27 @@ namespace asm_socketcan_bridge {
       }
     }
 
-    if (std::getenv("PUB_ITV_FOXGLOVE_MAP")){
-      this->pubIntervalFoxgloveMap = static_cast<uint32_t>(std::stoul(std::string(std::getenv("PUB_ITV_FOXGLOVE_MAP"))));
-    } else {
-      this->pubIntervalFoxgloveMap = 10;
-    }
-
     auto pkg_share = ament_index_cpp::get_package_share_directory("asm_socketcan_bridge");
 
-    can1_dbc_path = (std::getenv("CAN1_DBC_PATH") ? std::string(std::getenv("CAN1_DBC_PATH")) : pkg_share + "/config/CAN1-INDY-V23.dbc");
+    can1_dbc_path = this->declare_parameter<std::string>(
+      "can.can1_dbc_path",
+      pkg_share + "/config/CAN1-INDY-V23.dbc");
+    auto dbc_path = std::filesystem::path(can1_dbc_path);
+    if (!dbc_path.is_absolute()) {
+      dbc_path = std::filesystem::path(pkg_share) / dbc_path;
+      can1_dbc_path = dbc_path.lexically_normal().string();
+      RCLCPP_INFO(logger,
+                  "CAN1 DBC path resolved relative to package share: %s",
+                  can1_dbc_path.c_str());
+    } else {
+      RCLCPP_INFO(logger, "CAN1 DBC path: %s", can1_dbc_path.c_str());
+    }
 
-    // determine socketcan interface names (env override / defaults)
-    can_iface = (std::getenv("CAN_INTERFACE") ? std::string(std::getenv("CAN_INTERFACE")) : "vcan0");
+    // determine socketcan interface names
+    can_iface = this->declare_parameter<std::string>(
+      "can.interface",
+      "vcan0");
+    RCLCPP_INFO(logger, "CAN interface: %s", can_iface.c_str());
 
     // load & retry for CAN1 DBC
     retries = 0;
