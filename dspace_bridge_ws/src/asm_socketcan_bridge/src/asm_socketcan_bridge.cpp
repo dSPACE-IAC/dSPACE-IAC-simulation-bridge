@@ -185,19 +185,9 @@ namespace asm_socketcan_bridge {
       RCLCPP_INFO(logger, "Sent CAN frame logging enabled");
     }
 
-    const bool use_sim_time = this->declare_parameter<bool>("use_sim_time", false);
-    bool deprecated_sim_clock = this->declare_parameter<bool>(
-      "simulation.use_sim_clock",
-      use_sim_time);
-
-    if (deprecated_sim_clock != use_sim_time) {
-      RCLCPP_WARN(logger,
-                  "Parameter 'simulation.use_sim_clock' (%s) differs from 'use_sim_time' (%s). "
-                  "Using 'use_sim_time' as the single source of truth.",
-                  deprecated_sim_clock ? "true" : "false",
-                  use_sim_time ? "true" : "false");
-      this->set_parameter(rclcpp::Parameter("simulation.use_sim_clock", use_sim_time));
-      deprecated_sim_clock = use_sim_time;
+    bool use_sim_time = false;
+    if (!this->get_parameter("use_sim_time", use_sim_time)) {
+      use_sim_time = false;
     }
 
     this->simModeEnabled = use_sim_time;
