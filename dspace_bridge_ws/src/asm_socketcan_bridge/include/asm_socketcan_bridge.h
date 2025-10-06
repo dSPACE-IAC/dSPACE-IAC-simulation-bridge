@@ -150,8 +150,7 @@ namespace asm_socketcan_bridge
         bool stackFeedbackConnectionWarningSent = false;
         uint8_t prestart_rolling_counter;
 
-        int16_t max_retries = 1;
-        int16_t retries = 0;
+        int16_t max_retries;
 
         // DBC paths
         std::string can1_dbc_path;

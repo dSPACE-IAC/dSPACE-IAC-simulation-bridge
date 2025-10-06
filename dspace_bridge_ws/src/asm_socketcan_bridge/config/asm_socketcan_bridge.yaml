@@ -24,3 +24,5 @@ asm_socketcan_bridge_node:
 
     can.can1_dbc_path: "config/CAN1-INDY-V23.dbc"
     can.interface: "dsvcan0"
+
+    connection.max_retries: 1

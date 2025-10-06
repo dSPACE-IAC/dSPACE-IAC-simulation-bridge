@@ -37,13 +37,40 @@ uint32_t sanitize_interval_value(int64_t value,
   return static_cast<uint32_t>(value);
 }
 
+int16_t sanitize_retry_value(int64_t value,
+                             int16_t default_value,
+                             const rclcpp::Logger &logger,
+                             const std::string &description)
+{
+  if (value < 0) {
+    RCLCPP_WARN(logger,
+                "%s below zero (%lld); using default %d",
+                description.c_str(),
+                static_cast<long long>(value),
+                default_value);
+    return default_value;
+  }
+
+  if (value > std::numeric_limits<int16_t>::max()) {
+    const auto clamped = std::numeric_limits<int16_t>::max();
+    RCLCPP_WARN(logger,
+                "%s above int16_t max (%lld); clamping to %d",
+                description.c_str(),
+                static_cast<long long>(value),
+                static_cast<int>(clamped));
+    return clamped;
+  }
+
+  return static_cast<int16_t>(value);
+}
+
 }  // namespace
 
 namespace asm_socketcan_bridge {
 
   AsmSocketCanBridgeNode::AsmSocketCanBridgeNode() : Node("asm_socketcan_bridge_node")
   {
-    const auto logger = this->get_logger();
+    const auto logger = get_logger();
 
     this->canBus = nullptr;
 
@@ -118,6 +145,18 @@ namespace asm_socketcan_bridge {
                 "Execution cycle time logging %s",
                 this->enableTimeRecord ? "enabled" : "disabled");
 
+    const int16_t default_max_retries = 1;
+    const int64_t raw_max_retries = this->declare_parameter<int64_t>(
+      "connection.max_retries",
+      static_cast<int64_t>(default_max_retries));
+    max_retries = sanitize_retry_value(raw_max_retries,
+                                       default_max_retries,
+                                       logger,
+                                       "Maximum connection retries");
+    RCLCPP_INFO(logger,
+                "Maximum connection retries: %d",
+                static_cast<int>(max_retries));
+
     this->verbosePrinting = this->declare_parameter<bool>(
       "logging.verbose",
       false);
@@ -164,37 +203,39 @@ namespace asm_socketcan_bridge {
                 "Simulation clock mode %s",
                 this->simModeEnabled ? "enabled" : "disabled");
 
-    RCLCPP_INFO(this->get_logger(), "Set Custom Data required to: true");
+    RCLCPP_INFO(get_logger(), "Set Custom Data required to: true");
     this->api.setCustomDataRequired(true);
 
-    RCLCPP_INFO(this->get_logger(), "Trying to connect to V-ESI at SimManager IP and Port.");
-    RCLCPP_INFO(this->get_logger(), "Trying to connect to ASM at ASM IP with CustomDataInterface set to: true");
+    RCLCPP_INFO(get_logger(), "Trying to connect to V-ESI at SimManager IP and Port.");
+    RCLCPP_INFO(get_logger(), "Trying to connect to ASM at ASM IP with CustomDataInterface set to: true");
 
-    bool vesiConnection = false;
-    for (int16_t attempt = 1; attempt <= max_retries; ++attempt) {
-    {
+    const int16_t vesi_attempts = max_retries > 0 ? max_retries : static_cast<int16_t>(1);
+    for (int16_t attempt = 1; attempt <= vesi_attempts; ++attempt) {
       try
       {
         std::list<uint16_t> providedControlDataIDs{22222};
         api.setProvidedControlDataIDs(providedControlDataIDs, true);
 
         this->api.connect();
-        RCLCPP_INFO(this->get_logger(), "V-ESI connection configured.");
-        vesiConnection = true;
+        RCLCPP_INFO(get_logger(), "V-ESI connection configured.");
         break;
       }
-      catch(const std::exception& e)
+      catch (const std::exception &e)
       {
-        RCLCPP_ERROR(this->get_logger(), "Failed to configure V-ESI: %s", e.what());
-        RCLCPP_INFO(this->get_logger(), "Failed for the %d time. Try again.", retries);
-        rclcpp::sleep_for(1s);
+        RCLCPP_ERROR(get_logger(), "Failed to configure V-ESI: %s", e.what());
+
+        if (attempt == vesi_attempts)
+        {
+          RCLCPP_FATAL(get_logger(), "Failed to often to initialize V-ESI connection; exiting.");
+          rclcpp::shutdown();
+          return;
+        }
+
+        RCLCPP_WARN(get_logger(),
+                    "Failed to configure V-ESI (%s), attempt %d/%d; retrying in 1 s",
+                    e.what(), attempt, vesi_attempts);
+        std::this_thread::sleep_for(std::chrono::seconds(1));
       }
-    }
-    if (!vesiConnection)
-    {
-      RCLCPP_FATAL(get_logger(), "Failed to often to initialize V-ESI connection; exiting.");
-      rclcpp::shutdown();
-      return;
     }
 
     auto pkg_share = ament_index_cpp::get_package_share_directory("asm_socketcan_bridge");
@@ -220,22 +261,24 @@ namespace asm_socketcan_bridge {
     RCLCPP_INFO(logger, "CAN interface: %s", can_iface.c_str());
 
     // load & retry for CAN1 DBC
-    bool dbc_found = false;
-    for (int16_t attempt = 1; attempt <= max_retries; ++attempt) {
+    const int16_t dbc_attempts = max_retries > 0 ? max_retries : static_cast<int16_t>(1);
+    for (int16_t attempt = 1; attempt <= dbc_attempts; ++attempt) {
       if (access(can1_dbc_path.c_str(), F_OK) == 0) {
-        RCLCPP_INFO(this->get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
-        dbc_found = true;
+        RCLCPP_INFO(get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
         break;
       }
+
+      if (attempt == dbc_attempts)
+      {
+        RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
+        rclcpp::shutdown();
+        return;
+      }
+
       RCLCPP_WARN(get_logger(),
                   "CAN1 DBC not found (%s), attempt %d/%d; retrying in 1 s",
-                  can1_dbc_path.c_str(), attempt, max_retries);
+                  can1_dbc_path.c_str(), attempt, dbc_attempts);
       std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-    if (!dbc_found) {
-      RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
-      rclcpp::shutdown();
-      return;
     }
 
     // open both CAN sockets
@@ -247,13 +290,13 @@ namespace asm_socketcan_bridge {
       return;
     }
     can_message_info = initialize_messages();
-    RCLCPP_INFO(this->get_logger(), "can message structure: %u", can_message_info[0].id);
+    RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
     // launch reader thread for CAN1
     reader_thread1 = std::thread([this]() {
       can_reader_loop(this->can_socket, "CAN1");
     });
 
-    RCLCPP_INFO(this->get_logger(), "CAN initialization done");
+    RCLCPP_INFO(get_logger(), "CAN initialization done");
     
     try
     {
@@ -299,7 +342,7 @@ namespace asm_socketcan_bridge {
 
       if(this->simModeEnabled)
       {
-        RCLCPP_INFO(this->get_logger(), "Use Simulated Clock.");
+        RCLCPP_INFO(get_logger(), "Use Simulated Clock.");
         this->simClockTimePublisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", sim_qos);      
         this->simTimeIncrease_ = this->create_subscription<std_msgs::msg::UInt16>("sim_time_increase", sim_qos, std::bind(&AsmSocketCanBridgeNode::simTimeIncreaseCallback, this, _1));
         vesiCallback();
@@ -308,13 +351,13 @@ namespace asm_socketcan_bridge {
       }
       else
       {
-        RCLCPP_INFO(this->get_logger(), "Use Wall Clock (system clock).");
+        RCLCPP_INFO(get_logger(), "Use Wall Clock (system clock).");
         this->updateVESIVehicleInputs_ = this->create_wall_timer(10ms, std::bind(&AsmSocketCanBridgeNode::vesiCallback, this));
       }
     }
     catch(const std::exception& e)
     {
-      RCLCPP_ERROR(this->get_logger(), "Failed to create object for ASM-ROS2-Bridge node: %s", e.what());
+      RCLCPP_ERROR(get_logger(), "Failed to create object for ASM-ROS2-Bridge node: %s", e.what());
     }
 
     if (this->enableTimeRecord)
@@ -326,10 +369,10 @@ namespace asm_socketcan_bridge {
                    << "publishSimulationState" << ","
                    << "VESICallBackInterval" << "\n";
       this->myfile.close();
-      RCLCPP_INFO(this->get_logger(), "Log created under path: %s", this->pathTimeRecord.c_str());
+      RCLCPP_INFO(get_logger(), "Log created under path: %s", this->pathTimeRecord.c_str());
     }
 
-    RCLCPP_INFO(this->get_logger(), "Setup done.");
+    RCLCPP_INFO(get_logger(), "Setup done.");
   }
 
   AsmSocketCanBridgeNode::~AsmSocketCanBridgeNode()
@@ -393,7 +436,7 @@ namespace asm_socketcan_bridge {
   {
     std::lock_guard<std::mutex> lock(feedback_mutex_);
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "initializeFeedback");
+      RCLCPP_INFO(get_logger(), "initializeFeedback");
 
     this->maneuverStarted = false;
     this->feedbackDataAvailabe = false;
@@ -432,10 +475,10 @@ namespace asm_socketcan_bridge {
 
   int AsmSocketCanBridgeNode::open_socket(const std::string &iface)
   {
-    RCLCPP_INFO(this->get_logger(), "Socket open...");
+    RCLCPP_INFO(get_logger(), "Socket open...");
     int s = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (s < 0) {
-      RCLCPP_ERROR(this->get_logger(),
+      RCLCPP_ERROR(get_logger(),
                   "socket() failed for interface %s: %s",
                   iface.c_str(), strerror(errno));
       return -1;
@@ -444,19 +487,19 @@ namespace asm_socketcan_bridge {
     struct ifreq ifr {};
     strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
     if (ioctl(s, SIOCGIFINDEX, &ifr) < 0) {
-      RCLCPP_ERROR(this->get_logger(),
+      RCLCPP_ERROR(get_logger(),
                   "ioctl(SIOCGIFINDEX) failed for %s: %s",
                   iface.c_str(), strerror(errno));
       close(s);
       return -1;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Socket bind...");
+    RCLCPP_INFO(get_logger(), "Socket bind...");
     struct sockaddr_can addr {};
     addr.can_family  = AF_CAN;
     addr.can_ifindex = ifr.ifr_ifindex;
     if (bind(s, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
-      RCLCPP_ERROR(this->get_logger(),
+      RCLCPP_ERROR(get_logger(),
                   "bind() failed for %s: %s",
                   iface.c_str(), strerror(errno));
       close(s);
@@ -468,11 +511,11 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::can_reader_loop(int sock, const std::string &bus_id)
   {
-    RCLCPP_INFO(this->get_logger(), "Can reader loop started for %s", bus_id.c_str());
+    RCLCPP_INFO(get_logger(), "Can reader loop started for %s", bus_id.c_str());
     struct can_frame in_frame{};
     while (rclcpp::ok() && !stop_reader_.load()) {
       if (this->receivedMessagePrinting)
-        RCLCPP_INFO(this->get_logger(), "Can reader loop...");
+        RCLCPP_INFO(get_logger(), "Can reader loop...");
 
       int nbytes = read(sock, &in_frame, sizeof(in_frame));
       if (nbytes < 0) {
@@ -482,7 +525,7 @@ namespace asm_socketcan_bridge {
         if (stop_reader_.load()) {
           break;
         }
-        RCLCPP_ERROR(this->get_logger(), "CAN read failed: %s", strerror(errno));
+        RCLCPP_ERROR(get_logger(), "CAN read failed: %s", strerror(errno));
         continue;
       }
       if (nbytes == 0) {
@@ -490,16 +533,16 @@ namespace asm_socketcan_bridge {
       }
 
       if (this->receivedMessagePrinting)
-        RCLCPP_INFO(this->get_logger(), "received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
+        RCLCPP_INFO(get_logger(), "received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
       for (int i = 0; i < in_frame.can_dlc; i++) {
         if (this->receivedMessagePrinting)
-          RCLCPP_INFO(this->get_logger(), "received: %02X ",in_frame.data[i]);
+          RCLCPP_INFO(get_logger(), "received: %02X ",in_frame.data[i]);
       }
 
       switch (in_frame.can_id) {
         case 1400: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "brake_pressure_cmd");
+            RCLCPP_INFO(get_logger(), "brake_pressure_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -514,7 +557,7 @@ namespace asm_socketcan_bridge {
               this->feedbackCmd.vehicle_inputs.enable_brake_cmd = 1;
               this->feedbackDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "brake_cmd_count: %d  brake_cmd_front: %f  brake_cmd_rear: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count, this->feedbackCmd.vehicle_inputs.brake_cmd_front, this->feedbackCmd.vehicle_inputs.brake_cmd_rear, this->feedbackCmd.vehicle_inputs.enable_brake_cmd);
+                RCLCPP_INFO(get_logger(), "brake_cmd_count: %d  brake_cmd_front: %f  brake_cmd_rear: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count, this->feedbackCmd.vehicle_inputs.brake_cmd_front, this->feedbackCmd.vehicle_inputs.brake_cmd_rear, this->feedbackCmd.vehicle_inputs.enable_brake_cmd);
               break;
             }
           }
@@ -522,7 +565,7 @@ namespace asm_socketcan_bridge {
         }
         case 1401: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "accelerator_cmd");
+            RCLCPP_INFO(get_logger(), "accelerator_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -535,7 +578,7 @@ namespace asm_socketcan_bridge {
               this->feedbackCmd.vehicle_inputs.enable_throttle_cmd = 1;
               this->feedbackDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "throttle_cmd_count: %d  throttle_cmd: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.throttle_cmd_count, this->feedbackCmd.vehicle_inputs.throttle_cmd, this->feedbackCmd.vehicle_inputs.enable_throttle_cmd);
+                RCLCPP_INFO(get_logger(), "throttle_cmd_count: %d  throttle_cmd: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.throttle_cmd_count, this->feedbackCmd.vehicle_inputs.throttle_cmd, this->feedbackCmd.vehicle_inputs.enable_throttle_cmd);
               break;
             }
           }
@@ -543,7 +586,7 @@ namespace asm_socketcan_bridge {
         }
         case 1402: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "steering_cmd");
+            RCLCPP_INFO(get_logger(), "steering_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -565,7 +608,7 @@ namespace asm_socketcan_bridge {
               this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
               this->feedbackDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ", this->feedbackCmd.vehicle_inputs.steering_cmd_count, this->feedbackCmd.vehicle_inputs.steering_cmd, this->feedbackCmd.vehicle_inputs.enable_steering_cmd, driver_steering_P_cmd, driver_steering_I_cmd, driver_steering_D_cmd);
+                RCLCPP_INFO(get_logger(), "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ", this->feedbackCmd.vehicle_inputs.steering_cmd_count, this->feedbackCmd.vehicle_inputs.steering_cmd, this->feedbackCmd.vehicle_inputs.enable_steering_cmd, driver_steering_P_cmd, driver_steering_I_cmd, driver_steering_D_cmd);
               break;
             }
           }
@@ -573,7 +616,7 @@ namespace asm_socketcan_bridge {
         }
         case 1403: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "gear_shift_cmd");
+            RCLCPP_INFO(get_logger(), "gear_shift_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -584,7 +627,7 @@ namespace asm_socketcan_bridge {
               this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
               this->feedbackDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "desired_gear: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count);
+                RCLCPP_INFO(get_logger(), "desired_gear: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count);
               break;
             }
           }
@@ -592,7 +635,7 @@ namespace asm_socketcan_bridge {
         }
         case 1404: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "ct_report");
+            RCLCPP_INFO(get_logger(), "ct_report");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -610,7 +653,7 @@ namespace asm_socketcan_bridge {
               }
               this->raptorDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "track_cond_ack: %d  veh_sig_ack: %d  ct_state: %d  ct_state_rolling_counter: %d  veh_num: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, this->feedbackCmd.to_raptor.ct_state, this->feedbackCmd.to_raptor.rolling_counter, this->feedbackCmd.to_raptor.veh_num);
+                RCLCPP_INFO(get_logger(), "track_cond_ack: %d  veh_sig_ack: %d  ct_state: %d  ct_state_rolling_counter: %d  veh_num: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, this->feedbackCmd.to_raptor.ct_state, this->feedbackCmd.to_raptor.rolling_counter, this->feedbackCmd.to_raptor.veh_num);
               break;
             }
           }
@@ -618,7 +661,7 @@ namespace asm_socketcan_bridge {
         }
         case 1405: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "ct_report_2");
+            RCLCPP_INFO(get_logger(), "ct_report_2");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -633,7 +676,7 @@ namespace asm_socketcan_bridge {
               }
               this->raptorDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "marelli_track_flag_ack: %d  marelli_vehicle_flag_ack: %d  marelli_sector_flag_ack: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, marelli_sector_flag_ack);
+                RCLCPP_INFO(get_logger(), "marelli_track_flag_ack: %d  marelli_vehicle_flag_ack: %d  marelli_sector_flag_ack: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, marelli_sector_flag_ack);
               break;
             }
           }
@@ -641,7 +684,7 @@ namespace asm_socketcan_bridge {
         }
         case 1406: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "dash_switches_cmd");
+            RCLCPP_INFO(get_logger(), "dash_switches_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -662,7 +705,7 @@ namespace asm_socketcan_bridge {
               }
               this->feedbackDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d", this->feedbackCmd.vehicle_inputs.brake_bias_switch, this->feedbackCmd.to_raptor.push2pass_request, driver_traction_aim_switch, driver_traction_range_switch, drive_steering_gain_cntrl_switch);
+                RCLCPP_INFO(get_logger(), "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d", this->feedbackCmd.vehicle_inputs.brake_bias_switch, this->feedbackCmd.to_raptor.push2pass_request, driver_traction_aim_switch, driver_traction_range_switch, drive_steering_gain_cntrl_switch);
               break;
             }
           }
@@ -670,7 +713,7 @@ namespace asm_socketcan_bridge {
         }
         case 1450: {
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "ct_vehicle_acc_feedback");
+            RCLCPP_INFO(get_logger(), "ct_vehicle_acc_feedback");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
           for (const auto& current_message : can_message_info){
             if (current_message.id == in_frame.can_id){
@@ -687,7 +730,7 @@ namespace asm_socketcan_bridge {
               }
               this->feedbackDataAvailabe = true;
               if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(this->get_logger(), "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f", long_ct_vehicle_acc_fbk, lat_ct_vehicle_acc_fbk, vertical_ct_vehicle_acc_fbk);
+                RCLCPP_INFO(get_logger(), "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f", long_ct_vehicle_acc_fbk, lat_ct_vehicle_acc_fbk, vertical_ct_vehicle_acc_fbk);
               break;
             }
           }
@@ -695,7 +738,7 @@ namespace asm_socketcan_bridge {
         }
         default:
           if (this->receivedMessagePrinting)
-            RCLCPP_INFO(this->get_logger(), "Message with unknown CAN ID received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
+            RCLCPP_INFO(get_logger(), "Message with unknown CAN ID received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
           break;
       }
     }
@@ -732,7 +775,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::vesiCallback()
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "vesiCallback");
+      RCLCPP_INFO(get_logger(), "vesiCallback");
 
     if (this->enableTimeRecord)
     {
@@ -803,10 +846,10 @@ namespace asm_socketcan_bridge {
         if (this->canBus->asm_bus_var.environment.maneuver.maneuverScheduler.info.maneuverState == 3 && this->maneuverStarted == false)
         {
           this->maneuverStarted = true;
-          RCLCPP_INFO(this->get_logger(), "Maneuver started. Data will be published.");
+          RCLCPP_INFO(get_logger(), "Maneuver started. Data will be published.");
         } else if (this->canBus->asm_bus_var.environment.maneuver.maneuverScheduler.info.maneuverState != 3 && this->maneuverStarted == true)
         {
-          RCLCPP_INFO(this->get_logger(), "Maneuver stopped. System will be reset.");
+          RCLCPP_INFO(get_logger(), "Maneuver stopped. System will be reset.");
           initializeFeedback();
           std_msgs::msg::Bool resetMsg;
           resetMsg.data = true;
@@ -818,7 +861,7 @@ namespace asm_socketcan_bridge {
       {
         this->canBus = nullptr;
         this->vesiDataAvailabe = false;
-        RCLCPP_WARN(this->get_logger(), "No Custom Data available.");
+        RCLCPP_WARN(get_logger(), "No Custom Data available.");
       }
       if (this->enableTimeRecord){
         this->timeEndNanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
@@ -828,7 +871,7 @@ namespace asm_socketcan_bridge {
     }
     catch(const std::exception& e)
     {
-      RCLCPP_ERROR(this->get_logger(), "Failed to request data from ASM: %s", e.what());
+      RCLCPP_ERROR(get_logger(), "Failed to request data from ASM: %s", e.what());
     }
 
     if (this->enableTimeRecord){
@@ -844,10 +887,10 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishSimulationState()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishSimulationState");
+      RCLCPP_INFO(get_logger(), "publishSimulationState");
 
     if (!this->canBus) {
-      RCLCPP_ERROR(this->get_logger(), "canBus pointer is null.");
+      RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
       return;
     }
 
@@ -887,16 +930,16 @@ namespace asm_socketcan_bridge {
           AsmSocketCanBridgeNode::publishFoxgloveMap(0);
 
         if (this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count > 10) {
-          RCLCPP_ERROR(this->get_logger(), "Unreasonable fellow_count value: %f -> GroundTruthArray and fellows in FoxgloveMap will not be published", this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
+          RCLCPP_ERROR(get_logger(), "Unreasonable fellow_count value: %f -> GroundTruthArray and fellows in FoxgloveMap will not be published", this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
         }
         else if (this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count == 0)
         {
           if (this->verbosePrinting)
-            RCLCPP_INFO(this->get_logger(), "No fellows included in the scenario. No GroundTruthArray will be published and FoxgloveMap will be published only for the ego");
+            RCLCPP_INFO(get_logger(), "No fellows included in the scenario. No GroundTruthArray will be published and FoxgloveMap will be published only for the ego");
         }
         else {
           if (this->verbosePrinting)
-            RCLCPP_INFO(this->get_logger(), "Reasonable fellow_count value: %f", this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
+            RCLCPP_INFO(get_logger(), "Reasonable fellow_count value: %f", this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
           if(this->simTotalMsec % (this->pubIntervalGroundTruthArray) == 0)
             AsmSocketCanBridgeNode::publishGroundTruthArray();
           if(this->simTotalMsec % (this->pubIntervalFoxgloveMap) == 0)
@@ -909,14 +952,14 @@ namespace asm_socketcan_bridge {
     }
     catch(const std::exception& e)
     {
-      RCLCPP_ERROR(this->get_logger(), "Publishing of data failed: %s", e.what());
+      RCLCPP_ERROR(get_logger(), "Publishing of data failed: %s", e.what());
     }
   }
 
   void AsmSocketCanBridgeNode::publishFoxgloveMap(uint8_t fellowID)
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishFoxgloveMap fellowID: %d", fellowID);
+      RCLCPP_INFO(get_logger(), "publishFoxgloveMap fellowID: %d", fellowID);
 
     // Best Pos
     auto foxgloveMap = sensor_msgs::msg::NavSatFix();
@@ -954,7 +997,7 @@ namespace asm_socketcan_bridge {
       }
     else
       {
-        RCLCPP_ERROR(this->get_logger(), "Unknown Fellow ID. Only three Fellows are supported.");
+        RCLCPP_ERROR(get_logger(), "Unknown Fellow ID. Only three Fellows are supported.");
       }
     
 
@@ -979,29 +1022,29 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::sendVehicleFeedbackToSimulation()
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "sendVehicleFeedbackToSimulation");
+      RCLCPP_INFO(get_logger(), "sendVehicleFeedbackToSimulation");
     {
       std::lock_guard<std::mutex> lock(feedback_mutex_);
 
       if (this->raptorDataAvailabe == false && this->stackRaptorConnectionWarningSent == false)
       {
-        RCLCPP_WARN(this->get_logger(), "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
+        RCLCPP_WARN(get_logger(), "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
         this->stackRaptorConnectionWarningSent = true;
       }
       else if (this->raptorDataAvailabe == true && this->stackRaptorConnectionWarningSent == true)
       {
-        RCLCPP_INFO(this->get_logger(), "to_raptor message received.");
+        RCLCPP_INFO(get_logger(), "to_raptor message received.");
         this->stackRaptorConnectionWarningSent = false;
       }
 
       if (this->feedbackDataAvailabe == false && this->stackFeedbackConnectionWarningSent == false)
       {
-        RCLCPP_WARN(this->get_logger(), "Did not receive vehicle_inputs message. The vehicle might move in an unexpected way. Check that your stack is alive.");
+        RCLCPP_WARN(get_logger(), "Did not receive vehicle_inputs message. The vehicle might move in an unexpected way. Check that your stack is alive.");
         this->stackFeedbackConnectionWarningSent = true;
       }
       else if (this->feedbackDataAvailabe == true && this->stackFeedbackConnectionWarningSent == true)
       {
-        RCLCPP_INFO(this->get_logger(), "vehicle_inputs message received.");
+        RCLCPP_INFO(get_logger(), "vehicle_inputs message received.");
         this->stackFeedbackConnectionWarningSent = false;
       }
 
@@ -1016,7 +1059,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::switchRaceControlSourceCallback(const std_msgs::msg::Bool & msg)
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "switchRaceControlSourceCallback");
+      RCLCPP_INFO(get_logger(), "switchRaceControlSourceCallback");
 
     this->useCustomRaceControl = msg.data;
   }
@@ -1024,7 +1067,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishBaseToCarSummary()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishBaseToCarSummary");
+      RCLCPP_INFO(get_logger(), "publishBaseToCarSummary");
     
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "publishBaseToCarSummary"){
@@ -1051,10 +1094,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::base_to_car_summary");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::base_to_car_summary");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1062,7 +1105,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishMarelliReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishMarelliReport");
+      RCLCPP_INFO(get_logger(), "publishMarelliReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "marelli_report_1"){
@@ -1089,10 +1132,10 @@ namespace asm_socketcan_bridge {
     }
 
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::marelli_report_1");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::marelli_report_1");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1114,10 +1157,10 @@ namespace asm_socketcan_bridge {
     }
 
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::marelli_report_2");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::marelli_report_2");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1125,7 +1168,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishMiscRCReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishMarelliReport");
+      RCLCPP_INFO(get_logger(), "publishMarelliReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "base_to_car_timing"){
@@ -1144,10 +1187,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::base_to_car_timing");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::base_to_car_timing");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1180,10 +1223,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::rest_of_field");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::rest_of_field");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1191,7 +1234,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishPtReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishPtReport");
+      RCLCPP_INFO(get_logger(), "publishPtReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "pt_report_1"){
@@ -1218,10 +1261,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::pt_report_1");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::pt_report_1");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1246,10 +1289,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::pt_report_2");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::pt_report_2");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1278,10 +1321,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::pt_report_3");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::pt_report_3");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1289,7 +1332,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishSteeringReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishSteeringReport");
+      RCLCPP_INFO(get_logger(), "publishSteeringReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "steering_report"){
@@ -1310,10 +1353,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::steering_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::steering_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1336,11 +1379,11 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::steering_report_extd");
+      RCLCPP_INFO(get_logger(), "can_out::steering_report_extd");
 
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1375,11 +1418,11 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::steering_report_extd_2");
+      RCLCPP_INFO(get_logger(), "can_out::steering_report_extd_2");
 
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1402,11 +1445,11 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::steering_report_extd_3");
+      RCLCPP_INFO(get_logger(), "can_out::steering_report_extd_3");
 
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1414,7 +1457,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishBrakeReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishBrakeReport");
+      RCLCPP_INFO(get_logger(), "publishBrakeReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "brake_pressure_report"){
@@ -1433,10 +1476,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::brake_pressure_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::brake_pressure_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1463,11 +1506,11 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::brake_report_extd");
+      RCLCPP_INFO(get_logger(), "can_out::brake_report_extd");
 
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1488,11 +1531,11 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::brake_report_extd_2");
+      RCLCPP_INFO(get_logger(), "can_out::brake_report_extd_2");
 
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1500,7 +1543,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishAcceleratorReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishAcceleratorReport");
+      RCLCPP_INFO(get_logger(), "publishAcceleratorReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "accelerator_report") {
@@ -1517,10 +1560,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::accelerator_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::accelerator_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -1528,7 +1571,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishWheelReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishWheelReport");
+      RCLCPP_INFO(get_logger(), "publishWheelReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "Tire_Temp_RR_1") {
@@ -1553,10 +1596,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RR_1");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RR_1");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1582,10 +1625,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RR_2");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RR_2");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1611,10 +1654,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RR_3");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RR_3");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1640,10 +1683,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RR_4");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RR_4");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1670,10 +1713,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RL_1");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RL_1");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1699,10 +1742,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RL_2");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RL_2");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1728,10 +1771,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RL_3");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RL_3");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1757,10 +1800,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_RL_4");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_RL_4");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1787,10 +1830,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FR_1");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FR_1");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1816,10 +1859,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FR_2");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FR_2");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1845,10 +1888,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FR_3");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FR_3");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1874,10 +1917,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FR_4");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FR_4");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -1904,10 +1947,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FL_1");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FL_1");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1933,10 +1976,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FL_2");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FL_2");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1962,10 +2005,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FL_3");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FL_3");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -1991,10 +2034,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Temp_FL_4");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Temp_FL_4");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -2013,10 +2056,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Pressure_RR");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Pressure_RR");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -2034,10 +2077,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Pressure_RL");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Pressure_RL");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -2055,10 +2098,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Pressure_FR");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Pressure_FR");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
     for (const auto& current_message : can_message_info) {
@@ -2076,10 +2119,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::Tire_Pressure_FL");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::Tire_Pressure_FL");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -2106,10 +2149,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::wheel_strain_gauge");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::wheel_strain_gauge");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -2132,10 +2175,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::wheel_potentiometer_data");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::wheel_potentiometer_data");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
 
@@ -2158,10 +2201,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::wheel_speed_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::wheel_speed_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -2169,7 +2212,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishMiscReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishMiscReport");
+      RCLCPP_INFO(get_logger(), "publishMiscReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "misc_report") {
@@ -2192,10 +2235,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::misc_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::misc_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -2203,7 +2246,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishDiagnosticReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishDiagnosticReport");
+      RCLCPP_INFO(get_logger(), "publishDiagnosticReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "diagnostic_report") {
@@ -2267,10 +2310,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::diagnostic_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::diagnostic_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -2278,7 +2321,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishVectorIndependentSigMsg()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishVectorNav");
+      RCLCPP_INFO(get_logger(), "publishVectorNav");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "VECTOR__INDEPENDENT_SIG_MSG") {
@@ -2325,10 +2368,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::VECTOR__INDEPENDENT_SIG_MSG");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::VECTOR__INDEPENDENT_SIG_MSG");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -2336,7 +2379,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishNovatelReport()
   {
     if (this->sentMessagePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishNovatelReport");
+      RCLCPP_INFO(get_logger(), "publishNovatelReport");
 
     for (const auto& current_message : can_message_info) {
       if (current_message.name == "novatel_report") {
@@ -2353,10 +2396,10 @@ namespace asm_socketcan_bridge {
       }
     }
     if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "can_out::novatel_report");
-      RCLCPP_INFO(this->get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
+      RCLCPP_INFO(get_logger(), "can_out::novatel_report");
+      RCLCPP_INFO(get_logger(), "send: 0x%03X [%d] ",can_out_frame.can_id, can_out_frame.can_dlc);
       for (int i = 0; i < can_out_frame.can_dlc; i++)
-        RCLCPP_INFO(this->get_logger(), "send: %02X ",can_out_frame.data[i]);
+        RCLCPP_INFO(get_logger(), "send: %02X ",can_out_frame.data[i]);
     }
     can_write(this->can_socket, can_out_frame);
   }
@@ -2364,7 +2407,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishVectorNavData()
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishVectorNavData");
+      RCLCPP_INFO(get_logger(), "publishVectorNavData");
 
     auto attitudeGroup = vectornav_msgs::msg::AttitudeGroup();
     auto commonGroup = vectornav_msgs::msg::CommonGroup();
@@ -2591,7 +2634,7 @@ namespace asm_socketcan_bridge {
       }
       else
       {
-        RCLCPP_ERROR(this->get_logger(), "Only two Vectornav GPS antennas are supported.");
+        RCLCPP_ERROR(get_logger(), "Only two Vectornav GPS antennas are supported.");
       }
 
       gpsGroup.header.frame_id = "world";
@@ -2756,7 +2799,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishNovatelData(uint8_t novatelID)
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishNovatelData");
+      RCLCPP_INFO(get_logger(), "publishNovatelData");
     
     nova_tel_pwr_pak currentNovatel;
     
@@ -2786,7 +2829,7 @@ namespace asm_socketcan_bridge {
     }
     else
     {
-      RCLCPP_ERROR(this->get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
     }
     
     // Best Pos
@@ -3057,7 +3100,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publishGroundTruthArray()
   {
     if (this->verbosePrinting)
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray");
 
     auto groundTruthArray = autonoma_msgs::msg::GroundTruthArray();
 
@@ -3075,17 +3118,17 @@ namespace asm_socketcan_bridge {
       groundTruthArray.header.stamp.sec = std::chrono::time_point_cast<std::chrono::seconds>(std::chrono::system_clock::now()).time_since_epoch().count();
       groundTruthArray.header.stamp.nanosec = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - (groundTruthArray.header.stamp.sec*1000000000);
     }
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray1");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray1");
 
     bool groundTruthArrayFilled = false;
 
     for (size_t vehicleID = 0; vehicleID < this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count; vehicleID++)
     {
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray2");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray2");
       groundTruthArray.vehicles[vehicleID].header.frame_id = groundTruthArray.header.frame_id;
       groundTruthArray.vehicles[vehicleID].header.stamp.sec = groundTruthArray.header.stamp.sec;
       groundTruthArray.vehicles[vehicleID].header.stamp.nanosec = groundTruthArray.header.stamp.nanosec;
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray3");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray3");
 
       groundTruthArray.vehicles[vehicleID].car_num = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.car_num[vehicleID];
       
@@ -3096,19 +3139,19 @@ namespace asm_socketcan_bridge {
       groundTruthArray.vehicles[vehicleID].vx = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.vx[vehicleID];
       groundTruthArray.vehicles[vehicleID].vy = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.vy[vehicleID];
       groundTruthArray.vehicles[vehicleID].vz = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.vz[vehicleID];
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray4");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray4");
       
       groundTruthArray.vehicles[vehicleID].yaw = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.yaw[vehicleID];
       groundTruthArray.vehicles[vehicleID].pitch = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.pitch[vehicleID];
       groundTruthArray.vehicles[vehicleID].roll = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.roll[vehicleID];
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray5");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray5");
       
       groundTruthArray.vehicles[vehicleID].del_x = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.del_x[vehicleID];
       groundTruthArray.vehicles[vehicleID].del_y = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.del_y[vehicleID];
       groundTruthArray.vehicles[vehicleID].del_z = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.del_z[vehicleID];
       groundTruthArrayFilled = true;
     }
-      RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray6");
+      RCLCPP_INFO(get_logger(), "publishGroundTruthArray6");
     
     if (!groundTruthArrayFilled)
     {
@@ -3130,9 +3173,9 @@ namespace asm_socketcan_bridge {
       groundTruthArray.vehicles[0].del_z = 0;
     }
     
-    RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray7");
+    RCLCPP_INFO(get_logger(), "publishGroundTruthArray7");
     this->groundTruthArrayPublisher_->publish(groundTruthArray);
-    RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray8");
+    RCLCPP_INFO(get_logger(), "publishGroundTruthArray8");
   }
 
 } // namespace asm_socketcan_bridge
