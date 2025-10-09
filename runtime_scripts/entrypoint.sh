@@ -25,7 +25,11 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
             exit
         }' "$PARAMS_FILE")
     fi
-    CAN_INTERFACE="${CAN_INTERFACE:-vcan0}"
+
+    if [ -z "$CAN_INTERFACE" ]; then
+        echo "[ERROR] No CAN interface configured. Set can.interface in: $PARAMS_FILE"
+        exit 1
+    fi
     echo "[INFO] Using CAN interface: $CAN_INTERFACE"
 
     # Try to create socket to test for privileges

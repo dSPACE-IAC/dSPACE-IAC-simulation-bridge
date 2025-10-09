@@ -7,64 +7,64 @@ using namespace std::chrono_literals;
 
 namespace {
 
-int sanitize_port_value(int64_t value,
-                        int default_value,
-                        const rclcpp::Logger &logger,
-                        const std::string &description)
-{
-  if (value < 0 || value > std::numeric_limits<int>::max()) {
-    RCLCPP_WARN(logger,
-                "%s out of range (%lld); using default %d",
-                description.c_str(),
-                static_cast<long long>(value),
-                default_value);
-    return default_value;
-  }
-  return static_cast<int>(value);
-}
-
-uint32_t sanitize_interval_value(int64_t value,
-                                 uint32_t default_value,
-                                 const rclcpp::Logger &logger,
-                                 const std::string &description)
-{
-  if (value < 0 || value > std::numeric_limits<uint32_t>::max()) {
-    RCLCPP_WARN(logger,
-                "%s out of range (%lld); using default %u",
-                description.c_str(),
-                static_cast<long long>(value),
-                default_value);
-    return default_value;
-  }
-  return static_cast<uint32_t>(value);
-}
-
-int16_t sanitize_retry_value(int64_t value,
-                             int16_t default_value,
-                             const rclcpp::Logger &logger,
-                             const std::string &description)
-{
-  if (value < 0) {
-    RCLCPP_WARN(logger,
-                "%s below zero (%lld); using default %d",
-                description.c_str(),
-                static_cast<long long>(value),
-                default_value);
-    return default_value;
+  int sanitize_port_value(int64_t value,
+                          int default_value,
+                          const rclcpp::Logger &logger,
+                          const std::string &description)
+  {
+    if (value < 0 || value > std::numeric_limits<int>::max()) {
+      RCLCPP_WARN(logger,
+                  "%s out of range (%lld); using default %d",
+                  description.c_str(),
+                  static_cast<long long>(value),
+                  default_value);
+      return default_value;
+    }
+    return static_cast<int>(value);
   }
 
-  if (value > std::numeric_limits<int16_t>::max()) {
-    const auto clamped = std::numeric_limits<int16_t>::max();
-    RCLCPP_WARN(logger,
-                "%s above int16_t max (%lld); clamping to %d",
-                description.c_str(),
-                static_cast<long long>(value),
-                static_cast<int>(clamped));
-    return clamped;
+  uint32_t sanitize_interval_value(int64_t value,
+                                  uint32_t default_value,
+                                  const rclcpp::Logger &logger,
+                                  const std::string &description)
+  {
+    if (value < 0 || value > std::numeric_limits<uint32_t>::max()) {
+      RCLCPP_WARN(logger,
+                  "%s out of range (%lld); using default %u",
+                  description.c_str(),
+                  static_cast<long long>(value),
+                  default_value);
+      return default_value;
+    }
+    return static_cast<uint32_t>(value);
   }
 
-  return static_cast<int16_t>(value);
-}
+  int16_t sanitize_retry_value(int64_t value,
+                              int16_t default_value,
+                              const rclcpp::Logger &logger,
+                              const std::string &description)
+  {
+    if (value < 0) {
+      RCLCPP_WARN(logger,
+                  "%s below zero (%lld); using default %d",
+                  description.c_str(),
+                  static_cast<long long>(value),
+                  default_value);
+      return default_value;
+    }
+
+    if (value > std::numeric_limits<int16_t>::max()) {
+      const auto clamped = std::numeric_limits<int16_t>::max();
+      RCLCPP_WARN(logger,
+                  "%s above int16_t max (%lld); clamping to %d",
+                  description.c_str(),
+                  static_cast<long long>(value),
+                  static_cast<int>(clamped));
+      return clamped;
+    }
+
+    return static_cast<int16_t>(value);
+  }
 
 }  // namespace
 
@@ -380,29 +380,32 @@ namespace asm_socketcan_bridge {
   }
 
   template <typename T>
-  void AsmSocketCanBridgeNode::insertBits(uint8_t* data, Signal signal_information, T physical_value)
+  void AsmSocketCanBridgeNode::insertBits(uint8_t* data,
+                                          Signal signal_information,
+                                          T physical_value)
   {
-      double scaled_value = (static_cast<double>(physical_value) - signal_information.offset) / signal_information.factor;
-      uint32_t raw_value = static_cast<uint32_t>(std::round(scaled_value));
+    double scaled_value = (static_cast<double>(physical_value) - signal_information.offset) / signal_information.factor;
+    uint32_t raw_value = static_cast<uint32_t>(std::round(scaled_value));
 
-      if (signal_information.is_signed) {
-          raw_value &= ((1u << signal_information.length) - 1);
-      }
+    if (signal_information.is_signed) {
+        raw_value &= ((1u << signal_information.length) - 1);
+    }
 
-      for (int i = 0; i < signal_information.length; ++i) {
-          int bitIndex = signal_information.endian ? (signal_information.start_bit + i)
-                                                  : (signal_information.start_bit - i);
-          int byteIndex = bitIndex / 8;
-          int bitInByte = signal_information.endian ? (bitIndex % 8)
-                                                    : (7 - (bitIndex % 8));
+    for (int i = 0; i < signal_information.length; ++i) {
+        int bitIndex = signal_information.endian ? (signal_information.start_bit + i)
+                                                : (signal_information.start_bit - i);
+        int byteIndex = bitIndex / 8;
+        int bitInByte = signal_information.endian ? (bitIndex % 8)
+                                                  : (7 - (bitIndex % 8));
 
-          uint8_t bitVal = (raw_value >> i) & 0x01;
-          data[byteIndex] &= ~(1 << bitInByte);       // Clear bit
-          data[byteIndex] |= (bitVal << bitInByte);   // Set bit
-      }
+        uint8_t bitVal = (raw_value >> i) & 0x01;
+        data[byteIndex] &= ~(1 << bitInByte);       // Clear bit
+        data[byteIndex] |= (bitVal << bitInByte);   // Set bit
+    }
   }
 
-  int32_t AsmSocketCanBridgeNode::extractBits(const uint8_t* data, Signal signal_information)
+  int32_t AsmSocketCanBridgeNode::extractBits(const uint8_t* data,
+                                              Signal signal_information)
   {
     int32_t result = 0;
     for (int i = 0; i < signal_information.length; ++i) {
@@ -502,7 +505,8 @@ namespace asm_socketcan_bridge {
     return s;
   }
 
-  void AsmSocketCanBridgeNode::can_reader_loop(int sock, const std::string &bus_id)
+  void AsmSocketCanBridgeNode::can_reader_loop(int sock,
+                                               const std::string &bus_id)
   {
     RCLCPP_INFO(get_logger(), "Can reader loop started for %s", bus_id.c_str());
     struct can_frame in_frame{};
@@ -741,7 +745,8 @@ namespace asm_socketcan_bridge {
     }
   }
 
-  void AsmSocketCanBridgeNode::can_write(int sock, struct can_frame frame)
+  void AsmSocketCanBridgeNode::can_write(int sock, 
+                                         struct can_frame frame)
   {
     if (write(sock, &frame, sizeof(struct can_frame)) != sizeof(frame)) {
       perror("Write");
@@ -758,11 +763,11 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::simTimeIncreaseCallback(const std_msgs::msg::UInt16 & msg)
   {
-      for (uint16_t timeIncreaseStep = 0; timeIncreaseStep <  msg.data; timeIncreaseStep++)
-      {
-        vesiCallback();
-      }
-      simClockTimeCallback();
+    for (uint16_t timeIncreaseStep = 0; timeIncreaseStep <  msg.data; timeIncreaseStep++)
+    {
+      vesiCallback();
+    }
+    simClockTimeCallback();
   }
 
   void AsmSocketCanBridgeNode::vesiCallback()
