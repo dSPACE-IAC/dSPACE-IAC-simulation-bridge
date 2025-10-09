@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <cstring>
 #include <iostream>
 #include <signal.h>
 #include <stdio.h>
@@ -16,6 +17,9 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <optional>
+#include <string_view>
+#include <unordered_map>
 
 #include <tf2/LinearMath/Quaternion.h>
 
@@ -146,7 +150,6 @@ namespace asm_socketcan_bridge
 
         bool simModeEnabled = false;
         bool numberWarningSent = false;
-        bool stackRaptorConnectionWarningSent = false;
         bool stackFeedbackConnectionWarningSent = false;
         uint8_t prestart_rolling_counter;
 
@@ -231,11 +234,19 @@ namespace asm_socketcan_bridge
         void can_write(int sock, struct can_frame frame);
         template <typename T>
         void insertBits(uint8_t* data, Signal signal_information, T physical_value);
-        int32_t extractBits(const uint8_t* data, Signal signal_information);
+        int32_t extractBits(const uint8_t* data, Signal signal_information) const;
 
         int can_socket = -1;
         struct can_frame can_out_frame;
         std::vector<Message> can_message_info;
+        using SignalLookupMap = std::unordered_map<std::string_view, const Signal*>;
+        std::unordered_map<uint32_t, const Message*> message_lookup_;
+        std::unordered_map<uint32_t, SignalLookupMap> message_signal_lookup_;
+        void buildMessageLookup();
+        const Message* findMessage(uint32_t message_id) const;
+        const Signal* findSignal(uint32_t message_id, std::string_view signal_name) const;
+        const SignalLookupMap* findSignalLookup(uint32_t message_id) const;
+        std::optional<double> extractSignalScaled(uint32_t message_id, std::string_view signal_name, const uint8_t* data) const;
 
         std::vector<uint8_t> canbus_raw_buffer_;
         std::mutex feedback_mutex_;

@@ -1,7 +1,5 @@
 #include "asm_socketcan_bridge.h"
 
-#include <cstring>
-
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -282,6 +280,7 @@ namespace asm_socketcan_bridge {
       return;
     }
     can_message_info = initialize_messages();
+    buildMessageLookup();
     RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
     // launch reader thread for CAN1
     reader_thread1 = std::thread([this]() {
@@ -405,7 +404,7 @@ namespace asm_socketcan_bridge {
   }
 
   int32_t AsmSocketCanBridgeNode::extractBits(const uint8_t* data,
-                                              Signal signal_information)
+                                              Signal signal_information) const
   {
     int32_t result = 0;
     for (int i = 0; i < signal_information.length; ++i) {
@@ -536,27 +535,51 @@ namespace asm_socketcan_bridge {
           RCLCPP_INFO(get_logger(), "received: %02X ",in_frame.data[i]);
       }
 
+      const auto warn_missing_metadata = [&](uint32_t message_id) {
+        if (this->verbosePrinting) {
+          RCLCPP_WARN(get_logger(),
+                      "No metadata for CAN ID %u; dropping frame.",
+                      message_id);
+        } else {
+          RCLCPP_WARN_ONCE(get_logger(),
+                           "No metadata for CAN ID %u; dropping frame.",
+                           message_id);
+        }
+      };
+
       switch (in_frame.can_id) {
         case 1400: {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "brake_pressure_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "brk_pressure_cmd_counter")
-                  this->feedbackCmd.vehicle_inputs.brake_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "F_brake_pressure_cmd")
-                  this->feedbackCmd.vehicle_inputs.brake_cmd_front = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "R_brake_pressure_cmd")
-                  this->feedbackCmd.vehicle_inputs.brake_cmd_rear = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-              }
-              this->feedbackCmd.vehicle_inputs.enable_brake_cmd = 1;
-              this->feedbackDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "brake_cmd_count: %d  brake_cmd_front: %f  brake_cmd_rear: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count, this->feedbackCmd.vehicle_inputs.brake_cmd_front, this->feedbackCmd.vehicle_inputs.brake_cmd_rear, this->feedbackCmd.vehicle_inputs.enable_brake_cmd);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("brk_pressure_cmd_counter")) {
+            this->feedbackCmd.vehicle_inputs.brake_cmd_count =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("F_brake_pressure_cmd")) {
+            this->feedbackCmd.vehicle_inputs.brake_cmd_front =
+              static_cast<uint16_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("R_brake_pressure_cmd")) {
+            this->feedbackCmd.vehicle_inputs.brake_cmd_rear =
+              static_cast<uint16_t>(std::floor(*value));
+          }
+          this->feedbackCmd.vehicle_inputs.enable_brake_cmd = 1;
+          this->feedbackDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "brake_cmd_count: %d  brake_cmd_front: %f  brake_cmd_rear: %f  enable_brake_cmd: %d",
+                        this->feedbackCmd.vehicle_inputs.brake_cmd_count,
+                        static_cast<double>(this->feedbackCmd.vehicle_inputs.brake_cmd_front),
+                        static_cast<double>(this->feedbackCmd.vehicle_inputs.brake_cmd_rear),
+                        this->feedbackCmd.vehicle_inputs.enable_brake_cmd);
           }
           break;
         }
@@ -564,20 +587,29 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "accelerator_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "acc_pedal_cmd_counter")
-                  this->feedbackCmd.vehicle_inputs.throttle_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "acc_pedal_cmd")
-                  this->feedbackCmd.vehicle_inputs.throttle_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-              }
-              this->feedbackCmd.vehicle_inputs.enable_throttle_cmd = 1;
-              this->feedbackDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "throttle_cmd_count: %d  throttle_cmd: %f  enable_brake_cmd: %d", this->feedbackCmd.vehicle_inputs.throttle_cmd_count, this->feedbackCmd.vehicle_inputs.throttle_cmd, this->feedbackCmd.vehicle_inputs.enable_throttle_cmd);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("acc_pedal_cmd_counter")) {
+            this->feedbackCmd.vehicle_inputs.throttle_cmd_count =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("acc_pedal_cmd")) {
+            this->feedbackCmd.vehicle_inputs.throttle_cmd =
+              static_cast<float>(*value);
+          }
+          this->feedbackCmd.vehicle_inputs.enable_throttle_cmd = 1;
+          this->feedbackDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "throttle_cmd_count: %d  throttle_cmd: %f  enable_brake_cmd: %d",
+                        this->feedbackCmd.vehicle_inputs.throttle_cmd_count,
+                        static_cast<double>(this->feedbackCmd.vehicle_inputs.throttle_cmd),
+                        this->feedbackCmd.vehicle_inputs.enable_throttle_cmd);
           }
           break;
         }
@@ -585,29 +617,44 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "steering_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              float driver_steering_P_cmd = 0.0f;
-              float driver_steering_I_cmd = 0.0f;
-              float driver_steering_D_cmd = 0.0f;
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "steering_motor_cmd_counter")
-                  this->feedbackCmd.vehicle_inputs.steering_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "steering_motor_ang_cmd")
-                  this->feedbackCmd.vehicle_inputs.steering_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                if (current_signal.name == "driver_steering_P_cmd")
-                  driver_steering_P_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                if (current_signal.name == "driver_steering_I_cmd")
-                  driver_steering_I_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                if (current_signal.name == "driver_steering_D_cmd")
-                  driver_steering_D_cmd = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-              }
-              this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
-              this->feedbackDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ", this->feedbackCmd.vehicle_inputs.steering_cmd_count, this->feedbackCmd.vehicle_inputs.steering_cmd, this->feedbackCmd.vehicle_inputs.enable_steering_cmd, driver_steering_P_cmd, driver_steering_I_cmd, driver_steering_D_cmd);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          float driver_steering_P_cmd = 0.0f;
+          float driver_steering_I_cmd = 0.0f;
+          float driver_steering_D_cmd = 0.0f;
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("steering_motor_cmd_counter")) {
+            this->feedbackCmd.vehicle_inputs.steering_cmd_count =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("steering_motor_ang_cmd")) {
+            this->feedbackCmd.vehicle_inputs.steering_cmd =
+              static_cast<float>(*value);
+          }
+          if (const auto value = get_scaled("driver_steering_P_cmd")) {
+            driver_steering_P_cmd = static_cast<float>(*value);
+          }
+          if (const auto value = get_scaled("driver_steering_I_cmd")) {
+            driver_steering_I_cmd = static_cast<float>(*value);
+          }
+          if (const auto value = get_scaled("driver_steering_D_cmd")) {
+            driver_steering_D_cmd = static_cast<float>(*value);
+          }
+          this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
+          this->feedbackDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ",
+                        this->feedbackCmd.vehicle_inputs.steering_cmd_count,
+                        static_cast<double>(this->feedbackCmd.vehicle_inputs.steering_cmd),
+                        this->feedbackCmd.vehicle_inputs.enable_steering_cmd,
+                        static_cast<double>(driver_steering_P_cmd),
+                        static_cast<double>(driver_steering_I_cmd),
+                        static_cast<double>(driver_steering_D_cmd));
           }
           break;
         }
@@ -615,18 +662,22 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "gear_shift_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "desired_gear")
-                  this->feedbackCmd.vehicle_inputs.brake_cmd_count = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-              }
-              this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
-              this->feedbackDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "desired_gear: %d", this->feedbackCmd.vehicle_inputs.brake_cmd_count);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          if (const auto value = extractSignalScaled(in_frame.can_id,
+                                                     "desired_gear",
+                                                     in_frame.data)) {
+            this->feedbackCmd.vehicle_inputs.brake_cmd_count =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
+          this->feedbackDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "desired_gear: %d",
+                        this->feedbackCmd.vehicle_inputs.brake_cmd_count);
           }
           break;
         }
@@ -634,25 +685,42 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "ct_report");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "track_cond_ack")
-                  this->feedbackCmd.to_raptor.track_cond_ack = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "veh_sig_ack")
-                  this->feedbackCmd.to_raptor.veh_sig_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "ct_state")
-                  this->feedbackCmd.to_raptor.ct_state = static_cast<uint16_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "ct_state_rolling_counter")
-                  this->feedbackCmd.to_raptor.rolling_counter = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "veh_num")
-                  this->feedbackCmd.to_raptor.veh_num = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-              }
-              this->raptorDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "track_cond_ack: %d  veh_sig_ack: %d  ct_state: %d  ct_state_rolling_counter: %d  veh_num: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, this->feedbackCmd.to_raptor.ct_state, this->feedbackCmd.to_raptor.rolling_counter, this->feedbackCmd.to_raptor.veh_num);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("track_cond_ack")) {
+            this->feedbackCmd.to_raptor.track_cond_ack =
+              static_cast<uint16_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("veh_sig_ack")) {
+            this->feedbackCmd.to_raptor.veh_sig_ack =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("ct_state")) {
+            this->feedbackCmd.to_raptor.ct_state =
+              static_cast<uint16_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("ct_state_rolling_counter")) {
+            this->feedbackCmd.to_raptor.rolling_counter =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("veh_num")) {
+            this->feedbackCmd.to_raptor.veh_num =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          this->raptorDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "track_cond_ack: %d  veh_sig_ack: %d  ct_state: %d  ct_state_rolling_counter: %d  veh_num: %d",
+                        this->feedbackCmd.to_raptor.track_cond_ack,
+                        this->feedbackCmd.to_raptor.veh_sig_ack,
+                        this->feedbackCmd.to_raptor.ct_state,
+                        this->feedbackCmd.to_raptor.rolling_counter,
+                        this->feedbackCmd.to_raptor.veh_num);
           }
           break;
         }
@@ -660,22 +728,33 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "ct_report_2");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              uint8_t marelli_sector_flag_ack = 0U;
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "marelli_track_flag_ack")
-                  this->feedbackCmd.to_raptor.track_cond_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "marelli_vehicle_flag_ack")
-                  this->feedbackCmd.to_raptor.veh_sig_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "marelli_sector_flag_ack")
-                  marelli_sector_flag_ack = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-              }
-              this->raptorDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "marelli_track_flag_ack: %d  marelli_vehicle_flag_ack: %d  marelli_sector_flag_ack: %d", this->feedbackCmd.to_raptor.track_cond_ack, this->feedbackCmd.to_raptor.veh_sig_ack, marelli_sector_flag_ack);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          uint8_t marelli_sector_flag_ack = 0U;
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("marelli_track_flag_ack")) {
+            this->feedbackCmd.to_raptor.track_cond_ack =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("marelli_vehicle_flag_ack")) {
+            this->feedbackCmd.to_raptor.veh_sig_ack =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("marelli_sector_flag_ack")) {
+            marelli_sector_flag_ack =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          this->raptorDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "marelli_track_flag_ack: %d  marelli_vehicle_flag_ack: %d  marelli_sector_flag_ack: %d",
+                        this->feedbackCmd.to_raptor.track_cond_ack,
+                        this->feedbackCmd.to_raptor.veh_sig_ack,
+                        marelli_sector_flag_ack);
           }
           break;
         }
@@ -683,28 +762,45 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "dash_switches_cmd");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              uint8_t driver_traction_aim_switch = 0U;
-              uint8_t driver_traction_range_switch = 0U;
-              uint8_t drive_steering_gain_cntrl_switch = 0U;
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "brake_bias_aim_switch")
-                  this->feedbackCmd.vehicle_inputs.brake_bias_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "push2pass_request")
-                  this->feedbackCmd.to_raptor.push2pass_request = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "driver_traction_aim_switch")
-                  driver_traction_aim_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "driver_traction_range_switch")
-                  driver_traction_range_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-                if (current_signal.name == "drive_steering_gain_cntrl_switch")
-                  drive_steering_gain_cntrl_switch = static_cast<uint8_t>(std::floor( extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset));
-              }
-              this->feedbackDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d", this->feedbackCmd.vehicle_inputs.brake_bias_switch, this->feedbackCmd.to_raptor.push2pass_request, driver_traction_aim_switch, driver_traction_range_switch, drive_steering_gain_cntrl_switch);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          uint8_t driver_traction_aim_switch = 0U;
+          uint8_t driver_traction_range_switch = 0U;
+          uint8_t drive_steering_gain_cntrl_switch = 0U;
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("brake_bias_aim_switch")) {
+            this->feedbackCmd.vehicle_inputs.brake_bias_switch =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("push2pass_request")) {
+            this->feedbackCmd.to_raptor.push2pass_request =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("driver_traction_aim_switch")) {
+            driver_traction_aim_switch =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("driver_traction_range_switch")) {
+            driver_traction_range_switch =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("drive_steering_gain_cntrl_switch")) {
+            drive_steering_gain_cntrl_switch =
+              static_cast<uint8_t>(std::floor(*value));
+          }
+          this->feedbackDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d",
+                        this->feedbackCmd.vehicle_inputs.brake_bias_switch,
+                        this->feedbackCmd.to_raptor.push2pass_request,
+                        driver_traction_aim_switch,
+                        driver_traction_range_switch,
+                        drive_steering_gain_cntrl_switch);
           }
           break;
         }
@@ -712,24 +808,32 @@ namespace asm_socketcan_bridge {
           if (this->receivedMessagePrinting)
             RCLCPP_INFO(get_logger(), "ct_vehicle_acc_feedback");
           std::lock_guard<std::mutex> lock(feedback_mutex_);
-          for (const auto& current_message : can_message_info){
-            if (current_message.id == in_frame.can_id){
-              float long_ct_vehicle_acc_fbk = 0.0f;
-              float lat_ct_vehicle_acc_fbk = 0.0f;
-              float vertical_ct_vehicle_acc_fbk = 0.0f;
-              for (const auto& current_signal : current_message.signals){
-                if (current_signal.name == "long_ct_vehicle_acc_fbk")
-                  long_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                if (current_signal.name == "lat_ct_vehicle_acc_fbk")
-                  lat_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-                if (current_signal.name == "vertical_ct_vehicle_acc_fbk")
-                  vertical_ct_vehicle_acc_fbk = static_cast<float>(extractBits(in_frame.data, current_signal) * current_signal.factor + current_signal.offset);
-              }
-              this->feedbackDataAvailabe = true;
-              if (this->receivedDecodedMessagePrinting)
-                RCLCPP_INFO(get_logger(), "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f", long_ct_vehicle_acc_fbk, lat_ct_vehicle_acc_fbk, vertical_ct_vehicle_acc_fbk);
-              break;
-            }
+          if (!findMessage(in_frame.can_id)) {
+            warn_missing_metadata(in_frame.can_id);
+            break;
+          }
+          float long_ct_vehicle_acc_fbk = 0.0f;
+          float lat_ct_vehicle_acc_fbk = 0.0f;
+          float vertical_ct_vehicle_acc_fbk = 0.0f;
+          const auto get_scaled = [&](std::string_view name) {
+            return extractSignalScaled(in_frame.can_id, name, in_frame.data);
+          };
+          if (const auto value = get_scaled("long_ct_vehicle_acc_fbk")) {
+            long_ct_vehicle_acc_fbk = static_cast<float>(*value);
+          }
+          if (const auto value = get_scaled("lat_ct_vehicle_acc_fbk")) {
+            lat_ct_vehicle_acc_fbk = static_cast<float>(*value);
+          }
+          if (const auto value = get_scaled("vertical_ct_vehicle_acc_fbk")) {
+            vertical_ct_vehicle_acc_fbk = static_cast<float>(*value);
+          }
+          this->feedbackDataAvailabe = true;
+          if (this->receivedDecodedMessagePrinting) {
+            RCLCPP_INFO(get_logger(),
+                        "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f",
+                        static_cast<double>(long_ct_vehicle_acc_fbk),
+                        static_cast<double>(lat_ct_vehicle_acc_fbk),
+                        static_cast<double>(vertical_ct_vehicle_acc_fbk));
           }
           break;
         }
@@ -752,6 +856,69 @@ namespace asm_socketcan_bridge {
       perror("Write");
       return;
     }
+  }
+
+  void AsmSocketCanBridgeNode::buildMessageLookup()
+  {
+    message_lookup_.clear();
+    message_signal_lookup_.clear();
+    message_lookup_.reserve(can_message_info.size());
+    message_signal_lookup_.reserve(can_message_info.size());
+
+    for (auto &message : can_message_info) {
+      message_lookup_.emplace(message.id, &message);
+      auto &signal_map = message_signal_lookup_[message.id];
+      signal_map.reserve(message.signals.size());
+      for (const auto &signal : message.signals) {
+        signal_map.emplace(signal.name, &signal);
+      }
+    }
+  }
+
+  const Message* AsmSocketCanBridgeNode::findMessage(uint32_t message_id) const
+  {
+    const auto iter = message_lookup_.find(message_id);
+    if (iter == message_lookup_.end()) {
+      return nullptr;
+    }
+    return iter->second;
+  }
+
+  const AsmSocketCanBridgeNode::SignalLookupMap* AsmSocketCanBridgeNode::findSignalLookup(uint32_t message_id) const
+  {
+    const auto iter = message_signal_lookup_.find(message_id);
+    if (iter == message_signal_lookup_.end()) {
+      return nullptr;
+    }
+    return &iter->second;
+  }
+
+  const Signal* AsmSocketCanBridgeNode::findSignal(uint32_t message_id,
+                                                   std::string_view signal_name) const
+  {
+    const auto *signal_map = findSignalLookup(message_id);
+    if (!signal_map) {
+      return nullptr;
+    }
+
+    const auto iter = signal_map->find(signal_name);
+    if (iter == signal_map->end()) {
+      return nullptr;
+    }
+    return iter->second;
+  }
+
+  std::optional<double>
+  AsmSocketCanBridgeNode::extractSignalScaled(uint32_t message_id,
+                                              std::string_view signal_name,
+                                              const uint8_t* data) const
+  {
+    const auto *signal = findSignal(message_id, signal_name);
+    if (!signal) {
+      return std::nullopt;
+    }
+    const auto raw = extractBits(data, *signal);
+    return static_cast<double>(raw) * signal->factor + signal->offset;
   }
 
   void AsmSocketCanBridgeNode::simClockTimeCallback()
@@ -863,7 +1030,14 @@ namespace asm_socketcan_bridge {
         this->vesiDataAvailabe = false;
         if (canbus_raw_buffer_.empty())
         {
-          RCLCPP_WARN(get_logger(), "No Custom Data available.");
+          if (this->verbosePrinting) {
+            RCLCPP_WARN(get_logger(), "No Custom Data available.");
+          } else {
+            RCLCPP_WARN_THROTTLE(get_logger(),
+                                 *this->get_clock(),
+                                 5000,
+                                 "No Custom Data available.");
+          }
         }
         else
         {
@@ -1036,15 +1210,21 @@ namespace asm_socketcan_bridge {
     {
       std::lock_guard<std::mutex> lock(feedback_mutex_);
 
-      if (this->raptorDataAvailabe == false && this->stackRaptorConnectionWarningSent == false)
-      {
-        RCLCPP_WARN(get_logger(), "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
-        this->stackRaptorConnectionWarningSent = true;
-      }
-      else if (this->raptorDataAvailabe == true && this->stackRaptorConnectionWarningSent == true)
-      {
+      static bool raptor_connection_announced = false;
+      if (!this->raptorDataAvailabe) {
+        if (this->verbosePrinting) {
+          RCLCPP_WARN(get_logger(),
+                      "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
+        } else {
+          RCLCPP_WARN_THROTTLE(get_logger(),
+                               *this->get_clock(),
+                               5000,
+                               "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
+        }
+        raptor_connection_announced = false;
+      } else if (!raptor_connection_announced) {
         RCLCPP_INFO(get_logger(), "to_raptor message received.");
-        this->stackRaptorConnectionWarningSent = false;
+        raptor_connection_announced = true;
       }
 
       if (this->feedbackDataAvailabe == false && this->stackFeedbackConnectionWarningSent == false)
