@@ -17,7 +17,13 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
     fi
 
     if [ -z "$CAN_INTERFACE" ]; then
-        CAN_INTERFACE=$(awk -F':\\s*' '/can\\.interface:/ {gsub(/"/, "", $2); print $2; exit}' "$PARAMS_FILE")
+        CAN_INTERFACE=$(awk -F':' '/^[[:space:]]*can\\.interface:/ {
+            value=$2
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            gsub(/"/, "", value)
+            print value
+            exit
+        }' "$PARAMS_FILE")
     fi
     CAN_INTERFACE="${CAN_INTERFACE:-vcan0}"
     echo "[INFO] Using CAN interface: $CAN_INTERFACE"
