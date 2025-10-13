@@ -20,6 +20,8 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <initializer_list>
+#include <utility>
 
 #include <tf2/LinearMath/Quaternion.h>
 
@@ -35,6 +37,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/u_int16.hpp>
+#include <std_msgs/msg/header.hpp>
 #include <rosgraph_msgs/msg/clock.hpp>
 
 #include "vectornav_msgs/msg/common_group.hpp"
@@ -92,16 +95,7 @@ namespace asm_socketcan_bridge
         rclcpp::Publisher<vectornav_msgs::msg::GpsGroup>::SharedPtr verctorNavGpsGroupRightPublisher_;
         rclcpp::Publisher<vectornav_msgs::msg::TimeGroup>::SharedPtr verctorNavTimeGroupPublisher_;
 
-        rclcpp::Publisher<vectornav_msgs::msg::GpsGroup>::SharedPtr verctorNavGpsGroupPublisher;
 
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestPosPublisher;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestGNSSPosPublisher;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr novaTelBestVelPublisher;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr novaTelBestGNSSVelPublisher;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::INSPVA>::SharedPtr novaTelInspvaPublisher;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::HEADING2>::SharedPtr novaTelHeading2Publisher;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::RAWIMU>::SharedPtr novaTelRawImuPublisher;
-        rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr novaTelRawImuXPublisher;
 
         rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestPosPublisher1_;
         rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestGNSSPosPublisher1_;
@@ -122,6 +116,7 @@ namespace asm_socketcan_bridge
         rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr novaTelRawImuXPublisher2_;
 
         // Timer
+        rclcpp::TimerBase::SharedPtr vesiAcquisitionTimer_;
         rclcpp::TimerBase::SharedPtr updateVESIVehicleInputs_;
 
         // Subsciber
@@ -162,14 +157,15 @@ namespace asm_socketcan_bridge
         std::string can_iface;
 
         // Execution duration logging
-        std::vector <double> measured_vesi_times;
-        int64_t timeStartNanosec = 0;
-        int64_t timeEndNanosec = 0;
-        int64_t timeStartVESICallBackNanosec = 0;
-        int64_t timeEndVESICallBackNanosec = 0;
+        double duration_send_feedback_ms = 0.0;
+        double duration_request_data_ms = 0.0;
+        double duration_cast_ms = 0.0;
+        double duration_callback_interval_ms = 0.0;
+        int64_t last_callback_start_ns = 0;
         std::ofstream myfile;
         std::string pathTimeRecord;
         bool enableTimeRecord;
+        bool metrics_ready = false;
 
         // Simulated clock
         uint32_t nsec = 0;
@@ -207,23 +203,70 @@ namespace asm_socketcan_bridge
         void simTimeIncreaseCallback(const std_msgs::msg::UInt16 &msg);
 
         // Publishing functions
-        void publishFoxgloveMap(uint8_t fellowID);
+        void publish_map2d_ego_position();
+        void publish_map2d_fellow1_position();
+        void publish_map2d_fellow2_position();
+        void publish_map2d_fellow3_position();
         void publishFoxgloveSceneUpdate();
         void publishSimulationState();
-        void publishBaseToCarSummary();
-        void publishMarelliReport();
-        void publishMiscRCReport();
-        void publishPtReport();
-        void publishSteeringReport();
-        void publishBrakeReport();
-        void publishAcceleratorReport();
-        void publishWheelReport();
-        void publishMiscReport();
-        void publishDiagnosticReport();
-        void publishVectorIndependentSigMsg();
-        void publishNovatelReport();
-        void publishVectorNavData();
-        void publishNovatelData(uint8_t novatelID);
+        void publish_base_to_car_summary();
+        void publish_marelli_report_1();
+        void publish_marelli_report_2();
+        void publish_base_to_car_timing();
+        void publish_rest_of_field();
+        void publish_pt_report_1();
+        void publish_pt_report_2();
+        void publish_pt_report_3();
+        void publish_steering_report();
+        void publish_steering_report_extd();
+        void publish_steering_report_extd_2();
+        void publish_steering_report_extd_3();
+        void publish_brake_pressure_report();
+        void publish_brake_report_extd();
+        void publish_brake_report_extd_2();
+        void publish_accelerator_report();
+        void publish_Tire_Temp_RR_1();
+        void publish_Tire_Temp_RR_2();
+        void publish_Tire_Temp_RR_3();
+        void publish_Tire_Temp_RR_4();
+        void publish_Tire_Temp_RL_1();
+        void publish_Tire_Temp_RL_2();
+        void publish_Tire_Temp_RL_3();
+        void publish_Tire_Temp_RL_4();
+        void publish_Tire_Temp_FR_1();
+        void publish_Tire_Temp_FR_2();
+        void publish_Tire_Temp_FR_3();
+        void publish_Tire_Temp_FR_4();
+        void publish_Tire_Temp_FL_1();
+        void publish_Tire_Temp_FL_2();
+        void publish_Tire_Temp_FL_3();
+        void publish_Tire_Temp_FL_4();
+        void publish_Tire_Pressure_RR();
+        void publish_Tire_Pressure_RL();
+        void publish_Tire_Pressure_FR();
+        void publish_Tire_Pressure_FL();
+        void publish_wheel_strain_gauge();
+        void publish_wheel_potentiometer_data();
+        void publish_wheel_speed_report();
+        void publish_misc_report();
+        void publish_diagnostic_report();
+        void publish_VECTOR__INDEPENDENT_SIG_MSG();
+        void publish_novatel_report();
+        void publish_vectornav_attitude_group();
+        void publish_vectornav_common_group();
+        void publish_vectornav_imu_group();
+        void publish_vectornav_gps_group_left();
+        void publish_vectornav_gps_group_right();
+        void publish_vectornav_ins_group();
+        void publish_vectornav_time_group();
+        void publish_novatel_bestpos(uint8_t novatel_id);
+        void publish_novatel_bestgnsspos(uint8_t novatel_id);
+        void publish_novatel_bestvel(uint8_t novatel_id);
+        void publish_novatel_bestgnssvel(uint8_t novatel_id);
+        void publish_novatel_inspva(uint8_t novatel_id);
+        void publish_novatel_heading2(uint8_t novatel_id);
+        void publish_novatel_rawimu(uint8_t novatel_id);
+        void publish_novatel_rawimux(uint8_t novatel_id);
 
         rclcpp::Publisher<autonoma_msgs::msg::GroundTruthArray>::SharedPtr groundTruthArrayPublisher_;
         void publishGroundTruthArray();
@@ -242,15 +285,30 @@ namespace asm_socketcan_bridge
         using SignalLookupMap = std::unordered_map<std::string_view, const Signal*>;
         std::unordered_map<uint32_t, const Message*> message_lookup_;
         std::unordered_map<uint32_t, SignalLookupMap> message_signal_lookup_;
+        std::unordered_map<std::string_view, const Message*> message_name_lookup_;
         void buildMessageLookup();
-        const Message* findMessage(uint32_t message_id) const;
+        const Message* findMessageByID(uint32_t message_id) const;
         const Signal* findSignal(uint32_t message_id, std::string_view signal_name) const;
         const SignalLookupMap* findSignalLookup(uint32_t message_id) const;
+        const Message* findMessageByName(std::string_view message_name) const;
+        const Message* prepareCanMessage(std::string_view message_name);
+        void finalizeCanMessage(const Message &message);
+        void setHeader(std_msgs::msg::Header &header, std::string_view frame_id) const;
+        void populateGpsGroupMessage(vectornav_msgs::msg::GpsGroup &message, const gps_group &source);
+        const nova_tel_pwr_pak* getNovatelData(uint8_t novatel_id) const;
+        void populateBestPosMessage(novatel_oem7_msgs::msg::BESTPOS &message, const nova_tel_pwr_pak &data) const;
+        void populateBestVelMessage(novatel_oem7_msgs::msg::BESTVEL &message, const nova_tel_pwr_pak &data) const;
+        void populateInspvaMessage(novatel_oem7_msgs::msg::INSPVA &message, const nova_tel_pwr_pak &data) const;
+        void populateHeading2Message(novatel_oem7_msgs::msg::HEADING2 &message, const nova_tel_pwr_pak &data) const;
+        void populateRawImuMessage(novatel_oem7_msgs::msg::RAWIMU &message, const nova_tel_pwr_pak &data) const;
+        void populateRawImuXMessage(sensor_msgs::msg::Imu &message, const nova_tel_pwr_pak &data) const;
+        void publishFoxgloveMapEntry(uint8_t fellowID);
         std::optional<double> extractSignalScaled(uint32_t message_id, std::string_view signal_name, const uint8_t* data) const;
 
         std::vector<uint8_t> canbus_raw_buffer_;
         std::mutex feedback_mutex_;
+        std::mutex can_bus_mutex_;
+        std::mutex metrics_mutex_;
         std::atomic<bool> stop_reader_{false};
     };
 } // namespace asm_socketcan_bridge
-
