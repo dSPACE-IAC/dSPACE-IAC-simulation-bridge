@@ -12,6 +12,7 @@
 #include <fstream>
 #include <algorithm>
 #include <mutex>
+#include <shared_mutex>
 #include <atomic>
 #include <unistd.h>
 #include <limits>
@@ -274,13 +275,17 @@ namespace asm_socketcan_bridge
         // socket helpers
         int open_socket(const std::string &iface);
         void can_reader_loop(int sock, const std::string &bus_id);
-        void can_write(int sock, struct can_frame frame);
+        void can_write(int sock, const struct can_frame &frame);
         template <typename T>
         void insertBits(uint8_t* data, Signal signal_information, T physical_value);
         int32_t extractBits(const uint8_t* data, Signal signal_information) const;
 
+        struct PreparedCanMessage {
+            struct can_frame frame;
+            const Message* metadata;
+        };
+
         int can_socket = -1;
-        struct can_frame can_out_frame;
         std::vector<Message> can_message_info;
         using SignalLookupMap = std::unordered_map<std::string_view, const Signal*>;
         std::unordered_map<uint32_t, const Message*> message_lookup_;
@@ -291,11 +296,39 @@ namespace asm_socketcan_bridge
         const Signal* findSignal(uint32_t message_id, std::string_view signal_name) const;
         const SignalLookupMap* findSignalLookup(uint32_t message_id) const;
         const Message* findMessageByName(std::string_view message_name) const;
-        const Message* prepareCanMessage(std::string_view message_name);
-        void finalizeCanMessage(const Message &message);
+        std::optional<PreparedCanMessage> prepareCanMessage(std::string_view message_name);
+        void finalizeCanMessage(const PreparedCanMessage &message);
+        template <typename Populator>
+        bool publishCanMessage(std::string_view message_name, Populator &&populate)
+        {
+            auto prepared = prepareCanMessage(message_name);
+            if (!prepared) {
+                return false;
+            }
+            {
+                std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
+                if (!this->canBus) {
+                    RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
+                    return false;
+                }
+                std::forward<Populator>(populate)(*prepared, *this->canBus);
+            }
+            finalizeCanMessage(*prepared);
+            return true;
+        }
+        template <typename Func>
+        bool withCanBusShared(Func &&func) const
+        {
+            std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
+            if (!this->canBus) {
+                RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
+                return false;
+            }
+            std::forward<Func>(func)(*this->canBus);
+            return true;
+        }
         void setHeader(std_msgs::msg::Header &header, std::string_view frame_id) const;
         void populateGpsGroupMessage(vectornav_msgs::msg::GpsGroup &message, const gps_group &source);
-        const nova_tel_pwr_pak* getNovatelData(uint8_t novatel_id) const;
         void populateBestPosMessage(novatel_oem7_msgs::msg::BESTPOS &message, const nova_tel_pwr_pak &data) const;
         void populateBestVelMessage(novatel_oem7_msgs::msg::BESTVEL &message, const nova_tel_pwr_pak &data) const;
         void populateInspvaMessage(novatel_oem7_msgs::msg::INSPVA &message, const nova_tel_pwr_pak &data) const;
@@ -307,8 +340,9 @@ namespace asm_socketcan_bridge
 
         std::vector<uint8_t> canbus_raw_buffer_;
         std::mutex feedback_mutex_;
-        std::mutex can_bus_mutex_;
+        mutable std::shared_mutex can_bus_mutex_;
         std::mutex metrics_mutex_;
+        std::mutex can_socket_mutex_;
         std::atomic<bool> stop_reader_{false};
     };
 } // namespace asm_socketcan_bridge

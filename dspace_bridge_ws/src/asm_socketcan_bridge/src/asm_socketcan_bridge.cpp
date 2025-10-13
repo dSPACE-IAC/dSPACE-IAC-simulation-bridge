@@ -849,8 +849,8 @@ namespace asm_socketcan_bridge {
     }
   }
 
-  void AsmSocketCanBridgeNode::can_write(int sock, 
-                                         struct can_frame frame)
+  void AsmSocketCanBridgeNode::can_write(int sock,
+                                         const struct can_frame &frame)
   {
     if (write(sock, &frame, sizeof(struct can_frame)) != sizeof(frame)) {
       perror("Write");
@@ -905,35 +905,39 @@ namespace asm_socketcan_bridge {
     return iter->second;
   }
 
-  const Message* AsmSocketCanBridgeNode::prepareCanMessage(std::string_view message_name)
+  std::optional<AsmSocketCanBridgeNode::PreparedCanMessage>
+  AsmSocketCanBridgeNode::prepareCanMessage(std::string_view message_name)
   {
     const auto *message = findMessageByName(message_name);
     if (!message) {
       RCLCPP_ERROR(get_logger(),
-                  "CAN metadata missing for message %.*s",
-                  static_cast<int>(message_name.size()),
-                  message_name.data());
-      return nullptr;
+                   "CAN metadata missing for message %.*s",
+                   static_cast<int>(message_name.size()),
+                   message_name.data());
+      return std::nullopt;
     }
-    can_out_frame.can_id = message->id;
-    can_out_frame.can_dlc = message->dlc;
-    std::memset(can_out_frame.data, 0, message->dlc);
-    return message;
+    PreparedCanMessage prepared{};
+    prepared.metadata = message;
+    prepared.frame.can_id = message->id;
+    prepared.frame.can_dlc = message->dlc;
+    std::memset(prepared.frame.data, 0, sizeof(prepared.frame.data));
+    return prepared;
   }
 
-  void AsmSocketCanBridgeNode::finalizeCanMessage(const Message &message)
+  void AsmSocketCanBridgeNode::finalizeCanMessage(const PreparedCanMessage &message)
   {
-    if (sentMessagePrinting) {
-      RCLCPP_INFO(get_logger(), "can_out::%s", message.name);
+    if (sentMessagePrinting && message.metadata) {
+      RCLCPP_INFO(get_logger(), "can_out::%s", message.metadata->name);
       RCLCPP_INFO(get_logger(),
                   "send: 0x%03X [%d] ",
-                  message.id,
-                  static_cast<int>(can_out_frame.can_dlc));
-      for (int i = 0; i < can_out_frame.can_dlc; i++) {
-        RCLCPP_INFO(get_logger(), "send: %02X ", can_out_frame.data[i]);
+                  message.metadata->id,
+                  static_cast<int>(message.frame.can_dlc));
+      for (int i = 0; i < message.frame.can_dlc; i++) {
+        RCLCPP_INFO(get_logger(), "send: %02X ", message.frame.data[i]);
       }
     }
-    can_write(can_socket, can_out_frame);
+    const std::lock_guard<std::mutex> socket_lock(can_socket_mutex_);
+    can_write(can_socket, message.frame);
   }
 
   void AsmSocketCanBridgeNode::setHeader(std_msgs::msg::Header &header,
@@ -950,22 +954,6 @@ namespace asm_socketcan_bridge {
     const auto nsecs_total = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
     header.stamp.sec = static_cast<int32_t>(secs);
     header.stamp.nanosec = static_cast<uint32_t>(nsecs_total - (secs * 1000000000LL));
-  }
-
-  const nova_tel_pwr_pak* AsmSocketCanBridgeNode::getNovatelData(uint8_t novatel_id) const
-  {
-    if (!this->canBus) {
-      RCLCPP_ERROR(get_logger(), "CAN bus data unavailable; cannot publish NovAtel device %u", static_cast<unsigned>(novatel_id));
-      return nullptr;
-    }
-    if (novatel_id == 1) {
-      return &this->canBus->sim_interface_var.nova_tel_pwr_pak1_var;
-    }
-    if (novatel_id == 2) {
-      return &this->canBus->sim_interface_var.nova_tel_pwr_pak2_var;
-    }
-    RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-    return nullptr;
   }
 
   void AsmSocketCanBridgeNode::populateBestPosMessage(novatel_oem7_msgs::msg::BESTPOS &message,
@@ -1214,7 +1202,7 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::simClockTimeCallback()
   {
-    std::lock_guard<std::mutex> lock(can_bus_mutex_);
+    std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
     simClockTime.clock = rclcpp::Time(this->sec,this->nsec);
     this->simClockTimePublisher_->publish(simClockTime);
   }
@@ -1274,7 +1262,7 @@ namespace asm_socketcan_bridge {
 
     bool active_maneuver = false;
     {
-      std::lock_guard<std::mutex> lock(can_bus_mutex_);
+      std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
       active_maneuver = this->maneuverStarted;
     }
 
@@ -1292,7 +1280,7 @@ namespace asm_socketcan_bridge {
 
       measure([&]() {
         constexpr auto required_canbus_size = sizeof(ASMBus);
-        std::lock_guard<std::mutex> lock(can_bus_mutex_);
+        std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
         if (active_maneuver) {
           if (this->simModeEnabled) {
             this->simTotalMsec += 1;
@@ -1416,15 +1404,22 @@ namespace asm_socketcan_bridge {
     };
 
     auto perform_publish = [&]() -> bool {
-      std::lock_guard<std::mutex> lock(can_bus_mutex_);
+      bool has_data = false;
+      uint64_t total_msec = 0;
+      double fellow_count = 0.0;
+      {
+        std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
+        if (!this->canBus) {
+          RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
+          return false;
+        }
+        has_data = this->vesiDataAvailabe;
+        total_msec = this->simTotalMsec;
+        fellow_count = this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count;
+      }
 
       if (this->sentMessagePrinting)
         RCLCPP_INFO(get_logger(), "publishSimulationState");
-
-      if (!this->canBus) {
-        RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
-        return false;
-      }
 
       auto publish_all = [&](std::initializer_list<void (AsmSocketCanBridgeNode::*)()> funcs) {
         for (auto func : funcs) {
@@ -1434,9 +1429,9 @@ namespace asm_socketcan_bridge {
 
       try
       {
-        if (this->vesiDataAvailabe == true && this->simTotalMsec != 0)
+        if (has_data && total_msec != 0)
         {
-          if(this->simTotalMsec % (this->pubIntervalRaceControlData) == 0) {
+          if(total_msec % (this->pubIntervalRaceControlData) == 0) {
             publish_all({
               &AsmSocketCanBridgeNode::publish_base_to_car_summary,
               &AsmSocketCanBridgeNode::publish_marelli_report_1,
@@ -1446,7 +1441,7 @@ namespace asm_socketcan_bridge {
             });
           }
 
-          if(this->simTotalMsec % (this->pubIntervalVehicleData) == 0) {
+          if(total_msec % (this->pubIntervalVehicleData) == 0) {
             publish_all({
               &AsmSocketCanBridgeNode::publish_steering_report,
               &AsmSocketCanBridgeNode::publish_steering_report_extd,
@@ -1491,7 +1486,7 @@ namespace asm_socketcan_bridge {
             });
           }
 
-          if(this->simTotalMsec % (this->pubIntervalPowertrainData) == 0) {
+          if(total_msec % (this->pubIntervalPowertrainData) == 0) {
             publish_all({
               &AsmSocketCanBridgeNode::publish_pt_report_1,
               &AsmSocketCanBridgeNode::publish_pt_report_2,
@@ -1499,7 +1494,7 @@ namespace asm_socketcan_bridge {
             });
           }
           
-          if(this->simTotalMsec % (this->pubIntervalVectorNavData) == 0) {
+          if(total_msec % (this->pubIntervalVectorNavData) == 0) {
             publish_all({
               &AsmSocketCanBridgeNode::publish_vectornav_attitude_group,
               &AsmSocketCanBridgeNode::publish_vectornav_common_group,
@@ -1511,7 +1506,7 @@ namespace asm_socketcan_bridge {
             });
           }
 
-          if(this->simTotalMsec % (this->pubIntervalNovatelData) == 0) {
+          if(total_msec % (this->pubIntervalNovatelData) == 0) {
             publish_all({&AsmSocketCanBridgeNode::publish_novatel_report});
             auto publish_novatel_set = [&](uint8_t id) {
               publish_novatel_bestpos(id);
@@ -1526,37 +1521,40 @@ namespace asm_socketcan_bridge {
             publish_novatel_set(1);
             publish_novatel_set(2);
           }
-          if(this->simTotalMsec % (this->pubIntervalFoxgloveMap) == 0)
+          if(total_msec % (this->pubIntervalFoxgloveMap) == 0)
             AsmSocketCanBridgeNode::publish_map2d_ego_position();
 
-          if (this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count > 10) {
-            RCLCPP_ERROR(get_logger(), "Unreasonable fellow_count value: %f -> GroundTruthArray and fellows in FoxgloveMap will not be published", this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
+          if (fellow_count > 10) {
+            RCLCPP_ERROR(get_logger(), "Unreasonable fellow_count value: %f -> GroundTruthArray and fellows in FoxgloveMap will not be published", fellow_count);
           }
-          else if (this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count == 0)
+          else if (fellow_count == 0)
           {
             if (this->verbosePrinting)
               RCLCPP_INFO(get_logger(), "No fellows included in the scenario. No GroundTruthArray will be published and FoxgloveMap will be published only for the ego");
           }
           else {
             if (this->verbosePrinting)
-              RCLCPP_INFO(get_logger(), "Reasonable fellow_count value: %f", this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
-            if(this->simTotalMsec % (this->pubIntervalGroundTruthArray) == 0)
+              RCLCPP_INFO(get_logger(), "Reasonable fellow_count value: %f", fellow_count);
+            if(total_msec % (this->pubIntervalGroundTruthArray) == 0)
               AsmSocketCanBridgeNode::publishGroundTruthArray();
-            if(this->simTotalMsec % (this->pubIntervalFoxgloveMap) == 0) {
-              const auto fellow_count = static_cast<int>(this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
-              if (fellow_count >= 1) {
+            if(total_msec % (this->pubIntervalFoxgloveMap) == 0) {
+              const auto fellow_count_int = static_cast<int>(fellow_count);
+              if (fellow_count_int >= 1) {
                 AsmSocketCanBridgeNode::publish_map2d_fellow1_position();
               }
-              if (fellow_count >= 2) {
+              if (fellow_count_int >= 2) {
                 AsmSocketCanBridgeNode::publish_map2d_fellow2_position();
               }
-              if (fellow_count >= 3) {
+              if (fellow_count_int >= 3) {
                 AsmSocketCanBridgeNode::publish_map2d_fellow3_position();
               }
             }
           }
 
-          this->vesiDataAvailabe = false;
+          {
+            std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
+            this->vesiDataAvailabe = false;
+          }
         }
       }
       catch(const std::exception& e)
@@ -1601,42 +1599,55 @@ namespace asm_socketcan_bridge {
     foxgloveMap.status.status = -1;
     foxgloveMap.status.service = 1;
 
-    if (fellowID == 0)
-      {
-        foxgloveMap.latitude = this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat;
-        foxgloveMap.longitude = this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon;
-        foxgloveMap.altitude = this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.hgt;
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      if (fellowID == 0) {
+        foxgloveMap.latitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat;
+        foxgloveMap.longitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon;
+        foxgloveMap.altitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.hgt;
         this->foxgloveMapPublisher_ = this->foxgloveMapPublisher0_;
-      }
-    else if (fellowID == 1)
-      {
-        foxgloveMap.latitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[0];
-        foxgloveMap.longitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[0];
-        foxgloveMap.altitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[0];
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher1_;
-      }
-    else if (fellowID == 2)
-      {
-        foxgloveMap.latitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[1];
-        foxgloveMap.longitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[1];
-        foxgloveMap.altitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[1];
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher2_;
-      }
-    else if (fellowID == 3)
-      {
-        foxgloveMap.latitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[2];
-        foxgloveMap.longitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[2];
-        foxgloveMap.altitude = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[2];
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher3_;
-      }
-    else
-      {
-        RCLCPP_ERROR(get_logger(), "Unknown Fellow ID. Only three Fellows are supported.");
+        populated = true;
         return;
       }
+      if (fellowID == 1) {
+        foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[0];
+        foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[0];
+        foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[0];
+        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher1_;
+        populated = true;
+        return;
+      }
+      if (fellowID == 2) {
+        foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[1];
+        foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[1];
+        foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[1];
+        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher2_;
+        populated = true;
+        return;
+      }
+      if (fellowID == 3) {
+        foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[2];
+        foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[2];
+        foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[2];
+        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher3_;
+        populated = true;
+        return;
+      }
+    })) {
+      return;
+    }
+    if (!populated) {
+      RCLCPP_ERROR(get_logger(), "Unknown Fellow ID. Only three Fellows are supported.");
+      return;
+    }
 
     foxgloveMap.position_covariance_type = 0;
     setHeader(foxgloveMap.header, "world");
+
+    if (!this->foxgloveMapPublisher_) {
+      RCLCPP_ERROR(get_logger(), "Foxglove publisher unavailable for fellow ID %u", static_cast<unsigned>(fellowID));
+      return;
+    }
 
     this->foxgloveMapPublisher_->publish(foxgloveMap);
   }
@@ -1694,1065 +1705,958 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_base_to_car_summary()
   {
-    const auto *message = prepareCanMessage("base_to_car_summary");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("base_to_car_heartbeat", this->canBus->asm_bus_var.race_control_var.base_to_car_heartbeat);
-    assign("track_flag", this->canBus->asm_bus_var.race_control_var.track_flag);
-    assign("veh_flag", this->canBus->asm_bus_var.race_control_var.veh_flag);
-    assign("veh_rank", this->canBus->asm_bus_var.race_control_var.veh_rank);
-    assign("lap_count", this->canBus->asm_bus_var.race_control_var.lap_count);
-    assign("lap_distance", this->canBus->asm_bus_var.race_control_var.lap_distance);
-    assign("round_target_speed", this->canBus->asm_bus_var.race_control_var.round_target_speed);
-    finalizeCanMessage(*message);
+    publishCanMessage("base_to_car_summary", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("base_to_car_heartbeat", bus.asm_bus_var.race_control_var.base_to_car_heartbeat);
+      assign("track_flag", bus.asm_bus_var.race_control_var.track_flag);
+      assign("veh_flag", bus.asm_bus_var.race_control_var.veh_flag);
+      assign("veh_rank", bus.asm_bus_var.race_control_var.veh_rank);
+      assign("lap_count", bus.asm_bus_var.race_control_var.lap_count);
+      assign("lap_distance", bus.asm_bus_var.race_control_var.lap_distance);
+      assign("round_target_speed", bus.asm_bus_var.race_control_var.round_target_speed);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_marelli_report_1()
   {
-    const auto *message = prepareCanMessage("marelli_report_1");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("marelli_track_flag", this->canBus->asm_bus_var.race_control_var.track_flag);
-    assign("marelli_vehicle_flag", this->canBus->asm_bus_var.race_control_var.veh_flag);
-    assign("marelli_sector_flag", this->canBus->asm_bus_var.race_control_var.track_flag);
-    assign("marelli_rc_base_sync_check", static_cast<uint8_t>(1));
-    assign("marelli_rc_lte_rssi", static_cast<uint8_t>(255));
-    finalizeCanMessage(*message);
+    publishCanMessage("marelli_report_1", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("marelli_track_flag", bus.asm_bus_var.race_control_var.track_flag);
+      assign("marelli_vehicle_flag", bus.asm_bus_var.race_control_var.veh_flag);
+      assign("marelli_sector_flag", bus.asm_bus_var.race_control_var.track_flag);
+      assign("marelli_rc_base_sync_check", static_cast<uint8_t>(1));
+      assign("marelli_rc_lte_rssi", static_cast<uint8_t>(255));
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_marelli_report_2()
   {
-    const auto *message = prepareCanMessage("marelli_report_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("marelli_gps_lat", this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
-    assign("marelli_gps_long", this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
-    finalizeCanMessage(*message);
+    publishCanMessage("marelli_report_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("marelli_gps_lat", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
+      assign("marelli_gps_long", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_base_to_car_timing()
   {
-    const auto *message = prepareCanMessage("base_to_car_timing");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("laps", this->canBus->asm_bus_var.race_control_var.lap_count);
-    assign("lap_time", this->canBus->asm_bus_var.race_control_var.lap_time);
-    assign("time_stamp", this->canBus->asm_bus_var.race_control_var.time_stamp);
-    finalizeCanMessage(*message);
+    publishCanMessage("base_to_car_timing", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("laps", bus.asm_bus_var.race_control_var.lap_count);
+      assign("lap_time", bus.asm_bus_var.race_control_var.lap_time);
+      assign("time_stamp", bus.asm_bus_var.race_control_var.time_stamp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_rest_of_field()
   {
-    const auto *message = prepareCanMessage("rest_of_field");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate comp_veh_num with real data
-    assign("comp_veh_num", 0);
-    // TODO populate comp_rank with real data
-    assign("comp_rank", 0);
-    // TODO populate comp_veh_flag with real data
-    assign("comp_veh_flag", 0);
-    // TODO populate comp_laps_count with real data
-    assign("comp_laps_count", 0);
-    // TODO populate comp_lap_distance with real data
-    assign("comp_lap_distance", 0);
-    // TODO populate comp_speed with real data
-    assign("comp_speed", 0);
-    finalizeCanMessage(*message);
+    publishCanMessage("rest_of_field", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("comp_veh_num", 0);
+      assign("comp_rank", 0);
+      assign("comp_veh_flag", 0);
+      assign("comp_laps_count", 0);
+      assign("comp_lap_distance", 0);
+      assign("comp_speed", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_pt_report_1()
   {
-    const auto *message = prepareCanMessage("pt_report_1");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("throttle_position", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.throttle_position);
-    assign("current_gear", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.current_gear);
-    assign("engine_speed_rpm", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.engine_rpm);
-    assign("vehicle_speed_kmph", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.vehicle_speed_kmph);
-    assign("engine_run_switch", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.engine_run_switch_status);
-    assign("engine_state", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.engine_on_status);
-    assign("gear_shift_status", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.gear_shift_status);
-    finalizeCanMessage(*message);
+    publishCanMessage("pt_report_1", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
+      assign("throttle_position", powertrain.throttle_position);
+      assign("current_gear", powertrain.current_gear);
+      assign("engine_speed_rpm", powertrain.engine_rpm);
+      assign("vehicle_speed_kmph", powertrain.vehicle_speed_kmph);
+      assign("engine_run_switch", powertrain.engine_run_switch_status);
+      assign("engine_state", powertrain.engine_on_status);
+      assign("gear_shift_status", powertrain.gear_shift_status);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_pt_report_2()
   {
-    const auto *message = prepareCanMessage("pt_report_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("fuel_pressure_kPa", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.fuel_pressure);
-    assign("engine_oil_pressure_kPa", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.engine_oil_pressure);
-    assign("coolant_temperature", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.engine_coolant_temperature);
-    assign("transmission_temperature", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.transmission_oil_temperature);
-    assign("transmission_pressure_kPa", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.transmission_oil_pressure);
-    finalizeCanMessage(*message);
+    publishCanMessage("pt_report_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
+      assign("fuel_pressure_kPa", powertrain.fuel_pressure);
+      assign("engine_oil_pressure_kPa", powertrain.engine_oil_pressure);
+      assign("coolant_temperature", powertrain.engine_coolant_temperature);
+      assign("transmission_temperature", powertrain.transmission_oil_temperature);
+      assign("transmission_pressure_kPa", powertrain.transmission_oil_pressure);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_pt_report_3()
   {
-    const auto *message = prepareCanMessage("pt_report_3");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("engine_oil_temperature", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.engine_oil_temperature);
-    assign("torque_wheels", this->canBus->sim_interface_var.vehicle_sensors_var.power_train_data_var.torque_wheels_nm);
-    // TODO populate driver_traction_aim_swicth_fbk with real data
-    assign("driver_traction_aim_swicth_fbk", 0);
-    // TODO populate driver_traction_range_switch_fbk with real data
-    assign("driver_traction_range_switch_fbk", 0);
-    assign("push2pass_status", this->canBus->asm_bus_var.race_control_var.push2pass_status);
-    assign("push2pass_budget_s", this->canBus->asm_bus_var.race_control_var.push2pass_budget_s);
-    assign("push2pass_active_app_limit", this->canBus->asm_bus_var.race_control_var.push2pass_active_app_limit);
-    finalizeCanMessage(*message);
+    publishCanMessage("pt_report_3", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
+      assign("engine_oil_temperature", powertrain.engine_oil_temperature);
+      assign("torque_wheels", powertrain.torque_wheels_nm);
+      assign("driver_traction_aim_swicth_fbk", 0);
+      assign("driver_traction_range_switch_fbk", 0);
+      const auto &race_control = bus.asm_bus_var.race_control_var;
+      assign("push2pass_status", race_control.push2pass_status);
+      assign("push2pass_budget_s", race_control.push2pass_budget_s);
+      assign("push2pass_active_app_limit", race_control.push2pass_active_app_limit);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_steering_report()
   {
-    const auto *message = prepareCanMessage("steering_report");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate steering_motor_fdbk_counter with real data
-    assign("steering_motor_fdbk_counter", 0);
-    // TODO populate primary_steering_angular_rate with real data
-    assign("primary_steering_angular_rate", 0);
-    // TODO populate commanded_steering_rate with real data
-    assign("commanded_steering_rate", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("steering_report", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("steering_motor_fdbk_counter", 0);
+      assign("primary_steering_angular_rate", 0);
+      assign("commanded_steering_rate", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_steering_report_extd()
   {
-    const auto *message = prepareCanMessage("steering_report_extd");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
-      }
-    };
-    assign("average_steering_ang_fdbk");
-    assign("primary_steering_angle_fbk");
-    assign("secondary_steering_ang_fdbk");
-    this->finalizeCanMessage(*message);
+    publishCanMessage("steering_report_extd", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
+        }
+      };
+      assign("average_steering_ang_fdbk");
+      assign("primary_steering_angle_fbk");
+      assign("secondary_steering_ang_fdbk");
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_steering_report_extd_2()
   {
-    const auto *message = prepareCanMessage("steering_report_extd_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate motor_duty_cycle_cmd with real data
-    assign("motor_duty_cycle_cmd", 0);
-    // TODO populate motor_duty_cycle_fbk with real data
-    assign("motor_duty_cycle_fbk", 0);
-    // TODO populate motor_current_fbk with real data
-    assign("motor_current_fbk", 0);
-    // TODO populate sbw_ecu_voltage with real data
-    assign("sbw_ecu_voltage", 0);
-    // TODO populate sbw_ecu_temp with real data
-    assign("sbw_ecu_temp", 0);
-    // TODO populate sbw_error_code with real data
-    assign("sbw_error_code", 0);
-    // TODO populate sbw_motor_torque_estimate with real data
-    assign("sbw_motor_torque_estimate", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("steering_report_extd_2", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("motor_duty_cycle_cmd", 0);
+      assign("motor_duty_cycle_fbk", 0);
+      assign("motor_current_fbk", 0);
+      assign("sbw_ecu_voltage", 0);
+      assign("sbw_ecu_temp", 0);
+      assign("sbw_error_code", 0);
+      assign("sbw_motor_torque_estimate", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_steering_report_extd_3()
   {
-    const auto *message = prepareCanMessage("steering_report_extd_3");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate steering_p_contribution with real data
-    assign("steering_p_contribution", 0);
-    // TODO populate steering_i_contribution with real data
-    assign("steering_i_contribution", 0);
-    // TODO populate steering_d_contribution with real data
-    assign("steering_d_contribution", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("steering_report_extd_3", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("steering_p_contribution", 0);
+      assign("steering_i_contribution", 0);
+      assign("steering_d_contribution", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_brake_pressure_report()
   {
-    const auto *message = prepareCanMessage("brake_pressure_report");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate brk_pressure_fdbk_counter with real data
-    assign("brk_pressure_fdbk_counter", 0);
-    assign("brake_pressure_fdbk_rear", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rear_brake_pressure);
-    assign("brake_pressure_fdbk_front", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.front_brake_pressure);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("brake_pressure_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("brk_pressure_fdbk_counter", 0);
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("brake_pressure_fdbk_rear", vehicle.rear_brake_pressure);
+      assign("brake_pressure_fdbk_front", vehicle.front_brake_pressure);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_brake_report_extd()
   {
-    const auto *message = prepareCanMessage("brake_report_extd");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate F_brk_pos_cmd with real data
-    assign("F_brk_pos_cmd", 0);
-    // TODO populate F_brk_pos_fbk with real data
-    assign("F_brk_pos_fbk", 0);
-    // TODO populate R_brk_pos_cmd with real data
-    assign("R_brk_pos_cmd", 0);
-    // TODO populate R_brk_pos_fbk with real data
-    assign("R_brk_pos_fbk", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("brake_report_extd", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("F_brk_pos_cmd", 0);
+      assign("F_brk_pos_fbk", 0);
+      assign("R_brk_pos_cmd", 0);
+      assign("R_brk_pos_fbk", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_brake_report_extd_2()
   {
-    const auto *message = prepareCanMessage("brake_report_extd_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate f_brake_act_force with real data
-    assign("f_brake_act_force", 0);
-    // TODO populate r_brake_act_force with real data
-    assign("r_brake_act_force", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("brake_report_extd_2", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("f_brake_act_force", 0);
+      assign("r_brake_act_force", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_accelerator_report()
   {
-    const auto *message = prepareCanMessage("accelerator_report");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate acc_pedal_fdbk_counter with real data
-    assign("acc_pedal_fdbk_counter", 0);
-    assign("acc_pedal_fdbk", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.accel_pedal_output);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("accelerator_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("acc_pedal_fdbk_counter", 0);
+      assign("acc_pedal_fdbk", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.accel_pedal_output);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RR_1()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RR_1");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
-    // TODO populate RR_Tire_Temp_04 with real data
-    assign("RR_Tire_Temp_04", temp);
-    // TODO populate RR_Tire_Temp_03 with real data
-    assign("RR_Tire_Temp_03", temp);
-    // TODO populate RR_Tire_Temp_02 with real data
-    assign("RR_Tire_Temp_02", temp);
-    // TODO populate RR_Tire_Temp_01 with real data
-    assign("RR_Tire_Temp_01", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RR_1", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      assign("RR_Tire_Temp_04", temp);
+      assign("RR_Tire_Temp_03", temp);
+      assign("RR_Tire_Temp_02", temp);
+      assign("RR_Tire_Temp_01", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RR_2()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RR_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
-    // TODO populate RR_Tire_Temp_08 with real data
-    assign("RR_Tire_Temp_08", temp);
-    // TODO populate RR_Tire_Temp_07 with real data
-    assign("RR_Tire_Temp_07", temp);
-    // TODO populate RR_Tire_Temp_06 with real data
-    assign("RR_Tire_Temp_06", temp);
-    // TODO populate RR_Tire_Temp_05 with real data
-    assign("RR_Tire_Temp_05", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RR_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      assign("RR_Tire_Temp_08", temp);
+      assign("RR_Tire_Temp_07", temp);
+      assign("RR_Tire_Temp_06", temp);
+      assign("RR_Tire_Temp_05", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RR_3()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RR_3");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
-    // TODO populate RR_Tire_Temp_12 with real data
-    assign("RR_Tire_Temp_12", temp);
-    // TODO populate RR_Tire_Temp_11 with real data
-    assign("RR_Tire_Temp_11", temp);
-    // TODO populate RR_Tire_Temp_10 with real data
-    assign("RR_Tire_Temp_10", temp);
-    // TODO populate RR_Tire_Temp_09 with real data
-    assign("RR_Tire_Temp_09", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RR_3", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      assign("RR_Tire_Temp_12", temp);
+      assign("RR_Tire_Temp_11", temp);
+      assign("RR_Tire_Temp_10", temp);
+      assign("RR_Tire_Temp_09", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RR_4()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RR_4");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
-    // TODO populate RR_Tire_Temp_16 with real data
-    assign("RR_Tire_Temp_16", temp);
-    // TODO populate RR_Tire_Temp_15 with real data
-    assign("RR_Tire_Temp_15", temp);
-    // TODO populate RR_Tire_Temp_14 with real data
-    assign("RR_Tire_Temp_14", temp);
-    // TODO populate RR_Tire_Temp_13 with real data
-    assign("RR_Tire_Temp_13", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RR_4", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      assign("RR_Tire_Temp_16", temp);
+      assign("RR_Tire_Temp_15", temp);
+      assign("RR_Tire_Temp_14", temp);
+      assign("RR_Tire_Temp_13", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RL_1()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RL_1");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
-    // TODO populate RL_Tire_Temp_04 with real data
-    assign("RL_Tire_Temp_04", temp);
-    // TODO populate RL_Tire_Temp_03 with real data
-    assign("RL_Tire_Temp_03", temp);
-    // TODO populate RL_Tire_Temp_02 with real data
-    assign("RL_Tire_Temp_02", temp);
-    // TODO populate RL_Tire_Temp_01 with real data
-    assign("RL_Tire_Temp_01", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RL_1", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      assign("RL_Tire_Temp_04", temp);
+      assign("RL_Tire_Temp_03", temp);
+      assign("RL_Tire_Temp_02", temp);
+      assign("RL_Tire_Temp_01", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RL_2()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RL_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
-    // TODO populate RL_Tire_Temp_08 with real data
-    assign("RL_Tire_Temp_08", temp);
-    // TODO populate RL_Tire_Temp_07 with real data
-    assign("RL_Tire_Temp_07", temp);
-    // TODO populate RL_Tire_Temp_06 with real data
-    assign("RL_Tire_Temp_06", temp);
-    // TODO populate RL_Tire_Temp_05 with real data
-    assign("RL_Tire_Temp_05", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RL_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      assign("RL_Tire_Temp_08", temp);
+      assign("RL_Tire_Temp_07", temp);
+      assign("RL_Tire_Temp_06", temp);
+      assign("RL_Tire_Temp_05", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RL_3()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RL_3");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
-    // TODO populate RL_Tire_Temp_12 with real data
-    assign("RL_Tire_Temp_12", temp);
-    // TODO populate RL_Tire_Temp_11 with real data
-    assign("RL_Tire_Temp_11", temp);
-    // TODO populate RL_Tire_Temp_10 with real data
-    assign("RL_Tire_Temp_10", temp);
-    // TODO populate RL_Tire_Temp_09 with real data
-    assign("RL_Tire_Temp_09", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RL_3", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      assign("RL_Tire_Temp_12", temp);
+      assign("RL_Tire_Temp_11", temp);
+      assign("RL_Tire_Temp_10", temp);
+      assign("RL_Tire_Temp_09", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_RL_4()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_RL_4");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
-    // TODO populate RL_Tire_Temp_16 with real data
-    assign("RL_Tire_Temp_16", temp);
-    // TODO populate RL_Tire_Temp_15 with real data
-    assign("RL_Tire_Temp_15", temp);
-    // TODO populate RL_Tire_Temp_14 with real data
-    assign("RL_Tire_Temp_14", temp);
-    // TODO populate RL_Tire_Temp_13 with real data
-    assign("RL_Tire_Temp_13", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_RL_4", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      assign("RL_Tire_Temp_16", temp);
+      assign("RL_Tire_Temp_15", temp);
+      assign("RL_Tire_Temp_14", temp);
+      assign("RL_Tire_Temp_13", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FR_1()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FR_1");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
-    // TODO populate FR_Tire_Temp_04 with real data
-    assign("FR_Tire_Temp_04", temp);
-    // TODO populate FR_Tire_Temp_03 with real data
-    assign("FR_Tire_Temp_03", temp);
-    // TODO populate FR_Tire_Temp_02 with real data
-    assign("FR_Tire_Temp_02", temp);
-    // TODO populate FR_Tire_Temp_01 with real data
-    assign("FR_Tire_Temp_01", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FR_1", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      assign("FR_Tire_Temp_04", temp);
+      assign("FR_Tire_Temp_03", temp);
+      assign("FR_Tire_Temp_02", temp);
+      assign("FR_Tire_Temp_01", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FR_2()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FR_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
-    // TODO populate FR_Tire_Temp_08 with real data
-    assign("FR_Tire_Temp_08", temp);
-    // TODO populate FR_Tire_Temp_07 with real data
-    assign("FR_Tire_Temp_07", temp);
-    // TODO populate FR_Tire_Temp_06 with real data
-    assign("FR_Tire_Temp_06", temp);
-    // TODO populate FR_Tire_Temp_05 with real data
-    assign("FR_Tire_Temp_05", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FR_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      assign("FR_Tire_Temp_08", temp);
+      assign("FR_Tire_Temp_07", temp);
+      assign("FR_Tire_Temp_06", temp);
+      assign("FR_Tire_Temp_05", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FR_3()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FR_3");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
-    // TODO populate FR_Tire_Temp_12 with real data
-    assign("FR_Tire_Temp_12", temp);
-    // TODO populate FR_Tire_Temp_11 with real data
-    assign("FR_Tire_Temp_11", temp);
-    // TODO populate FR_Tire_Temp_10 with real data
-    assign("FR_Tire_Temp_10", temp);
-    // TODO populate FR_Tire_Temp_09 with real data
-    assign("FR_Tire_Temp_09", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FR_3", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      assign("FR_Tire_Temp_12", temp);
+      assign("FR_Tire_Temp_11", temp);
+      assign("FR_Tire_Temp_10", temp);
+      assign("FR_Tire_Temp_09", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FR_4()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FR_4");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
-    // TODO populate FR_Tire_Temp_16 with real data
-    assign("FR_Tire_Temp_16", temp);
-    // TODO populate FR_Tire_Temp_15 with real data
-    assign("FR_Tire_Temp_15", temp);
-    // TODO populate FR_Tire_Temp_14 with real data
-    assign("FR_Tire_Temp_14", temp);
-    // TODO populate FR_Tire_Temp_13 with real data
-    assign("FR_Tire_Temp_13", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FR_4", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      assign("FR_Tire_Temp_16", temp);
+      assign("FR_Tire_Temp_15", temp);
+      assign("FR_Tire_Temp_14", temp);
+      assign("FR_Tire_Temp_13", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FL_1()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FL_1");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
-    // TODO populate FL_Tire_Temp_04 with real data
-    assign("FL_Tire_Temp_04", temp);
-    // TODO populate FL_Tire_Temp_03 with real data
-    assign("FL_Tire_Temp_03", temp);
-    // TODO populate FL_Tire_Temp_02 with real data
-    assign("FL_Tire_Temp_02", temp);
-    // TODO populate FL_Tire_Temp_01 with real data
-    assign("FL_Tire_Temp_01", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FL_1", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      assign("FL_Tire_Temp_04", temp);
+      assign("FL_Tire_Temp_03", temp);
+      assign("FL_Tire_Temp_02", temp);
+      assign("FL_Tire_Temp_01", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FL_2()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FL_2");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
-    // TODO populate FL_Tire_Temp_08 with real data
-    assign("FL_Tire_Temp_08", temp);
-    // TODO populate FL_Tire_Temp_07 with real data
-    assign("FL_Tire_Temp_07", temp);
-    // TODO populate FL_Tire_Temp_06 with real data
-    assign("FL_Tire_Temp_06", temp);
-    // TODO populate FL_Tire_Temp_05 with real data
-    assign("FL_Tire_Temp_05", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FL_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      assign("FL_Tire_Temp_08", temp);
+      assign("FL_Tire_Temp_07", temp);
+      assign("FL_Tire_Temp_06", temp);
+      assign("FL_Tire_Temp_05", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FL_3()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FL_3");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
-    // TODO populate FL_Tire_Temp_12 with real data
-    assign("FL_Tire_Temp_12", temp);
-    // TODO populate FL_Tire_Temp_11 with real data
-    assign("FL_Tire_Temp_11", temp);
-    // TODO populate FL_Tire_Temp_10 with real data
-    assign("FL_Tire_Temp_10", temp);
-    // TODO populate FL_Tire_Temp_09 with real data
-    assign("FL_Tire_Temp_09", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FL_3", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      assign("FL_Tire_Temp_12", temp);
+      assign("FL_Tire_Temp_11", temp);
+      assign("FL_Tire_Temp_10", temp);
+      assign("FL_Tire_Temp_09", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Temp_FL_4()
   {
-    const auto *message = prepareCanMessage("Tire_Temp_FL_4");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    const auto temp = this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
-    // TODO populate FL_Tire_Temp_16 with real data
-    assign("FL_Tire_Temp_16", temp);
-    // TODO populate FL_Tire_Temp_15 with real data
-    assign("FL_Tire_Temp_15", temp);
-    // TODO populate FL_Tire_Temp_14 with real data
-    assign("FL_Tire_Temp_14", temp);
-    // TODO populate FL_Tire_Temp_13 with real data
-    assign("FL_Tire_Temp_13", temp);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Temp_FL_4", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      assign("FL_Tire_Temp_16", temp);
+      assign("FL_Tire_Temp_15", temp);
+      assign("FL_Tire_Temp_14", temp);
+      assign("FL_Tire_Temp_13", temp);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Pressure_RR()
   {
-    const auto *message = prepareCanMessage("Tire_Pressure_RR");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    assign("RR_Tire_Pressure_Gauge", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_pressure_gauge);
-    assign("RR_Tire_Pressure", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_pressure);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Pressure_RR", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("RR_Tire_Pressure_Gauge", vehicle.rr_tire_pressure_gauge);
+      assign("RR_Tire_Pressure", vehicle.rr_tire_pressure);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Pressure_RL()
   {
-    const auto *message = prepareCanMessage("Tire_Pressure_RL");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    assign("RL_Tire_Pressure_Gauge", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_pressure_gauge);
-    assign("RL_Tire_Pressure", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_pressure);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Pressure_RL", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("RL_Tire_Pressure_Gauge", vehicle.rl_tire_pressure_gauge);
+      assign("RL_Tire_Pressure", vehicle.rl_tire_pressure);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Pressure_FR()
   {
-    const auto *message = prepareCanMessage("Tire_Pressure_FR");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    assign("FR_Tire_Pressure_Gauge", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_pressure_gauge);
-    assign("FR_Tire_Pressure", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_pressure);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Pressure_FR", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("FR_Tire_Pressure_Gauge", vehicle.fr_tire_pressure_gauge);
+      assign("FR_Tire_Pressure", vehicle.fr_tire_pressure);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_Tire_Pressure_FL()
   {
-    const auto *message = prepareCanMessage("Tire_Pressure_FL");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    assign("FL_Tire_Pressure_Gauge", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_pressure_gauge);
-    assign("FL_Tire_Pressure", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_pressure);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("Tire_Pressure_FL", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("FL_Tire_Pressure_Gauge", vehicle.fl_tire_pressure_gauge);
+      assign("FL_Tire_Pressure", vehicle.fl_tire_pressure);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_wheel_strain_gauge()
   {
-    const auto *message = prepareCanMessage("wheel_strain_gauge");
-    if (!message) {
-      return;
-    }
-    for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
-        {"wheel_strain_gauge_RR", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_wheel_load},
-        {"wheel_strain_gauge_RL", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_wheel_load},
-        {"wheel_strain_gauge_FR", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_wheel_load},
-        {"wheel_strain_gauge_FL", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_wheel_load}
-      }) {
-      if (const auto *signal = this->findSignal(message->id, name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
+    publishCanMessage("wheel_strain_gauge", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
+             {"wheel_strain_gauge_RR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_wheel_load},
+             {"wheel_strain_gauge_RL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_wheel_load},
+             {"wheel_strain_gauge_FR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_wheel_load},
+             {"wheel_strain_gauge_FL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_wheel_load}}) {
+        if (const auto *signal = findSignal(message.metadata->id, name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
       }
-    }
-    this->finalizeCanMessage(*message);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_wheel_potentiometer_data()
   {
-    const auto *message = prepareCanMessage("wheel_potentiometer_data");
-    if (!message) {
-      return;
-    }
-    for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
-        {"wheel_potentiometer_RR", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_damper_linear_potentiometer},
-        {"wheel_potentiometer_RL", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_damper_linear_potentiometer},
-        {"wheel_potentiometer_FR", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_damper_linear_potentiometer},
-        {"wheel_potentiometer_FL", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_damper_linear_potentiometer}
-      }) {
-      if (const auto *signal = this->findSignal(message->id, name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
+    publishCanMessage("wheel_potentiometer_data", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
+             {"wheel_potentiometer_RR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_damper_linear_potentiometer},
+             {"wheel_potentiometer_RL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_damper_linear_potentiometer},
+             {"wheel_potentiometer_FR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_damper_linear_potentiometer},
+             {"wheel_potentiometer_FL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_damper_linear_potentiometer}}) {
+        if (const auto *signal = findSignal(message.metadata->id, name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
       }
-    }
-    this->finalizeCanMessage(*message);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_wheel_speed_report()
   {
-    const auto *message = prepareCanMessage("wheel_speed_report");
-    if (!message) {
-      return;
-    }
-    for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
-        {"wheel_speed_RR", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_rear_right},
-        {"wheel_speed_RL", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_rear_left},
-        {"wheel_speed_FR", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_front_right},
-        {"wheel_speed_FL", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_front_left}
-      }) {
-      if (const auto *signal = this->findSignal(message->id, name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
+    publishCanMessage("wheel_speed_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
+             {"wheel_speed_RR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_rear_right},
+             {"wheel_speed_RL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_rear_left},
+             {"wheel_speed_FR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_front_right},
+             {"wheel_speed_FL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_front_left}}) {
+        if (const auto *signal = findSignal(message.metadata->id, name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
       }
-    }
-    this->finalizeCanMessage(*message);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_misc_report()
   {
-    const auto *message = prepareCanMessage("misc_report");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    assign("battery_voltage", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.battery_voltage);
-    assign("safety_switch_state", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.safety_switch_state);
-    assign("mode_switch_state", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.mode_switch_state);
-    assign("sys_state", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.sys_state);
-    // TODO populate raptor_rolling_counter with real data
-    assign("raptor_rolling_counter", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("misc_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("battery_voltage", vehicle.battery_voltage);
+      assign("safety_switch_state", vehicle.safety_switch_state);
+      assign("mode_switch_state", vehicle.mode_switch_state);
+      assign("sys_state", vehicle.sys_state);
+      assign("raptor_rolling_counter", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_diagnostic_report()
   {
-    const auto *message = prepareCanMessage("diagnostic_report");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    // TODO populate sd_system_warning with real data
-    assign("sd_system_warning", 0);
-    // TODO populate sd_system_failure with real data
-    assign("sd_system_failure", 0);
-    // TODO populate sd_brake_warning1 with real data
-    assign("sd_brake_warning1", 0);
-    // TODO populate sd_brake_warning2 with real data
-    assign("sd_brake_warning2", 0);
-    // TODO populate sd_brake_warning3 with real data
-    assign("sd_brake_warning3", 0);
-    // TODO populate sd_steer_warning1 with real data
-    assign("sd_steer_warning1", 0);
-    // TODO populate sd_steer_warning2 with real data
-    assign("sd_steer_warning2", 0);
-    // TODO populate sd_steer_warning3 with real data
-    assign("sd_steer_warning3", 0);
-    // TODO populate motec_warning with real data
-    assign("motec_warning", 0);
-    // TODO populate est1_oos_front_brk with real data
-    assign("est1_oos_front_brk", 0);
-    // TODO populate est2_oos_rear_brk with real data
-    assign("est2_oos_rear_brk", 0);
-    // TODO populate est3_low_eng_speed with real data
-    assign("est3_low_eng_speed", 0);
-    // TODO populate est4_sd_comms_loss with real data
-    assign("est4_sd_comms_loss", 0);
-    // TODO populate est5_motec_comms_loss with real data
-    assign("est5_motec_comms_loss", 0);
-    // TODO populate est6_sd_ebrake with real data
-    assign("est6_sd_ebrake", 0);
-    // TODO populate adlink_hb_lost with real data
-    assign("adlink_hb_lost", 0);
-    // TODO populate rc_lost with real data
-    assign("rc_lost", 0);
-    finalizeCanMessage(*message);
+    publishCanMessage("diagnostic_report", [&](PreparedCanMessage &message, const ASMBus &) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("sd_system_warning", 0);
+      assign("sd_system_failure", 0);
+      assign("sd_brake_warning1", 0);
+      assign("sd_brake_warning2", 0);
+      assign("sd_brake_warning3", 0);
+      assign("sd_steer_warning1", 0);
+      assign("sd_steer_warning2", 0);
+      assign("sd_steer_warning3", 0);
+      assign("motec_warning", 0);
+      assign("est1_oos_front_brk", 0);
+      assign("est2_oos_rear_brk", 0);
+      assign("est3_low_eng_speed", 0);
+      assign("est4_sd_comms_loss", 0);
+      assign("est5_motec_comms_loss", 0);
+      assign("est6_sd_ebrake", 0);
+      assign("adlink_hb_lost", 0);
+      assign("rc_lost", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_VECTOR__INDEPENDENT_SIG_MSG()
   {
-    const auto *message = prepareCanMessage("VECTOR__INDEPENDENT_SIG_MSG");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = findSignal(message->id, signal_name)) {
-        insertBits(can_out_frame.data, *signal, value);
-      }
-    };
-    assign("ang_heading", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.insstatus_var.gps_heading_ins);
-    assign("pos_y", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.position_var.y);
-    assign("pos_x", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.position_var.x);
-    assign("yaw_rate", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.angularrate_var.z);
-    assign("velocity_long", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.velocity_var.x);
-    assign("velocity_lat", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.velocity_var.y);
-    assign("motor_angle", this->canBus->sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
-    assign("acceleration", this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var.accel_var.x);
-    assign("rc_base_sync_check", static_cast<uint8_t>(1));
-    // TODO populate rc_lte_rssi with real data
-    assign("rc_lte_rssi", 0);
-    // TODO populate duty_cycle_fbk with real data
-    assign("duty_cycle_fbk", 0);
-    // TODO populate duty_cycle_dmd with real data
-    assign("duty_cycle_dmd", 0);
-    // TODO populate steering_motor_ang_avg_fdbk with real data
-    assign("steering_motor_ang_avg_fdbk", 0);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("VECTOR__INDEPENDENT_SIG_MSG", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &vector_nav = bus.sim_interface_var.vector_nav_vn1_var.common_group_var;
+      assign("ang_heading", vector_nav.insstatus_var.gps_heading_ins);
+      assign("pos_y", vector_nav.position_var.y);
+      assign("pos_x", vector_nav.position_var.x);
+      assign("yaw_rate", vector_nav.angularrate_var.z);
+      assign("velocity_long", vector_nav.velocity_var.x);
+      assign("velocity_lat", vector_nav.velocity_var.y);
+      assign("motor_angle", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
+      assign("acceleration", vector_nav.accel_var.x);
+      assign("rc_base_sync_check", static_cast<uint8_t>(1));
+      assign("rc_lte_rssi", 0);
+      assign("duty_cycle_fbk", 0);
+      assign("duty_cycle_dmd", 0);
+      assign("steering_motor_ang_avg_fdbk", 0);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_bestpos(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelBestPosPublisher1_ : this->novaTelBestPosPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTPOS message;
-    populateBestPosMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateBestPosMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_bestgnsspos(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelBestGNSSPosPublisher1_ : this->novaTelBestGNSSPosPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTPOS message;
-    populateBestPosMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateBestPosMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_bestvel(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelBestVelPublisher1_ : this->novaTelBestVelPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTVEL message;
-    populateBestVelMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateBestVelMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_bestgnssvel(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelBestGNSSVelPublisher1_ : this->novaTelBestGNSSVelPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTVEL message;
-    populateBestVelMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateBestVelMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_inspva(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelInspvaPublisher1_ : this->novaTelInspvaPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::INSPVA message;
-    populateInspvaMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateInspvaMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_heading2(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelHeading2Publisher1_ : this->novaTelHeading2Publisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::HEADING2 message;
-    populateHeading2Message(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateHeading2Message(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_rawimu(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelRawImuPublisher1_ : this->novaTelRawImuPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::RAWIMU message;
-    populateRawImuMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateRawImuMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_rawimux(uint8_t novatel_id)
   {
-    const auto *data = getNovatelData(novatel_id);
     auto publisher = novatel_id == 1 ? this->novaTelRawImuXPublisher1_ : this->novaTelRawImuXPublisher2_;
-    if (!data || !publisher) {
+    if (!publisher) {
       return;
     }
     sensor_msgs::msg::Imu message;
-    populateRawImuXMessage(message, *data);
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
+                                                           : nullptr;
+      if (!data) {
+        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+        return;
+      }
+      populateRawImuXMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::publish_novatel_report()
   {
-    const auto *message = prepareCanMessage("novatel_report");
-    if (!message) {
-      return;
-    }
-    auto assign = [&](std::string_view signal_name, auto value) {
-      if (const auto *signal = this->findSignal(message->id, signal_name)) {
-        this->insertBits(this->can_out_frame.data, *signal, value);
-      }
-    };
-    assign("novatel_lat", this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
-    assign("novatel_long", this->canBus->sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
-    this->finalizeCanMessage(*message);
+    publishCanMessage("novatel_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      assign("novatel_lat", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
+      assign("novatel_long", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
+    });
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_attitude_group()
   {
     vectornav_msgs::msg::AttitudeGroup attitudeGroup;
     setHeader(attitudeGroup.header, "world");
-    const auto &source = this->canBus->sim_interface_var.vector_nav_vn1_var.attitude_group_var;
-    attitudeGroup.vpestatus.attitude_quality = source.vpestatus_var.attitude_quality;
-    attitudeGroup.vpestatus.gyro_saturation = source.vpestatus_var.gyro_saturation;
-    attitudeGroup.vpestatus.gyro_saturation_recovery = source.vpestatus_var.gyro_saturation_recovery;
-    attitudeGroup.vpestatus.mag_disturbance = source.vpestatus_var.mag_disturbance;
-    attitudeGroup.vpestatus.mag_saturation = source.vpestatus_var.mag_saturation;
-    attitudeGroup.vpestatus.acc_disturbance = source.vpestatus_var.acc_disturbance;
-    attitudeGroup.vpestatus.acc_saturation = source.vpestatus_var.acc_saturation;
-    attitudeGroup.vpestatus.known_mag_disturbance = source.vpestatus_var.known_mag_disturbance;
-    attitudeGroup.vpestatus.known_accel_disturbance = source.vpestatus_var.known_accel_disturbance;
-    attitudeGroup.yawpitchroll.x = source.yawpitchroll_var.x;
-    attitudeGroup.yawpitchroll.y = source.yawpitchroll_var.y;
-    attitudeGroup.yawpitchroll.z = source.yawpitchroll_var.z;
-    attitudeGroup.quaternion.w = source.quaternion_var.w;
-    attitudeGroup.quaternion.x = source.quaternion_var.x;
-    attitudeGroup.quaternion.y = source.quaternion_var.y;
-    attitudeGroup.quaternion.z = source.quaternion_var.z;
-    for (size_t i = 0; i < attitudeGroup.dcm.size(); ++i) {
-      attitudeGroup.dcm[i] = source.dcm[i];
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.attitude_group_var;
+      attitudeGroup.vpestatus.attitude_quality = source.vpestatus_var.attitude_quality;
+      attitudeGroup.vpestatus.gyro_saturation = source.vpestatus_var.gyro_saturation;
+      attitudeGroup.vpestatus.gyro_saturation_recovery = source.vpestatus_var.gyro_saturation_recovery;
+      attitudeGroup.vpestatus.mag_disturbance = source.vpestatus_var.mag_disturbance;
+      attitudeGroup.vpestatus.mag_saturation = source.vpestatus_var.mag_saturation;
+      attitudeGroup.vpestatus.acc_disturbance = source.vpestatus_var.acc_disturbance;
+      attitudeGroup.vpestatus.acc_saturation = source.vpestatus_var.acc_saturation;
+      attitudeGroup.vpestatus.known_mag_disturbance = source.vpestatus_var.known_mag_disturbance;
+      attitudeGroup.vpestatus.known_accel_disturbance = source.vpestatus_var.known_accel_disturbance;
+      attitudeGroup.yawpitchroll.x = source.yawpitchroll_var.x;
+      attitudeGroup.yawpitchroll.y = source.yawpitchroll_var.y;
+      attitudeGroup.yawpitchroll.z = source.yawpitchroll_var.z;
+      attitudeGroup.quaternion.w = source.quaternion_var.w;
+      attitudeGroup.quaternion.x = source.quaternion_var.x;
+      attitudeGroup.quaternion.y = source.quaternion_var.y;
+      attitudeGroup.quaternion.z = source.quaternion_var.z;
+      for (size_t i = 0; i < attitudeGroup.dcm.size(); ++i) {
+        attitudeGroup.dcm[i] = source.dcm[i];
+      }
+      attitudeGroup.magned.x = source.magned_var.x;
+      attitudeGroup.magned.y = source.magned_var.y;
+      attitudeGroup.magned.z = source.magned_var.z;
+      attitudeGroup.accelned.x = source.accelned_var.x;
+      attitudeGroup.accelned.y = source.accelned_var.y;
+      attitudeGroup.accelned.z = source.accelned_var.z;
+      attitudeGroup.linearaccelbody.x = source.linearaccelbody_var.x;
+      attitudeGroup.linearaccelbody.y = source.linearaccelbody_var.y;
+      attitudeGroup.linearaccelbody.z = source.linearaccelbody_var.z;
+      attitudeGroup.linearaccelned.x = source.linearaccelned_var.x;
+      attitudeGroup.linearaccelned.y = source.linearaccelned_var.y;
+      attitudeGroup.linearaccelned.z = source.linearaccelned_var.z;
+      attitudeGroup.ypru.x = source.ypru_var.x;
+      attitudeGroup.ypru.y = source.ypru_var.y;
+      attitudeGroup.ypru.z = source.ypru_var.z;
+      populated = true;
+    })) {
+      return;
     }
-    attitudeGroup.magned.x = source.magned_var.x;
-    attitudeGroup.magned.y = source.magned_var.y;
-    attitudeGroup.magned.z = source.magned_var.z;
-    attitudeGroup.accelned.x = source.accelned_var.x;
-    attitudeGroup.accelned.y = source.accelned_var.y;
-    attitudeGroup.accelned.z = source.accelned_var.z;
-    attitudeGroup.linearaccelbody.x = source.linearaccelbody_var.x;
-    attitudeGroup.linearaccelbody.y = source.linearaccelbody_var.y;
-    attitudeGroup.linearaccelbody.z = source.linearaccelbody_var.z;
-    attitudeGroup.linearaccelned.x = source.linearaccelned_var.x;
-    attitudeGroup.linearaccelned.y = source.linearaccelned_var.y;
-    attitudeGroup.linearaccelned.z = source.linearaccelned_var.z;
-    attitudeGroup.ypru.x = source.ypru_var.x;
-    attitudeGroup.ypru.y = source.ypru_var.y;
-    attitudeGroup.ypru.z = source.ypru_var.z;
+    if (!populated) {
+      return;
+    }
     this->verctorNavAttitudeGroupPublisher_->publish(attitudeGroup);
   }
 
@@ -2760,56 +2664,65 @@ namespace asm_socketcan_bridge {
   {
     vectornav_msgs::msg::CommonGroup commonGroup;
     setHeader(commonGroup.header, "world");
-    const auto &source = this->canBus->sim_interface_var.vector_nav_vn1_var.common_group_var;
-    commonGroup.timestartup = source.timestartup;
-    commonGroup.timegps = source.timegps;
-    commonGroup.timesyncin = source.timesyncin;
-    commonGroup.yawpitchroll.x = source.yawpitchroll_var.x;
-    commonGroup.yawpitchroll.y = source.yawpitchroll_var.y;
-    commonGroup.yawpitchroll.z = source.yawpitchroll_var.z;
-    commonGroup.quaternion.w = source.quaternion_var.w;
-    commonGroup.quaternion.x = source.quaternion_var.x;
-    commonGroup.quaternion.y = source.quaternion_var.y;
-    commonGroup.quaternion.z = source.quaternion_var.z;
-    commonGroup.angularrate.x = source.angularrate_var.x;
-    commonGroup.angularrate.y = source.angularrate_var.y;
-    commonGroup.angularrate.z = source.angularrate_var.z;
-    commonGroup.position.x = source.position_var.x;
-    commonGroup.position.y = source.position_var.y;
-    commonGroup.position.z = source.position_var.z;
-    commonGroup.velocity.x = source.velocity_var.x;
-    commonGroup.velocity.y = source.velocity_var.y;
-    commonGroup.velocity.z = source.velocity_var.z;
-    commonGroup.accel.x = source.accel_var.x;
-    commonGroup.accel.y = source.accel_var.y;
-    commonGroup.accel.z = source.accel_var.z;
-    commonGroup.imu_accel.x = source.imu_accel_var.x;
-    commonGroup.imu_accel.y = source.imu_accel_var.y;
-    commonGroup.imu_accel.z = source.imu_accel_var.z;
-    commonGroup.imu_rate.x = source.imu_rate_var.x;
-    commonGroup.imu_rate.y = source.imu_rate_var.y;
-    commonGroup.imu_rate.z = source.imu_rate_var.z;
-    commonGroup.magpres_mag.x = source.magpres_mag_var.x;
-    commonGroup.magpres_mag.y = source.magpres_mag_var.y;
-    commonGroup.magpres_mag.z = source.magpres_mag_var.z;
-    commonGroup.magpres_temp = source.magpres_temp;
-    commonGroup.magpres_pres = source.magpres_pres;
-    commonGroup.deltatheta_dtime = source.deltatheta_dtime;
-    commonGroup.deltatheta_dtheta.x = source.deltatheta_dtheta_var.x;
-    commonGroup.deltatheta_dtheta.y = source.deltatheta_dtheta_var.y;
-    commonGroup.deltatheta_dtheta.z = source.deltatheta_dtheta_var.z;
-    commonGroup.deltatheta_dvel.x = source.deltatheta_dvel_var.x;
-    commonGroup.deltatheta_dvel.y = source.deltatheta_dvel_var.y;
-    commonGroup.deltatheta_dvel.z = source.deltatheta_dvel_var.z;
-    commonGroup.insstatus.gps_fix = source.insstatus_var.gps_fix;
-    commonGroup.insstatus.time_error = source.insstatus_var.time_error;
-    commonGroup.insstatus.imu_error = source.insstatus_var.imu_error;
-    commonGroup.insstatus.mag_pres_error = source.insstatus_var.mag_pres_error;
-    commonGroup.insstatus.gps_error = source.insstatus_var.gps_error;
-    commonGroup.insstatus.gps_heading_ins = source.insstatus_var.gps_heading_ins;
-    commonGroup.insstatus.gps_compass = source.insstatus_var.gps_compass;
-    commonGroup.syncincnt = source.syncincnt;
-    commonGroup.timegpspps = source.timegpspps;
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.common_group_var;
+      commonGroup.timestartup = source.timestartup;
+      commonGroup.timegps = source.timegps;
+      commonGroup.timesyncin = source.timesyncin;
+      commonGroup.yawpitchroll.x = source.yawpitchroll_var.x;
+      commonGroup.yawpitchroll.y = source.yawpitchroll_var.y;
+      commonGroup.yawpitchroll.z = source.yawpitchroll_var.z;
+      commonGroup.quaternion.w = source.quaternion_var.w;
+      commonGroup.quaternion.x = source.quaternion_var.x;
+      commonGroup.quaternion.y = source.quaternion_var.y;
+      commonGroup.quaternion.z = source.quaternion_var.z;
+      commonGroup.angularrate.x = source.angularrate_var.x;
+      commonGroup.angularrate.y = source.angularrate_var.y;
+      commonGroup.angularrate.z = source.angularrate_var.z;
+      commonGroup.position.x = source.position_var.x;
+      commonGroup.position.y = source.position_var.y;
+      commonGroup.position.z = source.position_var.z;
+      commonGroup.velocity.x = source.velocity_var.x;
+      commonGroup.velocity.y = source.velocity_var.y;
+      commonGroup.velocity.z = source.velocity_var.z;
+      commonGroup.accel.x = source.accel_var.x;
+      commonGroup.accel.y = source.accel_var.y;
+      commonGroup.accel.z = source.accel_var.z;
+      commonGroup.imu_accel.x = source.imu_accel_var.x;
+      commonGroup.imu_accel.y = source.imu_accel_var.y;
+      commonGroup.imu_accel.z = source.imu_accel_var.z;
+      commonGroup.imu_rate.x = source.imu_rate_var.x;
+      commonGroup.imu_rate.y = source.imu_rate_var.y;
+      commonGroup.imu_rate.z = source.imu_rate_var.z;
+      commonGroup.magpres_mag.x = source.magpres_mag_var.x;
+      commonGroup.magpres_mag.y = source.magpres_mag_var.y;
+      commonGroup.magpres_mag.z = source.magpres_mag_var.z;
+      commonGroup.magpres_temp = source.magpres_temp;
+      commonGroup.magpres_pres = source.magpres_pres;
+      commonGroup.deltatheta_dtime = source.deltatheta_dtime;
+      commonGroup.deltatheta_dtheta.x = source.deltatheta_dtheta_var.x;
+      commonGroup.deltatheta_dtheta.y = source.deltatheta_dtheta_var.y;
+      commonGroup.deltatheta_dtheta.z = source.deltatheta_dtheta_var.z;
+      commonGroup.deltatheta_dvel.x = source.deltatheta_dvel_var.x;
+      commonGroup.deltatheta_dvel.y = source.deltatheta_dvel_var.y;
+      commonGroup.deltatheta_dvel.z = source.deltatheta_dvel_var.z;
+      commonGroup.insstatus.gps_fix = source.insstatus_var.gps_fix;
+      commonGroup.insstatus.time_error = source.insstatus_var.time_error;
+      commonGroup.insstatus.imu_error = source.insstatus_var.imu_error;
+      commonGroup.insstatus.mag_pres_error = source.insstatus_var.mag_pres_error;
+      commonGroup.insstatus.gps_error = source.insstatus_var.gps_error;
+      commonGroup.insstatus.gps_heading_ins = source.insstatus_var.gps_heading_ins;
+      commonGroup.insstatus.gps_compass = source.insstatus_var.gps_compass;
+      commonGroup.syncincnt = source.syncincnt;
+      commonGroup.timegpspps = source.timegpspps;
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     this->verctorNavCommonGroupPublisher_->publish(commonGroup);
   }
 
@@ -2817,50 +2730,67 @@ namespace asm_socketcan_bridge {
   {
     vectornav_msgs::msg::ImuGroup imuGroup;
     setHeader(imuGroup.header, "world");
-    const auto &source = this->canBus->sim_interface_var.vector_nav_vn1_var.imu_group_var;
-    imuGroup.imustatus = source.imustatus;
-    imuGroup.uncompmag.x = source.uncompmag_var.x;
-    imuGroup.uncompmag.y = source.uncompmag_var.y;
-    imuGroup.uncompmag.z = source.uncompmag_var.z;
-    imuGroup.uncompaccel.x = source.uncompaccel_var.x;
-    imuGroup.uncompaccel.y = source.uncompaccel_var.y;
-    imuGroup.uncompaccel.z = source.uncompaccel_var.z;
-    imuGroup.uncompgyro.x = source.uncompgyro_var.x;
-    imuGroup.uncompgyro.y = source.uncompgyro_var.y;
-    imuGroup.uncompgyro.z = source.uncompgyro_var.z;
-    imuGroup.temp = source.temp;
-    imuGroup.pres = source.pres;
-    imuGroup.deltatheta_time = source.deltatheta_time;
-    imuGroup.deltatheta_dtheta.x = source.deltatheta_dtheta_var.x;
-    imuGroup.deltatheta_dtheta.y = source.deltatheta_dtheta_var.y;
-    imuGroup.deltatheta_dtheta.z = source.deltatheta_dtheta_var.z;
-    imuGroup.deltavel.x = source.deltavel_var.x;
-    imuGroup.deltavel.y = source.deltavel_var.y;
-    imuGroup.deltavel.z = source.deltavel_var.z;
-    imuGroup.mag.x = source.mag_var.x;
-    imuGroup.mag.y = source.mag_var.y;
-    imuGroup.mag.z = source.mag_var.z;
-    imuGroup.accel.x = source.accel_var.x;
-    imuGroup.accel.y = source.accel_var.y;
-    imuGroup.accel.z = source.accel_var.z;
-    imuGroup.angularrate.x = source.angularrate_var.x;
-    imuGroup.angularrate.y = source.angularrate_var.y;
-    imuGroup.angularrate.z = source.angularrate_var.z;
-    imuGroup.sensat = source.sensat;
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.imu_group_var;
+      imuGroup.imustatus = source.imustatus;
+      imuGroup.uncompmag.x = source.uncompmag_var.x;
+      imuGroup.uncompmag.y = source.uncompmag_var.y;
+      imuGroup.uncompmag.z = source.uncompmag_var.z;
+      imuGroup.uncompaccel.x = source.uncompaccel_var.x;
+      imuGroup.uncompaccel.y = source.uncompaccel_var.y;
+      imuGroup.uncompaccel.z = source.uncompaccel_var.z;
+      imuGroup.uncompgyro.x = source.uncompgyro_var.x;
+      imuGroup.uncompgyro.y = source.uncompgyro_var.y;
+      imuGroup.uncompgyro.z = source.uncompgyro_var.z;
+      imuGroup.temp = source.temp;
+      imuGroup.pres = source.pres;
+      imuGroup.deltatheta_time = source.deltatheta_time;
+      imuGroup.deltatheta_dtheta.x = source.deltatheta_dtheta_var.x;
+      imuGroup.deltatheta_dtheta.y = source.deltatheta_dtheta_var.y;
+      imuGroup.deltatheta_dtheta.z = source.deltatheta_dtheta_var.z;
+      imuGroup.deltavel.x = source.deltavel_var.x;
+      imuGroup.deltavel.y = source.deltavel_var.y;
+      imuGroup.deltavel.z = source.deltavel_var.z;
+      imuGroup.mag.x = source.mag_var.x;
+      imuGroup.mag.y = source.mag_var.y;
+      imuGroup.mag.z = source.mag_var.z;
+      imuGroup.accel.x = source.accel_var.x;
+      imuGroup.accel.y = source.accel_var.y;
+      imuGroup.accel.z = source.accel_var.z;
+      imuGroup.angularrate.x = source.angularrate_var.x;
+      imuGroup.angularrate.y = source.angularrate_var.y;
+      imuGroup.angularrate.z = source.angularrate_var.z;
+      imuGroup.sensat = source.sensat;
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     this->verctorNavImuGroupPublisher_->publish(imuGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_gps_group_left()
   {
     vectornav_msgs::msg::GpsGroup gpsGroup;
-    populateGpsGroupMessage(gpsGroup, this->canBus->sim_interface_var.vector_nav_vn1_var.gps_group1_var);
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      populateGpsGroupMessage(gpsGroup, bus.sim_interface_var.vector_nav_vn1_var.gps_group1_var);
+    })) {
+      return;
+    }
     this->verctorNavGpsGroupLeftPublisher_->publish(gpsGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_gps_group_right()
   {
     vectornav_msgs::msg::GpsGroup gpsGroup;
-    populateGpsGroupMessage(gpsGroup, this->canBus->sim_interface_var.vector_nav_vn1_var.gps_group2_var);
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      populateGpsGroupMessage(gpsGroup, bus.sim_interface_var.vector_nav_vn1_var.gps_group2_var);
+    })) {
+      return;
+    }
     this->verctorNavGpsGroupRightPublisher_->publish(gpsGroup);
   }
 
@@ -2868,40 +2798,49 @@ namespace asm_socketcan_bridge {
   {
     vectornav_msgs::msg::InsGroup insGroup;
     setHeader(insGroup.header, "world");
-    const auto &source = this->canBus->sim_interface_var.vector_nav_vn1_var.ins_group_var;
-    insGroup.insstatus.gps_fix = source.insstatus_var.gps_fix;
-    insGroup.insstatus.time_error = source.insstatus_var.time_error;
-    insGroup.insstatus.imu_error = source.insstatus_var.imu_error;
-    insGroup.insstatus.mag_pres_error = source.insstatus_var.mag_pres_error;
-    insGroup.insstatus.gps_error = source.insstatus_var.gps_error;
-    insGroup.insstatus.gps_heading_ins = source.insstatus_var.gps_heading_ins;
-    insGroup.insstatus.gps_compass = source.insstatus_var.gps_compass;
-    insGroup.poslla.x = source.poslla_var.x;
-    insGroup.poslla.y = source.poslla_var.y;
-    insGroup.poslla.z = source.poslla_var.z;
-    insGroup.posecef.x = source.posecef_var.x;
-    insGroup.posecef.y = source.posecef_var.y;
-    insGroup.posecef.z = source.posecef_var.z;
-    insGroup.velbody.x = source.velbody_var.x;
-    insGroup.velbody.y = source.velbody_var.y;
-    insGroup.velbody.z = source.velbody_var.z;
-    insGroup.velned.x = source.velned_var.x;
-    insGroup.velned.y = source.velned_var.y;
-    insGroup.velned.z = source.velned_var.z;
-    insGroup.velecef.x = source.velecef_var.x;
-    insGroup.velecef.y = source.velecef_var.y;
-    insGroup.velecef.z = source.velecef_var.z;
-    insGroup.magecef.x = source.magecef_var.x;
-    insGroup.magecef.y = source.magecef_var.y;
-    insGroup.magecef.z = source.magecef_var.z;
-    insGroup.accelecef.x = source.accelecef_var.x;
-    insGroup.accelecef.y = source.accelecef_var.y;
-    insGroup.accelecef.z = source.accelecef_var.z;
-    insGroup.linearaccelecef.x = source.linearaccelecef_var.x;
-    insGroup.linearaccelecef.y = source.linearaccelecef_var.y;
-    insGroup.linearaccelecef.z = source.linearaccelecef_var.z;
-    insGroup.posu = source.posu_var;
-    insGroup.velu = source.velu;
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.ins_group_var;
+      insGroup.insstatus.gps_fix = source.insstatus_var.gps_fix;
+      insGroup.insstatus.time_error = source.insstatus_var.time_error;
+      insGroup.insstatus.imu_error = source.insstatus_var.imu_error;
+      insGroup.insstatus.mag_pres_error = source.insstatus_var.mag_pres_error;
+      insGroup.insstatus.gps_error = source.insstatus_var.gps_error;
+      insGroup.insstatus.gps_heading_ins = source.insstatus_var.gps_heading_ins;
+      insGroup.insstatus.gps_compass = source.insstatus_var.gps_compass;
+      insGroup.poslla.x = source.poslla_var.x;
+      insGroup.poslla.y = source.poslla_var.y;
+      insGroup.poslla.z = source.poslla_var.z;
+      insGroup.posecef.x = source.posecef_var.x;
+      insGroup.posecef.y = source.posecef_var.y;
+      insGroup.posecef.z = source.posecef_var.z;
+      insGroup.velbody.x = source.velbody_var.x;
+      insGroup.velbody.y = source.velbody_var.y;
+      insGroup.velbody.z = source.velbody_var.z;
+      insGroup.velned.x = source.velned_var.x;
+      insGroup.velned.y = source.velned_var.y;
+      insGroup.velned.z = source.velned_var.z;
+      insGroup.velecef.x = source.velecef_var.x;
+      insGroup.velecef.y = source.velecef_var.y;
+      insGroup.velecef.z = source.velecef_var.z;
+      insGroup.magecef.x = source.magecef_var.x;
+      insGroup.magecef.y = source.magecef_var.y;
+      insGroup.magecef.z = source.magecef_var.z;
+      insGroup.accelecef.x = source.accelecef_var.x;
+      insGroup.accelecef.y = source.accelecef_var.y;
+      insGroup.accelecef.z = source.accelecef_var.z;
+      insGroup.linearaccelecef.x = source.linearaccelecef_var.x;
+      insGroup.linearaccelecef.y = source.linearaccelecef_var.y;
+      insGroup.linearaccelecef.z = source.linearaccelecef_var.z;
+      insGroup.posu = source.posu_var;
+      insGroup.velu = source.velu;
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     this->verctorNavInsGroupPublisher_->publish(insGroup);
   }
 
@@ -2909,25 +2848,34 @@ namespace asm_socketcan_bridge {
   {
     vectornav_msgs::msg::TimeGroup timeGroup;
     setHeader(timeGroup.header, "");
-    const auto &source = this->canBus->sim_interface_var.vector_nav_vn1_var.time_group_var;
-    timeGroup.timestartup = source.timestartup;
-    timeGroup.timegps = source.timegps;
-    timeGroup.gpstow = source.gpstow;
-    timeGroup.gpsweek = source.gpsweek;
-    timeGroup.timesyncin = source.timesyncin;
-    timeGroup.timegpspps = source.timegpspps;
-    timeGroup.timeutc.year = source.timeutc_var.year;
-    timeGroup.timeutc.month = source.timeutc_var.month;
-    timeGroup.timeutc.day = source.timeutc_var.day;
-    timeGroup.timeutc.hour = source.timeutc_var.hour;
-    timeGroup.timeutc.min = source.timeutc_var.min;
-    timeGroup.timeutc.sec = source.timeutc_var.sec;
-    timeGroup.timeutc.ms = source.timeutc_var.ms;
-    timeGroup.syncincnt = source.syncincnt;
-    timeGroup.syncoutcnt = source.syncoutcnt;
-    timeGroup.timestatus.time_ok = source.timestatus_var.time_ok;
-    timeGroup.timestatus.date_ok = source.timestatus_var.date_ok;
-    timeGroup.timestatus.utctime_ok = source.timestatus_var.utctime_ok;
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.time_group_var;
+      timeGroup.timestartup = source.timestartup;
+      timeGroup.timegps = source.timegps;
+      timeGroup.gpstow = source.gpstow;
+      timeGroup.gpsweek = source.gpsweek;
+      timeGroup.timesyncin = source.timesyncin;
+      timeGroup.timegpspps = source.timegpspps;
+      timeGroup.timeutc.year = source.timeutc_var.year;
+      timeGroup.timeutc.month = source.timeutc_var.month;
+      timeGroup.timeutc.day = source.timeutc_var.day;
+      timeGroup.timeutc.hour = source.timeutc_var.hour;
+      timeGroup.timeutc.min = source.timeutc_var.min;
+      timeGroup.timeutc.sec = source.timeutc_var.sec;
+      timeGroup.timeutc.ms = source.timeutc_var.ms;
+      timeGroup.syncincnt = source.syncincnt;
+      timeGroup.syncoutcnt = source.syncoutcnt;
+      timeGroup.timestatus.time_ok = source.timestatus_var.time_ok;
+      timeGroup.timestatus.date_ok = source.timestatus_var.date_ok;
+      timeGroup.timestatus.utctime_ok = source.timestatus_var.utctime_ok;
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
     this->verctorNavTimeGroupPublisher_->publish(timeGroup);
   }
 
@@ -2938,8 +2886,6 @@ namespace asm_socketcan_bridge {
     }
 
     auto groundTruthArray = autonoma_msgs::msg::GroundTruthArray();
-
-    groundTruthArray.vehicles.resize(this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count);
 
     groundTruthArray.header.frame_id = "world";
 
@@ -2959,42 +2905,49 @@ namespace asm_socketcan_bridge {
 
     bool groundTruthArrayFilled = false;
 
-    for (size_t vehicleID = 0; vehicleID < this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count; vehicleID++)
-    {
-      if (this->verbosePrinting) {
-        RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 2");
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto fellow_count_raw = bus.sim_interface_var.vehicle_sensors_var.fellow_count;
+      const auto fellow_count = static_cast<size_t>(fellow_count_raw);
+      if (fellow_count == 0) {
+        groundTruthArray.vehicles.resize(1);
+        return;
       }
-      groundTruthArray.vehicles[vehicleID].header.frame_id = groundTruthArray.header.frame_id;
-      groundTruthArray.vehicles[vehicleID].header.stamp.sec = groundTruthArray.header.stamp.sec;
-      groundTruthArray.vehicles[vehicleID].header.stamp.nanosec = groundTruthArray.header.stamp.nanosec;
-      if (this->verbosePrinting) {
-        RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 3");
-      }
+      groundTruthArray.vehicles.resize(fellow_count);
+      for (size_t vehicleID = 0; vehicleID < fellow_count; vehicleID++) {
+        if (this->verbosePrinting) {
+          RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 2");
+        }
+        auto &vehicle = groundTruthArray.vehicles[vehicleID];
+        vehicle.header.frame_id = groundTruthArray.header.frame_id;
+        vehicle.header.stamp.sec = groundTruthArray.header.stamp.sec;
+        vehicle.header.stamp.nanosec = groundTruthArray.header.stamp.nanosec;
+        if (this->verbosePrinting) {
+          RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 3");
+        }
 
-      groundTruthArray.vehicles[vehicleID].car_num = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.car_num[vehicleID];
-      
-      groundTruthArray.vehicles[vehicleID].lat = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[vehicleID];
-      groundTruthArray.vehicles[vehicleID].lon = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[vehicleID];
-      groundTruthArray.vehicles[vehicleID].hgt = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[vehicleID];
-      
-      groundTruthArray.vehicles[vehicleID].vx = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.vx[vehicleID];
-      groundTruthArray.vehicles[vehicleID].vy = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.vy[vehicleID];
-      groundTruthArray.vehicles[vehicleID].vz = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.vz[vehicleID];
-      if (this->verbosePrinting) {
-        RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 4");
+        vehicle.car_num = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.car_num[vehicleID];
+        vehicle.lat = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[vehicleID];
+        vehicle.lon = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[vehicleID];
+        vehicle.hgt = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[vehicleID];
+        vehicle.vx = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.vx[vehicleID];
+        vehicle.vy = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.vy[vehicleID];
+        vehicle.vz = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.vz[vehicleID];
+        if (this->verbosePrinting) {
+          RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 4");
+        }
+        vehicle.yaw = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.yaw[vehicleID];
+        vehicle.pitch = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.pitch[vehicleID];
+        vehicle.roll = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.roll[vehicleID];
+        if (this->verbosePrinting) {
+          RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 5");
+        }
+        vehicle.del_x = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.del_x[vehicleID];
+        vehicle.del_y = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.del_y[vehicleID];
+        vehicle.del_z = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.del_z[vehicleID];
+        groundTruthArrayFilled = true;
       }
-      
-      groundTruthArray.vehicles[vehicleID].yaw = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.yaw[vehicleID];
-      groundTruthArray.vehicles[vehicleID].pitch = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.pitch[vehicleID];
-      groundTruthArray.vehicles[vehicleID].roll = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.roll[vehicleID];
-      if (this->verbosePrinting) {
-        RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 5");
-      }
-      
-      groundTruthArray.vehicles[vehicleID].del_x = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.del_x[vehicleID];
-      groundTruthArray.vehicles[vehicleID].del_y = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.del_y[vehicleID];
-      groundTruthArray.vehicles[vehicleID].del_z = this->canBus->sim_interface_var.vehicle_sensors_var.ground_truth_var.del_z[vehicleID];
-      groundTruthArrayFilled = true;
+    })) {
+      return;
     }
     if (this->verbosePrinting) {
       RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 6");
