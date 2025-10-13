@@ -118,7 +118,8 @@ namespace asm_socketcan_bridge
 
         // Timer
         rclcpp::TimerBase::SharedPtr vesiAcquisitionTimer_;
-        rclcpp::TimerBase::SharedPtr updateVESIVehicleInputs_;
+        rclcpp::CallbackGroup::SharedPtr publisher_callback_group_;
+        std::vector<rclcpp::TimerBase::SharedPtr> publisher_timers_;
 
         // Subsciber
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr useCustomRaceControlSource_;
@@ -158,15 +159,10 @@ namespace asm_socketcan_bridge
         std::string can_iface;
 
         // Execution duration logging
-        double duration_send_feedback_ms = 0.0;
-        double duration_request_data_ms = 0.0;
-        double duration_cast_ms = 0.0;
-        double duration_callback_interval_ms = 0.0;
         int64_t last_callback_start_ns = 0;
         std::ofstream myfile;
         std::string pathTimeRecord;
         bool enableTimeRecord;
-        bool metrics_ready = false;
 
         // Simulated clock
         uint32_t nsec = 0;
@@ -174,15 +170,6 @@ namespace asm_socketcan_bridge
         uint64_t simTotalMsec = 0;
         rosgraph_msgs::msg::Clock simClockTime;
         rclcpp::TimerBase::SharedPtr updateSimClock_;
-
-        // Custom publish frequencies
-        uint32_t pubIntervalRaceControlData;
-        uint32_t pubIntervalVehicleData;
-        uint32_t pubIntervalPowertrainData;
-        uint32_t pubIntervalGroundTruthArray;
-        uint32_t pubIntervalVectorNavData;
-        uint32_t pubIntervalNovatelData;
-        uint32_t pubIntervalFoxgloveMap;
 
         // Custom Structures
         VESIResultData feedbackCmds;
@@ -209,7 +196,6 @@ namespace asm_socketcan_bridge
         void publish_map2d_fellow2_position();
         void publish_map2d_fellow3_position();
         void publishFoxgloveSceneUpdate();
-        void publishSimulationState();
         void publish_base_to_car_summary();
         void publish_marelli_report_1();
         void publish_marelli_report_2();

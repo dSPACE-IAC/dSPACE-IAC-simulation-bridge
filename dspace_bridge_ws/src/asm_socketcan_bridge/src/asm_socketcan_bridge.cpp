@@ -1,5 +1,8 @@
 #include "asm_socketcan_bridge.h"
 
+#include <rclcpp/create_timer.hpp>
+#include <rclcpp/executors/multi_threaded_executor.hpp>
+
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -89,47 +92,168 @@ namespace asm_socketcan_bridge {
     RCLCPP_INFO(this->get_logger(), "SimManager Port: %d", sim_manager_port);
     this->api.setSimManagerPort(sim_manager_port);
 
-    auto declare_interval = [this](const std::string &name,
-                                           const std::string &description,
-                                           uint32_t default_value) {
-      const int64_t raw_value = this->declare_parameter<int64_t>(
-        name,
-        static_cast<int64_t>(default_value));
-      const auto sanitized =
-        sanitize_interval_value(raw_value, default_value, this->get_logger(), description);
-      RCLCPP_INFO(this->get_logger(), "%s: %u ms", description.c_str(), sanitized);
-      return sanitized;
+    RCLCPP_INFO(this->get_logger(), "Configuring publisher timers (milliseconds)");
+    publisher_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    publisher_timers_.reserve(80);
+    auto register_timer = [&](const std::string &suffix, auto &&callable) {
+      const std::string parameter_name = "publish_intervals." + suffix;
+      const int64_t raw_value = this->declare_parameter<int64_t>(parameter_name, 10);
+      const auto interval = sanitize_interval_value(raw_value,
+                                                    10U,
+                                                    this->get_logger(),
+                                                    parameter_name);
+      RCLCPP_INFO(this->get_logger(), "%s: %u ms", parameter_name.c_str(), interval);
+      auto timer = rclcpp::create_timer(
+        this->get_node_base_interface(),
+        this->get_node_timers_interface(),
+        this->get_clock(),
+        std::chrono::milliseconds(interval),
+        std::forward<decltype(callable)>(callable),
+        publisher_callback_group_);
+      publisher_timers_.push_back(timer);
     };
-
-    RCLCPP_INFO(this->get_logger(), "Configuring publish intervals (milliseconds)");
-    this->pubIntervalRaceControlData = declare_interval(
-      "publish_intervals.race_control_ms",
-      "Race control publish interval",
-      10U);
-    this->pubIntervalVehicleData = declare_interval(
-      "publish_intervals.vehicle_ms",
-      "Vehicle data publish interval",
-      10U);
-    this->pubIntervalPowertrainData = declare_interval(
-      "publish_intervals.powertrain_ms",
-      "Powertrain data publish interval",
-      10U);
-    this->pubIntervalGroundTruthArray = declare_interval(
-      "publish_intervals.ground_truth_ms",
-      "Ground truth publish interval",
-      10U);
-    this->pubIntervalVectorNavData = declare_interval(
-      "publish_intervals.vectornav_ms",
-      "VectorNav data publish interval",
-      10U);
-    this->pubIntervalNovatelData = declare_interval(
-      "publish_intervals.novatel_ms",
-      "NovAtel data publish interval",
-      10U);
-    this->pubIntervalFoxgloveMap = declare_interval(
-      "publish_intervals.foxglove_map_ms",
-      "Foxglove map publish interval",
-      10U);
+    register_timer("publish_map2d_ego_position_ms",
+                   [this]() { this->publish_map2d_ego_position(); });
+    register_timer("publish_map2d_fellow1_position_ms",
+                   [this]() { this->publish_map2d_fellow1_position(); });
+    register_timer("publish_map2d_fellow2_position_ms",
+                   [this]() { this->publish_map2d_fellow2_position(); });
+    register_timer("publish_map2d_fellow3_position_ms",
+                   [this]() { this->publish_map2d_fellow3_position(); });
+    register_timer("publish_base_to_car_summary_ms",
+                   [this]() { this->publish_base_to_car_summary(); });
+    register_timer("publish_marelli_report_1_ms",
+                   [this]() { this->publish_marelli_report_1(); });
+    register_timer("publish_marelli_report_2_ms",
+                   [this]() { this->publish_marelli_report_2(); });
+    register_timer("publish_base_to_car_timing_ms",
+                   [this]() { this->publish_base_to_car_timing(); });
+    register_timer("publish_rest_of_field_ms",
+                   [this]() { this->publish_rest_of_field(); });
+    register_timer("publish_pt_report_1_ms",
+                   [this]() { this->publish_pt_report_1(); });
+    register_timer("publish_pt_report_2_ms",
+                   [this]() { this->publish_pt_report_2(); });
+    register_timer("publish_pt_report_3_ms",
+                   [this]() { this->publish_pt_report_3(); });
+    register_timer("publish_steering_report_ms",
+                   [this]() { this->publish_steering_report(); });
+    register_timer("publish_steering_report_extd_ms",
+                   [this]() { this->publish_steering_report_extd(); });
+    register_timer("publish_steering_report_extd_2_ms",
+                   [this]() { this->publish_steering_report_extd_2(); });
+    register_timer("publish_steering_report_extd_3_ms",
+                   [this]() { this->publish_steering_report_extd_3(); });
+    register_timer("publish_brake_pressure_report_ms",
+                   [this]() { this->publish_brake_pressure_report(); });
+    register_timer("publish_brake_report_extd_ms",
+                   [this]() { this->publish_brake_report_extd(); });
+    register_timer("publish_brake_report_extd_2_ms",
+                   [this]() { this->publish_brake_report_extd_2(); });
+    register_timer("publish_accelerator_report_ms",
+                   [this]() { this->publish_accelerator_report(); });
+    register_timer("publish_Tire_Temp_RR_1_ms",
+                   [this]() { this->publish_Tire_Temp_RR_1(); });
+    register_timer("publish_Tire_Temp_RR_2_ms",
+                   [this]() { this->publish_Tire_Temp_RR_2(); });
+    register_timer("publish_Tire_Temp_RR_3_ms",
+                   [this]() { this->publish_Tire_Temp_RR_3(); });
+    register_timer("publish_Tire_Temp_RR_4_ms",
+                   [this]() { this->publish_Tire_Temp_RR_4(); });
+    register_timer("publish_Tire_Temp_RL_1_ms",
+                   [this]() { this->publish_Tire_Temp_RL_1(); });
+    register_timer("publish_Tire_Temp_RL_2_ms",
+                   [this]() { this->publish_Tire_Temp_RL_2(); });
+    register_timer("publish_Tire_Temp_RL_3_ms",
+                   [this]() { this->publish_Tire_Temp_RL_3(); });
+    register_timer("publish_Tire_Temp_RL_4_ms",
+                   [this]() { this->publish_Tire_Temp_RL_4(); });
+    register_timer("publish_Tire_Temp_FR_1_ms",
+                   [this]() { this->publish_Tire_Temp_FR_1(); });
+    register_timer("publish_Tire_Temp_FR_2_ms",
+                   [this]() { this->publish_Tire_Temp_FR_2(); });
+    register_timer("publish_Tire_Temp_FR_3_ms",
+                   [this]() { this->publish_Tire_Temp_FR_3(); });
+    register_timer("publish_Tire_Temp_FR_4_ms",
+                   [this]() { this->publish_Tire_Temp_FR_4(); });
+    register_timer("publish_Tire_Temp_FL_1_ms",
+                   [this]() { this->publish_Tire_Temp_FL_1(); });
+    register_timer("publish_Tire_Temp_FL_2_ms",
+                   [this]() { this->publish_Tire_Temp_FL_2(); });
+    register_timer("publish_Tire_Temp_FL_3_ms",
+                   [this]() { this->publish_Tire_Temp_FL_3(); });
+    register_timer("publish_Tire_Temp_FL_4_ms",
+                   [this]() { this->publish_Tire_Temp_FL_4(); });
+    register_timer("publish_Tire_Pressure_RR_ms",
+                   [this]() { this->publish_Tire_Pressure_RR(); });
+    register_timer("publish_Tire_Pressure_RL_ms",
+                   [this]() { this->publish_Tire_Pressure_RL(); });
+    register_timer("publish_Tire_Pressure_FR_ms",
+                   [this]() { this->publish_Tire_Pressure_FR(); });
+    register_timer("publish_Tire_Pressure_FL_ms",
+                   [this]() { this->publish_Tire_Pressure_FL(); });
+    register_timer("publish_wheel_strain_gauge_ms",
+                   [this]() { this->publish_wheel_strain_gauge(); });
+    register_timer("publish_wheel_potentiometer_data_ms",
+                   [this]() { this->publish_wheel_potentiometer_data(); });
+    register_timer("publish_wheel_speed_report_ms",
+                   [this]() { this->publish_wheel_speed_report(); });
+    register_timer("publish_misc_report_ms",
+                   [this]() { this->publish_misc_report(); });
+    register_timer("publish_diagnostic_report_ms",
+                   [this]() { this->publish_diagnostic_report(); });
+    register_timer("publish_VECTOR__INDEPENDENT_SIG_MSG_ms",
+                   [this]() { this->publish_VECTOR__INDEPENDENT_SIG_MSG(); });
+    register_timer("publish_novatel_report_ms",
+                   [this]() { this->publish_novatel_report(); });
+    register_timer("publish_novatel_bestpos1_ms",
+                   [this]() { this->publish_novatel_bestpos(1); });
+    register_timer("publish_novatel_bestpos2_ms",
+                   [this]() { this->publish_novatel_bestpos(2); });
+    register_timer("publish_novatel_bestgnsspos1_ms",
+                   [this]() { this->publish_novatel_bestgnsspos(1); });
+    register_timer("publish_novatel_bestgnsspos2_ms",
+                   [this]() { this->publish_novatel_bestgnsspos(2); });
+    register_timer("publish_novatel_bestvel1_ms",
+                   [this]() { this->publish_novatel_bestvel(1); });
+    register_timer("publish_novatel_bestvel2_ms",
+                   [this]() { this->publish_novatel_bestvel(2); });
+    register_timer("publish_novatel_bestgnssvel1_ms",
+                   [this]() { this->publish_novatel_bestgnssvel(1); });
+    register_timer("publish_novatel_bestgnssvel2_ms",
+                   [this]() { this->publish_novatel_bestgnssvel(2); });
+    register_timer("publish_novatel_inspva1_ms",
+                   [this]() { this->publish_novatel_inspva(1); });
+    register_timer("publish_novatel_inspva2_ms",
+                   [this]() { this->publish_novatel_inspva(2); });
+    register_timer("publish_novatel_heading21_ms",
+                   [this]() { this->publish_novatel_heading2(1); });
+    register_timer("publish_novatel_heading22_ms",
+                   [this]() { this->publish_novatel_heading2(2); });
+    register_timer("publish_novatel_rawimu1_ms",
+                   [this]() { this->publish_novatel_rawimu(1); });
+    register_timer("publish_novatel_rawimu2_ms",
+                   [this]() { this->publish_novatel_rawimu(2); });
+    register_timer("publish_novatel_rawimux1_ms",
+                   [this]() { this->publish_novatel_rawimux(1); });
+    register_timer("publish_novatel_rawimux2_ms",
+                   [this]() { this->publish_novatel_rawimux(2); });
+    register_timer("publish_vectornav_attitude_group_ms",
+                   [this]() { this->publish_vectornav_attitude_group(); });
+    register_timer("publish_vectornav_common_group_ms",
+                   [this]() { this->publish_vectornav_common_group(); });
+    register_timer("publish_vectornav_imu_group_ms",
+                   [this]() { this->publish_vectornav_imu_group(); });
+    register_timer("publish_vectornav_gps_group_left_ms",
+                   [this]() { this->publish_vectornav_gps_group_left(); });
+    register_timer("publish_vectornav_gps_group_right_ms",
+                   [this]() { this->publish_vectornav_gps_group_right(); });
+    register_timer("publish_vectornav_ins_group_ms",
+                   [this]() { this->publish_vectornav_ins_group(); });
+    register_timer("publish_vectornav_time_group_ms",
+                   [this]() { this->publish_vectornav_time_group(); });
+    register_timer("publishGroundTruthArray_ms",
+                   [this]() { this->publishGroundTruthArray(); });
 
     this->pathTimeRecord = this->declare_parameter<std::string>(
       "logging.path",
@@ -337,7 +461,6 @@ namespace asm_socketcan_bridge {
         this->simClockTimePublisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", sim_qos);      
         this->simTimeIncrease_ = this->create_subscription<std_msgs::msg::UInt16>("sim_time_increase", sim_qos, std::bind(&AsmSocketCanBridgeNode::simTimeIncreaseCallback, this, _1));
         vesiCallback();
-        publishSimulationState();
         this->simClockTime.clock = rclcpp::Time(this->sec, this->nsec);
         this->simClockTimePublisher_->publish(this->simClockTime);
       }
@@ -345,10 +468,6 @@ namespace asm_socketcan_bridge {
       {
         RCLCPP_INFO(get_logger(), "Use Wall Clock (system clock).");
         vesiCallback();
-        publishSimulationState();
-        this->updateVESIVehicleInputs_ = this->create_wall_timer(
-          10ms,
-          std::bind(&AsmSocketCanBridgeNode::publishSimulationState, this));
       }
     }
     catch(const std::exception& e)
@@ -362,7 +481,7 @@ namespace asm_socketcan_bridge {
       this->myfile << "sendVehicleFeedbackToSimulation" << ","
                    << "requestCustomData" << ","
                    << "castCanbus_raw" << ","
-                   << "publishSimulationState" << ","
+                   << "publishers" << ","
                    << "VESICallBackInterval" << "\n";
       this->myfile.close();
       RCLCPP_INFO(get_logger(), "Log created under path: %s", this->pathTimeRecord.c_str());
@@ -1211,7 +1330,6 @@ namespace asm_socketcan_bridge {
   {
     for (uint16_t timeIncreaseStep = 0; timeIncreaseStep < msg.data; ++timeIncreaseStep) {
       vesiCallback();
-      publishSimulationState();
     }
     simClockTimeCallback();
   }
@@ -1239,9 +1357,6 @@ namespace asm_socketcan_bridge {
           1000000.0;
       }
       last_callback_start_ns = now;
-    } else {
-      std::lock_guard<std::mutex> metrics_lock(metrics_mutex_);
-      metrics_ready = false;
     }
 
     if (this->verbosePrinting)
@@ -1327,10 +1442,6 @@ namespace asm_socketcan_bridge {
       }, cast_ms);
     } catch (const std::exception &e) {
       RCLCPP_ERROR(get_logger(), "Failed to request data from ASM: %s", e.what());
-      if (record_metrics) {
-        std::lock_guard<std::mutex> metrics_lock(metrics_mutex_);
-        metrics_ready = false;
-      }
       return;
     }
 
@@ -1342,231 +1453,20 @@ namespace asm_socketcan_bridge {
 
     if (record_metrics) {
       std::lock_guard<std::mutex> metrics_lock(metrics_mutex_);
-      duration_send_feedback_ms = send_feedback_ms;
-      duration_request_data_ms = request_data_ms;
-      duration_cast_ms = cast_ms;
-      duration_callback_interval_ms = interval_ms;
-      metrics_ready = true;
-    }
-  }
-
-  void AsmSocketCanBridgeNode::publishSimulationState()
-  {
-    auto now_ns = []() {
-      return std::chrono::time_point_cast<std::chrono::nanoseconds>(
-        std::chrono::system_clock::now()).time_since_epoch().count();
-    };
-
-    const bool record_metrics = this->enableTimeRecord;
-    const auto start_ns = record_metrics ? now_ns() : 0;
-
-    auto finalize_metrics = [&](bool success) {
-      if (!record_metrics) {
-        return;
-      }
-      const auto end_ns = now_ns();
-      const double publish_ms =
-        static_cast<double>(static_cast<long long>(end_ns) - static_cast<long long>(start_ns)) /
-        1000000.0;
-
-      double send_ms = 0.0;
-      double request_ms = 0.0;
-      double cast_ms = 0.0;
-      double interval_ms = 0.0;
-      bool should_write = false;
-
-      {
-        std::lock_guard<std::mutex> metrics_lock(metrics_mutex_);
-        if (!success) {
-          metrics_ready = false;
-          return;
-        }
-        if (metrics_ready) {
-          send_ms = duration_send_feedback_ms;
-          request_ms = duration_request_data_ms;
-          cast_ms = duration_cast_ms;
-          interval_ms = duration_callback_interval_ms;
-          metrics_ready = false;
-          should_write = true;
-        } else {
-          return;
-        }
-      }
-
       this->myfile.open(std::string(this->pathTimeRecord) + "/duration_recording.csv",
                         std::ios_base::app);
-      this->myfile << std::to_string(send_ms) << ","
-                   << std::to_string(request_ms) << ","
+      this->myfile << std::to_string(send_feedback_ms) << ","
+                   << std::to_string(request_data_ms) << ","
                    << std::to_string(cast_ms) << ","
-                   << std::to_string(publish_ms) << ","
+                   << std::to_string(0.0) << ","
                    << std::to_string(interval_ms) << "\n";
       this->myfile.close();
-    };
-
-    auto perform_publish = [&]() -> bool {
-      bool has_data = false;
-      uint64_t total_msec = 0;
-      double fellow_count = 0.0;
-      {
-        std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
-        if (!this->canBus) {
-          RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
-          return false;
-        }
-        has_data = this->vesiDataAvailabe;
-        total_msec = this->simTotalMsec;
-        fellow_count = this->canBus->sim_interface_var.vehicle_sensors_var.fellow_count;
-      }
-
-      if (this->sentMessagePrinting)
-        RCLCPP_INFO(get_logger(), "publishSimulationState");
-
-      auto publish_all = [&](std::initializer_list<void (AsmSocketCanBridgeNode::*)()> funcs) {
-        for (auto func : funcs) {
-          (this->*func)();
-        }
-      };
-
-      try
-      {
-        if (has_data && total_msec != 0)
-        {
-          if(total_msec % (this->pubIntervalRaceControlData) == 0) {
-            publish_all({
-              &AsmSocketCanBridgeNode::publish_base_to_car_summary,
-              &AsmSocketCanBridgeNode::publish_marelli_report_1,
-              &AsmSocketCanBridgeNode::publish_marelli_report_2,
-              &AsmSocketCanBridgeNode::publish_base_to_car_timing,
-              &AsmSocketCanBridgeNode::publish_rest_of_field
-            });
-          }
-
-          if(total_msec % (this->pubIntervalVehicleData) == 0) {
-            publish_all({
-              &AsmSocketCanBridgeNode::publish_steering_report,
-              &AsmSocketCanBridgeNode::publish_steering_report_extd,
-              &AsmSocketCanBridgeNode::publish_steering_report_extd_2,
-              &AsmSocketCanBridgeNode::publish_steering_report_extd_3,
-              &AsmSocketCanBridgeNode::publish_brake_pressure_report,
-              &AsmSocketCanBridgeNode::publish_brake_report_extd,
-              &AsmSocketCanBridgeNode::publish_brake_report_extd_2,
-              &AsmSocketCanBridgeNode::publish_accelerator_report
-            });
-
-            publish_all({
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RR_1,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RR_2,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RR_3,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RR_4,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RL_1,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RL_2,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RL_3,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_RL_4,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FR_1,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FR_2,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FR_3,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FR_4,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FL_1,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FL_2,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FL_3,
-              &AsmSocketCanBridgeNode::publish_Tire_Temp_FL_4
-            });
-
-            publish_all({
-              &AsmSocketCanBridgeNode::publish_Tire_Pressure_RR,
-              &AsmSocketCanBridgeNode::publish_Tire_Pressure_RL,
-              &AsmSocketCanBridgeNode::publish_Tire_Pressure_FR,
-              &AsmSocketCanBridgeNode::publish_Tire_Pressure_FL,
-              &AsmSocketCanBridgeNode::publish_wheel_strain_gauge,
-              &AsmSocketCanBridgeNode::publish_wheel_potentiometer_data,
-              &AsmSocketCanBridgeNode::publish_wheel_speed_report,
-              &AsmSocketCanBridgeNode::publish_misc_report,
-              &AsmSocketCanBridgeNode::publish_diagnostic_report,
-              &AsmSocketCanBridgeNode::publish_VECTOR__INDEPENDENT_SIG_MSG
-            });
-          }
-
-          if(total_msec % (this->pubIntervalPowertrainData) == 0) {
-            publish_all({
-              &AsmSocketCanBridgeNode::publish_pt_report_1,
-              &AsmSocketCanBridgeNode::publish_pt_report_2,
-              &AsmSocketCanBridgeNode::publish_pt_report_3
-            });
-          }
-          
-          if(total_msec % (this->pubIntervalVectorNavData) == 0) {
-            publish_all({
-              &AsmSocketCanBridgeNode::publish_vectornav_attitude_group,
-              &AsmSocketCanBridgeNode::publish_vectornav_common_group,
-              &AsmSocketCanBridgeNode::publish_vectornav_imu_group,
-              &AsmSocketCanBridgeNode::publish_vectornav_gps_group_left,
-              &AsmSocketCanBridgeNode::publish_vectornav_gps_group_right,
-              &AsmSocketCanBridgeNode::publish_vectornav_ins_group,
-              &AsmSocketCanBridgeNode::publish_vectornav_time_group
-            });
-          }
-
-          if(total_msec % (this->pubIntervalNovatelData) == 0) {
-            publish_all({&AsmSocketCanBridgeNode::publish_novatel_report});
-            auto publish_novatel_set = [&](uint8_t id) {
-              publish_novatel_bestpos(id);
-              publish_novatel_bestgnsspos(id);
-              publish_novatel_bestvel(id);
-              publish_novatel_bestgnssvel(id);
-              publish_novatel_inspva(id);
-              publish_novatel_heading2(id);
-              publish_novatel_rawimu(id);
-              publish_novatel_rawimux(id);
-            };
-            publish_novatel_set(1);
-            publish_novatel_set(2);
-          }
-          if(total_msec % (this->pubIntervalFoxgloveMap) == 0)
-            AsmSocketCanBridgeNode::publish_map2d_ego_position();
-
-          if (fellow_count > 10) {
-            RCLCPP_ERROR(get_logger(), "Unreasonable fellow_count value: %f -> GroundTruthArray and fellows in FoxgloveMap will not be published", fellow_count);
-          }
-          else if (fellow_count == 0)
-          {
-            if (this->verbosePrinting)
-              RCLCPP_INFO(get_logger(), "No fellows included in the scenario. No GroundTruthArray will be published and FoxgloveMap will be published only for the ego");
-          }
-          else {
-            if (this->verbosePrinting)
-              RCLCPP_INFO(get_logger(), "Reasonable fellow_count value: %f", fellow_count);
-            if(total_msec % (this->pubIntervalGroundTruthArray) == 0)
-              AsmSocketCanBridgeNode::publishGroundTruthArray();
-            if(total_msec % (this->pubIntervalFoxgloveMap) == 0) {
-              const auto fellow_count_int = static_cast<int>(fellow_count);
-              if (fellow_count_int >= 1) {
-                AsmSocketCanBridgeNode::publish_map2d_fellow1_position();
-              }
-              if (fellow_count_int >= 2) {
-                AsmSocketCanBridgeNode::publish_map2d_fellow2_position();
-              }
-              if (fellow_count_int >= 3) {
-                AsmSocketCanBridgeNode::publish_map2d_fellow3_position();
-              }
-            }
-          }
-
-          {
-            std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
-            this->vesiDataAvailabe = false;
-          }
-        }
-      }
-      catch(const std::exception& e)
-      {
-        RCLCPP_ERROR(get_logger(), "Publishing of data failed: %s", e.what());
-        return false;
-      }
-      return true;
-    };
-
-    const bool publish_success = perform_publish();
-    finalize_metrics(publish_success);
+    }
+    if (this->simModeEnabled && this->simClockTimePublisher_) {
+      std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
+      simClockTime.clock = rclcpp::Time(this->sec, this->nsec);
+      this->simClockTimePublisher_->publish(simClockTime);
+    }
   }
 
   void AsmSocketCanBridgeNode::publish_map2d_ego_position()
@@ -2993,7 +2893,22 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
 
     AsmSocketCanBridgeNodePtr = std::make_shared<asm_socketcan_bridge::AsmSocketCanBridgeNode>();
-    rclcpp::executors::StaticSingleThreadedExecutor executor;
+    const auto hardware_threads = std::thread::hardware_concurrency();
+    size_t executor_threads = 4;
+    if (hardware_threads == 0) {
+      executor_threads = 4;
+    } else {
+      size_t half = hardware_threads / 2;
+      if (half == 0) {
+        executor_threads = 1;
+      } else {
+        executor_threads = std::min<size_t>(8, half);
+        if (half >= 4 && executor_threads < 4) {
+          executor_threads = 4;
+        }
+      }
+    }
+    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), executor_threads);
     executor.add_node(AsmSocketCanBridgeNodePtr);
     executor.spin();
     rclcpp::shutdown();
