@@ -1505,7 +1505,6 @@ namespace asm_socketcan_bridge {
         foxgloveMap.latitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat;
         foxgloveMap.longitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon;
         foxgloveMap.altitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.hgt;
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher0_;
         populated = true;
         return;
       }
@@ -1513,7 +1512,6 @@ namespace asm_socketcan_bridge {
         foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[0];
         foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[0];
         foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[0];
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher1_;
         populated = true;
         return;
       }
@@ -1521,7 +1519,6 @@ namespace asm_socketcan_bridge {
         foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[1];
         foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[1];
         foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[1];
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher2_;
         populated = true;
         return;
       }
@@ -1529,7 +1526,6 @@ namespace asm_socketcan_bridge {
         foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[2];
         foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[2];
         foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[2];
-        this->foxgloveMapPublisher_ = this->foxgloveMapPublisher3_;
         populated = true;
         return;
       }
@@ -1544,12 +1540,39 @@ namespace asm_socketcan_bridge {
     foxgloveMap.position_covariance_type = 0;
     setHeader(foxgloveMap.header, "world");
 
-    if (!this->foxgloveMapPublisher_) {
-      RCLCPP_ERROR(get_logger(), "Foxglove publisher unavailable for fellow ID %u", static_cast<unsigned>(fellowID));
-      return;
+    switch (fellowID) {
+      case 0:
+        if (!this->foxgloveMapPublisher0_) {
+          RCLCPP_ERROR(get_logger(), "Foxglove publisher unavailable for fellow ID %u", static_cast<unsigned>(fellowID));
+          return;
+        }
+        this->foxgloveMapPublisher0_->publish(foxgloveMap);
+        break;
+      case 1:
+        if (!this->foxgloveMapPublisher1_) {
+          RCLCPP_ERROR(get_logger(), "Foxglove publisher unavailable for fellow ID %u", static_cast<unsigned>(fellowID));
+          return;
+        }
+        this->foxgloveMapPublisher1_->publish(foxgloveMap);
+        break;
+      case 2:
+        if (!this->foxgloveMapPublisher2_) {
+          RCLCPP_ERROR(get_logger(), "Foxglove publisher unavailable for fellow ID %u", static_cast<unsigned>(fellowID));
+          return;
+        }
+        this->foxgloveMapPublisher2_->publish(foxgloveMap);
+        break;
+      case 3:
+        if (!this->foxgloveMapPublisher3_) {
+          RCLCPP_ERROR(get_logger(), "Foxglove publisher unavailable for fellow ID %u", static_cast<unsigned>(fellowID));
+          return;
+        }
+        this->foxgloveMapPublisher3_->publish(foxgloveMap);
+        break;
+      default:
+        RCLCPP_ERROR(get_logger(), "Foxglove publisher selection failed for fellow ID %u", static_cast<unsigned>(fellowID));
+        break;
     }
-
-    this->foxgloveMapPublisher_->publish(foxgloveMap);
   }
 
   void AsmSocketCanBridgeNode::sendVehicleFeedbackToSimulation()
