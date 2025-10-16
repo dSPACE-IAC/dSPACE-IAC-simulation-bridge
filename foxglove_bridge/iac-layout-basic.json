@@ -1,0 +1,233 @@
+{
+  "configById": {
+    "map!17zi8or": {
+      "center": {
+        "lat": 39.79842290206395,
+        "lon": -86.23895086348058
+      },
+      "customTileUrl": "",
+      "disabledTopics": [],
+      "followTopic": "/foxglove_map",
+      "layer": "satellite",
+      "topicColors": {
+        "/foxglove_map": "#ff0000"
+      },
+      "maxNativeZoom": 18,
+      "foxglovePanelTitle": "IMS",
+      "zoomLevel": 20
+    },
+    "RawMessages!1pvt8gs": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/ground_truth_array"
+    },
+    "Plot!4icqoqj": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_data.rear_brake_pressure",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_data.front_brake_pressure",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_inputs.brake_cmd_front",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_inputs.brake_cmd_rear",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_data.steering_wheel_angle",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_inputs.steering_cmd",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_data.accel_pedal_input",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/vehicle_inputs.throttle_cmd",
+          "enabled": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": false,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!rvbkke": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/push_2_pass.push2pass_active_app_limit",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/push_2_pass.push2pass_budget_s",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/push_2_pass.push2pass_status",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/to_raptor.push2pass_request",
+          "enabled": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "RawMessages!333sbcq": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/vehicle_inputs"
+    },
+    "Plot!45aqqkg": {
+      "paths": [
+        {
+          "value": "/vehicle_inputs.gear_cmd",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "RawMessages!44bmve0": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/to_raptor"
+    },
+    "RawMessages!1i8kkpg": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/race_control"
+    },
+    "RawMessages!vn9zpj": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/vehicle_data",
+      "expansion": {
+        "header": "c",
+        "stamp~header": "e"
+      }
+    },
+    "RawMessages!26n6z36": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/powertrain_data",
+      "expansion": {
+        "header": "c",
+        "stamp~header": "e"
+      }
+    },
+    "Publish!37wlyog": {
+      "buttonText": "Publish",
+      "buttonTooltip": "",
+      "advancedView": true,
+      "value": "{\n  \"header\": {\n    \"stamp\": {\n      \"sec\": 0,\n      \"nsec\": 0\n    },\n    \"frame_id\": \"\"\n  },\n  \"track_cond_ack\": 0,\n  \"veh_sig_ack\": 0,\n  \"ct_state\": 0,\n  \"rolling_counter\": 0,\n  \"veh_num\": 0,\n  \"push2pass_request\": 0\n}",
+      "topicName": "/to_raptor",
+      "datatype": "autonoma_msgs/msg/ToRaptor"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "first": {
+      "direction": "row",
+      "first": "map!17zi8or",
+      "second": {
+        "first": {
+          "first": {
+            "first": "RawMessages!1pvt8gs",
+            "second": "Publish!37wlyog",
+            "direction": "column"
+          },
+          "second": {
+            "first": "Plot!4icqoqj",
+            "second": "Plot!rvbkke",
+            "direction": "column"
+          },
+          "direction": "row",
+          "splitPercentage": 42.56665292280696
+        },
+        "second": {
+          "first": {
+            "direction": "column",
+            "second": "Plot!45aqqkg",
+            "first": "RawMessages!333sbcq",
+            "splitPercentage": 57.966711650922186
+          },
+          "second": {
+            "first": "RawMessages!44bmve0",
+            "second": "RawMessages!1i8kkpg",
+            "direction": "column",
+            "splitPercentage": 42.00836820083682
+          },
+          "direction": "column",
+          "splitPercentage": 46.580987637074806
+        },
+        "direction": "row",
+        "splitPercentage": 62.75159971417874
+      },
+      "splitPercentage": 30.549707602339183
+    },
+    "second": {
+      "first": "RawMessages!vn9zpj",
+      "second": "RawMessages!26n6z36",
+      "direction": "column",
+      "splitPercentage": 64.0148075714186
+    },
+    "direction": "row",
+    "splitPercentage": 80.66985645933015
+  }
+}
