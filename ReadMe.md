@@ -12,7 +12,7 @@ The implementation of all bridges is in form of ROS2 nodes.
 There is also a foxglove bridge, which is used to make the messages published in ROS2 observable in Foxglove.
 
 For further information please check the latest simulation package version.
-This repository is meant to be provide further insides in the implementation and enables you to adapt the basic bridge implementations to the requirements of your SUT, in order to make full use of the dSPACE Indy Autonomous Challenge simulator.
+This repository is meant to provide further insights into the implementation and enables you to adapt the basic bridge implementations to the requirements of your SUT, in order to make full use of the dSPACE Indy Autonomous Challenge simulator.
 
 ## Prerequisites
 You need to have the following tools installed:
@@ -67,7 +67,7 @@ This should be your starting point, if you want to understand how the connection
 The `src` directory is split into the ROS2 packages `asm_ros2_bridge`, `asm_socketcan_bridge` and `aurelion_ros2_bridge`.
 The asm_socketcan_bridge package contains the full socketcan implementation:
 - `config/asm_socketcan_bridge.yaml` holds all runtime parameters. Every publish function has a dedicated timer interval parameter, so you can throttle or burst individual CAN messages by editing this file and rebuilding the image or by mounting an override.
-- `config/CAN1-INDY-V23.dbc` provides the CAN signal definitions that feed the decoder lookup tables. Extend or exchange them if your car uses a different CAN layout. After the dbc changed the `generate_dbc_c_code.py` to generate the cpp utility code.
+- `config/CAN1-INDY-V23.dbc` provides the CAN signal definitions that feed the decoder lookup tables. Extend or exchange them if your car uses a different CAN layout. After modifying the DBC, run `config/generate_dbc_c_code.py` to regenerate the C++ utility code.
 - `launch/asm_socketcan_bridge.launch.py` binds parameters, brings up the multi threaded executor and wires the timers to the publishers.
 Mount the `asm_socketcan_bridge_override.yaml` from the repository root into your container whenever you want to apply custom parameters without touching the default file in the install space.
 
@@ -91,13 +91,13 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 7. Start Foxglove
     1. Open Foxglove for visualisation `https://simphera-iac.dspace-dev.com/foxglove/`
     2. Click on *Open connection* and connect to the default address *ws://localhost:8765*
-    3. Load layout by clicking View->Import layout from file->Select json file (example layout can be found under from foxglove_bridge\iac-layout-basic.json)
+    3. Load layout by clicking View->Import layout from file->Select json file (example layout can be found under `foxglove_bridge/iac-layout-basic.json`)
 8. Attach to the running bridge container if you want to iterate on the code:
     1. Switch the image to `dspace/iac_dspace_bridge_dev` in the compose file and mount `./dspace_bridge_ws` into `/root/dspace_bridge_ws`
     2. `docker exec -it dspace_bridge_dev bash`
     3. `./dspace_bridge_build`
-    4. `export $BRIDGE_TYPE="ASM_CAN"`
-    4. `./entrypoint.sh`
+    4. `export BRIDGE_TYPE="ASM_CAN"`
+    5. `./entrypoint.sh`
 9. To shut down the simulation, open another terminal and execute `docker compose down --remove-orphans`
 
 ### Iterate
