@@ -60,8 +60,8 @@ services:
         # image: dspace/iac_dspace_bridge_dev:2025-10-15
         # container_name: dspace_bridge_dev
         restart: no
-        volumes:
-            - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
+        # volumes:
+        #     - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
         cap_add:
             - SYS_ADMIN
             - DAC_READ_SEARCH
