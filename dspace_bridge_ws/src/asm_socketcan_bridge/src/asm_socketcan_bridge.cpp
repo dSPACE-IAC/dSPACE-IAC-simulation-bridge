@@ -1,8 +1,5 @@
 #include "asm_socketcan_bridge.h"
 
-#include <rclcpp/create_timer.hpp>
-#include <rclcpp/executors/multi_threaded_executor.hpp>
-
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -66,6 +63,11 @@ namespace {
 
     return static_cast<int16_t>(value);
   }
+
+  constexpr std::size_t kNovatelTopIndex = 0;
+  constexpr std::size_t kNovatelBottomIndex = 1;
+  constexpr std::size_t kVectorNavGpsLeftIndex = 0;
+  constexpr std::size_t kVectorNavGpsRightIndex = 1;
 
 }  // namespace
 
@@ -415,31 +417,56 @@ namespace asm_socketcan_bridge {
 
       this->groundTruthArrayPublisher_ = this->create_publisher<autonoma_msgs::msg::GroundTruthArray>("ground_truth_array", qos);
 
-      this->verctorNavCommonGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::CommonGroup>("vectornav/raw/common", qos);
-      this->verctorNavAttitudeGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::AttitudeGroup>("vectornav/raw/attitude", qos);
-      this->verctorNavImuGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::ImuGroup>("vectornav/raw/imu", qos);
-      this->verctorNavInsGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::InsGroup>("vectornav/raw/ins", qos);
-      this->verctorNavGpsGroupLeftPublisher_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps_left", qos);
-      this->verctorNavGpsGroupRightPublisher_ = this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps_right", qos);
-      this->verctorNavTimeGroupPublisher_ = this->create_publisher<vectornav_msgs::msg::TimeGroup>("vectornav/raw/time", qos);
+      vectornav_publishers_.common =
+        this->create_publisher<vectornav_msgs::msg::CommonGroup>("vectornav/raw/common", qos);
+      vectornav_publishers_.attitude =
+        this->create_publisher<vectornav_msgs::msg::AttitudeGroup>("vectornav/raw/attitude", qos);
+      vectornav_publishers_.imu =
+        this->create_publisher<vectornav_msgs::msg::ImuGroup>("vectornav/raw/imu", qos);
+      vectornav_publishers_.ins =
+        this->create_publisher<vectornav_msgs::msg::InsGroup>("vectornav/raw/ins", qos);
+      vectornav_publishers_.gps[kVectorNavGpsLeftIndex] =
+        this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps_left", qos);
+      vectornav_publishers_.gps[kVectorNavGpsRightIndex] =
+        this->create_publisher<vectornav_msgs::msg::GpsGroup>("vectornav/raw/gps_right", qos);
+      vectornav_publishers_.time =
+        this->create_publisher<vectornav_msgs::msg::TimeGroup>("vectornav/raw/time", qos);
 
-      this->novaTelBestPosPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_top/bestpos", qos);
-      this->novaTelBestGNSSPosPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_top/bestgnsspos", qos);
-      this->novaTelBestVelPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_top/bestvel", qos);
-      this->novaTelBestGNSSVelPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_top/bestgnssvel", qos);
-      this->novaTelInspvaPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::INSPVA>("novatel_top/inspva", qos);
-      this->novaTelHeading2Publisher1_ = this->create_publisher<novatel_oem7_msgs::msg::HEADING2>("novatel_top/heading2", qos);
-      this->novaTelRawImuPublisher1_ = this->create_publisher<novatel_oem7_msgs::msg::RAWIMU>("novatel_top/rawimu", qos);
-      this->novaTelRawImuXPublisher1_ = this->create_publisher<sensor_msgs::msg::Imu>("novatel_top/rawimux", qos);
+      auto &novatel_top = novatel_publishers_[kNovatelTopIndex];
+      novatel_top.best_pos =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_top/bestpos", qos);
+      novatel_top.best_gnss_pos =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_top/bestgnsspos", qos);
+      novatel_top.best_vel =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_top/bestvel", qos);
+      novatel_top.best_gnss_vel =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_top/bestgnssvel", qos);
+      novatel_top.inspva =
+        this->create_publisher<novatel_oem7_msgs::msg::INSPVA>("novatel_top/inspva", qos);
+      novatel_top.heading2 =
+        this->create_publisher<novatel_oem7_msgs::msg::HEADING2>("novatel_top/heading2", qos);
+      novatel_top.raw_imu =
+        this->create_publisher<novatel_oem7_msgs::msg::RAWIMU>("novatel_top/rawimu", qos);
+      novatel_top.raw_imu_x =
+        this->create_publisher<sensor_msgs::msg::Imu>("novatel_top/rawimux", qos);
 
-      this->novaTelBestPosPublisher2_ = this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_bottom/bestpos", qos);
-      this->novaTelBestGNSSPosPublisher2_ = this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_bottom/bestgnsspos", qos);
-      this->novaTelBestVelPublisher2_ = this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_bottom/bestvel", qos);
-      this->novaTelBestGNSSVelPublisher2_ = this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_bottom/bestgnssvel", qos);
-      this->novaTelInspvaPublisher2_ = this->create_publisher<novatel_oem7_msgs::msg::INSPVA>("novatel_bottom/inspva", qos);
-      this->novaTelHeading2Publisher2_ = this->create_publisher<novatel_oem7_msgs::msg::HEADING2>("novatel_bottom/heading2", qos);
-      this->novaTelRawImuPublisher2_ = this->create_publisher<novatel_oem7_msgs::msg::RAWIMU>("novatel_bottom/rawimu", qos);
-      this->novaTelRawImuXPublisher2_ = this->create_publisher<sensor_msgs::msg::Imu>("novatel_bottom/rawimux", qos);
+      auto &novatel_bottom = novatel_publishers_[kNovatelBottomIndex];
+      novatel_bottom.best_pos =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_bottom/bestpos", qos);
+      novatel_bottom.best_gnss_pos =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTPOS>("novatel_bottom/bestgnsspos", qos);
+      novatel_bottom.best_vel =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_bottom/bestvel", qos);
+      novatel_bottom.best_gnss_vel =
+        this->create_publisher<novatel_oem7_msgs::msg::BESTVEL>("novatel_bottom/bestgnssvel", qos);
+      novatel_bottom.inspva =
+        this->create_publisher<novatel_oem7_msgs::msg::INSPVA>("novatel_bottom/inspva", qos);
+      novatel_bottom.heading2 =
+        this->create_publisher<novatel_oem7_msgs::msg::HEADING2>("novatel_bottom/heading2", qos);
+      novatel_bottom.raw_imu =
+        this->create_publisher<novatel_oem7_msgs::msg::RAWIMU>("novatel_bottom/rawimu", qos);
+      novatel_bottom.raw_imu_x =
+        this->create_publisher<sensor_msgs::msg::Imu>("novatel_bottom/rawimux", qos);
 
       this->foxgloveMapPublisher0_ = this->create_publisher<sensor_msgs::msg::NavSatFix>("map2d_ego_position", qos);
       this->foxgloveMapPublisher1_ = this->create_publisher<sensor_msgs::msg::NavSatFix>("map2d_fellow1_position", qos);
@@ -507,23 +534,55 @@ namespace asm_socketcan_bridge {
                                           Signal signal_information,
                                           T physical_value)
   {
-    double scaled_value = (static_cast<double>(physical_value) - signal_information.offset) / signal_information.factor;
-    uint32_t raw_value = static_cast<uint32_t>(std::round(scaled_value));
+    if (signal_information.length == 0) {
+      return;
+    }
+
+    const auto length = signal_information.length;
+    const auto mask = length >= 64 ? std::numeric_limits<uint64_t>::max()
+                                   : ((1ULL << length) - 1ULL);
+    const long double scaled_value =
+      (static_cast<long double>(physical_value) - static_cast<long double>(signal_information.offset)) /
+      static_cast<long double>(signal_information.factor);
+
+    uint64_t raw_value = 0;
 
     if (signal_information.is_signed) {
-        raw_value &= ((1u << signal_information.length) - 1);
+      int64_t min_value;
+      int64_t max_value;
+      if (length >= 64) {
+        min_value = std::numeric_limits<int64_t>::min();
+        max_value = std::numeric_limits<int64_t>::max();
+      } else {
+        const int64_t magnitude = static_cast<int64_t>(1ULL << (length - 1));
+        min_value = -magnitude;
+        max_value = magnitude - 1;
+      }
+      const long double rounded = std::round(scaled_value);
+      const long double clamped =
+        std::clamp<long double>(rounded,
+                                static_cast<long double>(min_value),
+                                static_cast<long double>(max_value));
+      const auto quantized = static_cast<int64_t>(clamped);
+      raw_value = static_cast<uint64_t>(quantized) & mask;
+    } else {
+      const long double rounded = std::round(scaled_value);
+      const long double clamped =
+        std::clamp<long double>(rounded, 0.0L, static_cast<long double>(mask));
+      raw_value = static_cast<uint64_t>(clamped);
     }
 
     for (int i = 0; i < signal_information.length; ++i) {
-        int bitIndex = signal_information.endian ? (signal_information.start_bit + i)
-                                                : (signal_information.start_bit - i);
-        int byteIndex = bitIndex / 8;
-        int bitInByte = signal_information.endian ? (bitIndex % 8)
-                                                  : (7 - (bitIndex % 8));
+      const int bitIndex =
+        signal_information.endian ? (signal_information.start_bit + i)
+                                  : (signal_information.start_bit - i);
+      const int byteIndex = bitIndex / 8;
+      const int bitInByte =
+        signal_information.endian ? (bitIndex % 8) : (7 - (bitIndex % 8));
 
-        uint8_t bitVal = (raw_value >> i) & 0x01;
-        data[byteIndex] &= ~(1 << bitInByte);
-        data[byteIndex] |= (bitVal << bitInByte);
+      const uint8_t bitVal = (raw_value >> i) & 0x01;
+      data[byteIndex] &= ~(1 << bitInByte);
+      data[byteIndex] |= (bitVal << bitInByte);
     }
   }
 
@@ -2305,20 +2364,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_bestpos(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelBestPosPublisher1_ : this->novaTelBestPosPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].best_pos;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTPOS message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateBestPosMessage(message, *data);
       populated = true;
     })) {
@@ -2332,20 +2393,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_bestgnsspos(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelBestGNSSPosPublisher1_ : this->novaTelBestGNSSPosPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].best_gnss_pos;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTPOS message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateBestPosMessage(message, *data);
       populated = true;
     })) {
@@ -2359,20 +2422,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_bestvel(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelBestVelPublisher1_ : this->novaTelBestVelPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].best_vel;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTVEL message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateBestVelMessage(message, *data);
       populated = true;
     })) {
@@ -2386,20 +2451,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_bestgnssvel(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelBestGNSSVelPublisher1_ : this->novaTelBestGNSSVelPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].best_gnss_vel;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::BESTVEL message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateBestVelMessage(message, *data);
       populated = true;
     })) {
@@ -2413,20 +2480,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_inspva(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelInspvaPublisher1_ : this->novaTelInspvaPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].inspva;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::INSPVA message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateInspvaMessage(message, *data);
       populated = true;
     })) {
@@ -2440,20 +2509,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_heading2(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelHeading2Publisher1_ : this->novaTelHeading2Publisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].heading2;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::HEADING2 message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateHeading2Message(message, *data);
       populated = true;
     })) {
@@ -2467,20 +2538,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_rawimu(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelRawImuPublisher1_ : this->novaTelRawImuPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].raw_imu;
     if (!publisher) {
       return;
     }
     novatel_oem7_msgs::msg::RAWIMU message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateRawImuMessage(message, *data);
       populated = true;
     })) {
@@ -2494,20 +2567,22 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_novatel_rawimux(uint8_t novatel_id)
   {
-    auto publisher = novatel_id == 1 ? this->novaTelRawImuXPublisher1_ : this->novaTelRawImuXPublisher2_;
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].raw_imu_x;
     if (!publisher) {
       return;
     }
     sensor_msgs::msg::Imu message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = novatel_id == 1 ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                         : novatel_id == 2 ? &bus.sim_interface_var.nova_tel_pwr_pak2_var
-                                                           : nullptr;
-      if (!data) {
-        RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
-        return;
-      }
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
       populateRawImuXMessage(message, *data);
       populated = true;
     })) {
@@ -2580,7 +2655,11 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
-    this->verctorNavAttitudeGroupPublisher_->publish(attitudeGroup);
+    auto publisher = vectornav_publishers_.attitude;
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(attitudeGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_common_group()
@@ -2646,7 +2725,11 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
-    this->verctorNavCommonGroupPublisher_->publish(commonGroup);
+    auto publisher = vectornav_publishers_.common;
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(commonGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_imu_group()
@@ -2692,7 +2775,11 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
-    this->verctorNavImuGroupPublisher_->publish(imuGroup);
+    auto publisher = vectornav_publishers_.imu;
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(imuGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_gps_group_left()
@@ -2703,7 +2790,11 @@ namespace asm_socketcan_bridge {
     })) {
       return;
     }
-    this->verctorNavGpsGroupLeftPublisher_->publish(gpsGroup);
+    auto publisher = vectornav_publishers_.gps[kVectorNavGpsLeftIndex];
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(gpsGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_gps_group_right()
@@ -2714,7 +2805,11 @@ namespace asm_socketcan_bridge {
     })) {
       return;
     }
-    this->verctorNavGpsGroupRightPublisher_->publish(gpsGroup);
+    auto publisher = vectornav_publishers_.gps[kVectorNavGpsRightIndex];
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(gpsGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_ins_group()
@@ -2764,7 +2859,11 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
-    this->verctorNavInsGroupPublisher_->publish(insGroup);
+    auto publisher = vectornav_publishers_.ins;
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(insGroup);
   }
 
   void AsmSocketCanBridgeNode::publish_vectornav_time_group()
@@ -2799,7 +2898,11 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
-    this->verctorNavTimeGroupPublisher_->publish(timeGroup);
+    auto publisher = vectornav_publishers_.time;
+    if (!publisher) {
+      return;
+    }
+    publisher->publish(timeGroup);
   }
 
   void AsmSocketCanBridgeNode::publishGroundTruthArray()

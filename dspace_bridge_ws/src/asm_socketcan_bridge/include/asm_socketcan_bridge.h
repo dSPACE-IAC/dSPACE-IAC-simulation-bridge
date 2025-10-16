@@ -22,7 +22,12 @@
 #include <string_view>
 #include <unordered_map>
 #include <initializer_list>
+#include <array>
 #include <utility>
+#include <cmath>
+
+#include <rclcpp/create_timer.hpp>
+#include <rclcpp/executors/multi_threaded_executor.hpp>
 
 #include <tf2/LinearMath/Quaternion.h>
 
@@ -87,33 +92,28 @@ namespace asm_socketcan_bridge
         rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr resetCommandPublisher_;
         rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr simClockTimePublisher_;
 
-        rclcpp::Publisher<vectornav_msgs::msg::CommonGroup>::SharedPtr verctorNavCommonGroupPublisher_;
-        rclcpp::Publisher<vectornav_msgs::msg::AttitudeGroup>::SharedPtr verctorNavAttitudeGroupPublisher_;
-        rclcpp::Publisher<vectornav_msgs::msg::ImuGroup>::SharedPtr verctorNavImuGroupPublisher_;
-        rclcpp::Publisher<vectornav_msgs::msg::InsGroup>::SharedPtr verctorNavInsGroupPublisher_;
-        rclcpp::Publisher<vectornav_msgs::msg::GpsGroup>::SharedPtr verctorNavGpsGroupLeftPublisher_;
-        rclcpp::Publisher<vectornav_msgs::msg::GpsGroup>::SharedPtr verctorNavGpsGroupRightPublisher_;
-        rclcpp::Publisher<vectornav_msgs::msg::TimeGroup>::SharedPtr verctorNavTimeGroupPublisher_;
+        struct VectorNavPublisherGroup {
+            rclcpp::Publisher<vectornav_msgs::msg::CommonGroup>::SharedPtr common;
+            rclcpp::Publisher<vectornav_msgs::msg::AttitudeGroup>::SharedPtr attitude;
+            rclcpp::Publisher<vectornav_msgs::msg::ImuGroup>::SharedPtr imu;
+            rclcpp::Publisher<vectornav_msgs::msg::InsGroup>::SharedPtr ins;
+            std::array<rclcpp::Publisher<vectornav_msgs::msg::GpsGroup>::SharedPtr, 2> gps;
+            rclcpp::Publisher<vectornav_msgs::msg::TimeGroup>::SharedPtr time;
+        };
 
+        struct NovatelPublisherGroup {
+            rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr best_pos;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr best_gnss_pos;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr best_vel;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr best_gnss_vel;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::INSPVA>::SharedPtr inspva;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::HEADING2>::SharedPtr heading2;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::RAWIMU>::SharedPtr raw_imu;
+            rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr raw_imu_x;
+        };
 
-
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestPosPublisher1_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestGNSSPosPublisher1_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr novaTelBestVelPublisher1_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr novaTelBestGNSSVelPublisher1_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::INSPVA>::SharedPtr novaTelInspvaPublisher1_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::HEADING2>::SharedPtr novaTelHeading2Publisher1_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::RAWIMU>::SharedPtr novaTelRawImuPublisher1_;
-        rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr novaTelRawImuXPublisher1_;
-
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestPosPublisher2_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTPOS>::SharedPtr novaTelBestGNSSPosPublisher2_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr novaTelBestVelPublisher2_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::BESTVEL>::SharedPtr novaTelBestGNSSVelPublisher2_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::INSPVA>::SharedPtr novaTelInspvaPublisher2_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::HEADING2>::SharedPtr novaTelHeading2Publisher2_;
-        rclcpp::Publisher<novatel_oem7_msgs::msg::RAWIMU>::SharedPtr novaTelRawImuPublisher2_;
-        rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr novaTelRawImuXPublisher2_;
+        VectorNavPublisherGroup vectornav_publishers_;
+        std::array<NovatelPublisherGroup, 2> novatel_publishers_;
 
         // Timer
         rclcpp::TimerBase::SharedPtr vesiAcquisitionTimer_;
@@ -126,11 +126,6 @@ namespace asm_socketcan_bridge
 
         // reader threads
         std::thread reader_thread1;
-        std::thread reader_thread2;
-
-        // writer threads
-        std::thread writer_thread1;
-        std::thread writer_thread2;
 
         // Parameter
         bool maneuverStarted = false;
@@ -171,7 +166,6 @@ namespace asm_socketcan_bridge
         rclcpp::TimerBase::SharedPtr updateSimClock_;
 
         // Custom Structures
-        VESIResultData feedbackCmds;
         VESIAPI api;
         ASMBus canBusStorage_{};
         ASMBus *canBus = nullptr;
