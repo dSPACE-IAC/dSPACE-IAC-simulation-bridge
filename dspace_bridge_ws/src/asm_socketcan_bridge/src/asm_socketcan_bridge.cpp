@@ -204,8 +204,6 @@ namespace asm_socketcan_bridge {
                    [this]() { this->publish_misc_report(); });
     register_timer("publish_diagnostic_report_ms",
                    [this]() { this->publish_diagnostic_report(); });
-    register_timer("publish_VECTOR__INDEPENDENT_SIG_MSG_ms",
-                   [this]() { this->publish_VECTOR__INDEPENDENT_SIG_MSG(); });
     register_timer("publish_novatel_report_ms",
                    [this]() { this->publish_novatel_report(); });
     register_timer("publish_novatel_bestpos1_ms",
@@ -742,10 +740,12 @@ namespace asm_socketcan_bridge {
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("F_brake_pressure_cmd")) {
+            // Todo priority high: Change datatype to int16 to match DBC
             this->feedbackCmd.vehicle_inputs.brake_cmd_front =
               static_cast<uint16_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("R_brake_pressure_cmd")) {
+            // Todo priority high: Change datatype to int16 to match DBC
             this->feedbackCmd.vehicle_inputs.brake_cmd_rear =
               static_cast<uint16_t>(std::floor(*value));
           }
@@ -810,16 +810,20 @@ namespace asm_socketcan_bridge {
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("steering_motor_ang_cmd")) {
+            // Todo priority high: Change datatype to int16 to match DBC
             this->feedbackCmd.vehicle_inputs.steering_cmd =
               static_cast<float>(*value);
           }
           if (const auto value = get_scaled("driver_steering_P_cmd")) {
+            // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
             driver_steering_P_cmd = static_cast<float>(*value);
           }
           if (const auto value = get_scaled("driver_steering_I_cmd")) {
+            // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
             driver_steering_I_cmd = static_cast<float>(*value);
           }
           if (const auto value = get_scaled("driver_steering_D_cmd")) {
+            // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
             driver_steering_D_cmd = static_cast<float>(*value);
           }
           this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
@@ -871,6 +875,7 @@ namespace asm_socketcan_bridge {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("track_cond_ack")) {
+            // Todo priority medium: Change datatype to uint16 to match DBC
             this->feedbackCmd.to_raptor.track_cond_ack =
               static_cast<uint16_t>(std::floor(*value));
           }
@@ -879,6 +884,7 @@ namespace asm_socketcan_bridge {
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("ct_state")) {
+            // Todo priority high: Change datatype to uint16 to match DBC
             this->feedbackCmd.to_raptor.ct_state =
               static_cast<uint16_t>(std::floor(*value));
           }
@@ -923,6 +929,7 @@ namespace asm_socketcan_bridge {
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("marelli_sector_flag_ack")) {
+            // Todo priority low
             marelli_sector_flag_ack =
               static_cast<uint8_t>(std::floor(*value));
           }
@@ -951,22 +958,27 @@ namespace asm_socketcan_bridge {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("brake_bias_aim_switch")) {
+            // Todo priority high: Change datatype to uint8 to match DBC
             this->feedbackCmd.vehicle_inputs.brake_bias_switch =
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("push2pass_request")) {
+            // Todo priority high: Change datatype to uint8 to match DBC
             this->feedbackCmd.to_raptor.push2pass_request =
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("driver_traction_aim_switch")) {
+            // Todo priority low
             driver_traction_aim_switch =
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("driver_traction_range_switch")) {
+            // Todo priority low
             driver_traction_range_switch =
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("drive_steering_gain_cntrl_switch")) {
+            // Todo priority high
             drive_steering_gain_cntrl_switch =
               static_cast<uint8_t>(std::floor(*value));
           }
@@ -997,12 +1009,15 @@ namespace asm_socketcan_bridge {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("long_ct_vehicle_acc_fbk")) {
+            // Todo priority low: Only relevant for traction control on low-level 
             long_ct_vehicle_acc_fbk = static_cast<float>(*value);
           }
           if (const auto value = get_scaled("lat_ct_vehicle_acc_fbk")) {
+            // Todo priority low: Only relevant for traction control on low-level 
             lat_ct_vehicle_acc_fbk = static_cast<float>(*value);
           }
           if (const auto value = get_scaled("vertical_ct_vehicle_acc_fbk")) {
+            // Todo priority low: Only relevant for traction control on low-level 
             vertical_ct_vehicle_acc_fbk = static_cast<float>(*value);
           }
           this->feedbackDataAvailabe = true;
@@ -1693,13 +1708,14 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("base_to_car_heartbeat", bus.asm_bus_var.race_control_var.base_to_car_heartbeat);
-      assign("track_flag", bus.asm_bus_var.race_control_var.track_flag);
-      assign("veh_flag", bus.asm_bus_var.race_control_var.veh_flag);
-      assign("veh_rank", bus.asm_bus_var.race_control_var.veh_rank);
-      assign("lap_count", bus.asm_bus_var.race_control_var.lap_count);
-      assign("lap_distance", bus.asm_bus_var.race_control_var.lap_distance);
-      assign("round_target_speed", bus.asm_bus_var.race_control_var.round_target_speed);
+      const auto &race_control = bus.asm_bus_var.race_control_var;
+      assign("base_to_car_heartbeat", race_control.base_to_car_heartbeat);
+      assign("track_flag", race_control.track_flag);
+      assign("veh_flag", race_control.veh_flag);
+      assign("veh_rank", race_control.veh_rank);
+      assign("lap_count", race_control.lap_count);
+      assign("lap_distance", race_control.lap_distance);
+      assign("round_target_speed", race_control.round_target_speed);
     });
   }
 
@@ -1713,9 +1729,12 @@ namespace asm_socketcan_bridge {
       };
       assign("marelli_track_flag", bus.asm_bus_var.race_control_var.track_flag);
       assign("marelli_vehicle_flag", bus.asm_bus_var.race_control_var.veh_flag);
+      // Todo medium priority: Check whether track flag or veh flag is the better choice here. Low priority long term implement sector flag simulation.
       assign("marelli_sector_flag", bus.asm_bus_var.race_control_var.track_flag);
+      // Todo low priority: Feed from ASM and set to 0 if timeout of more than 10s occurs
       assign("marelli_rc_base_sync_check", static_cast<uint8_t>(1));
-      assign("marelli_rc_lte_rssi", static_cast<uint8_t>(255));
+      // Not important -> no need to fill other values than 0
+      assign("marelli_rc_lte_rssi", 0);
     });
   }
 
@@ -1727,6 +1746,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Todo low priority: Change to dedicated signal later
       assign("marelli_gps_lat", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
       assign("marelli_gps_long", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
     });
@@ -1740,9 +1760,10 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("laps", bus.asm_bus_var.race_control_var.lap_count);
-      assign("lap_time", bus.asm_bus_var.race_control_var.lap_time);
-      assign("time_stamp", bus.asm_bus_var.race_control_var.time_stamp);
+      const auto &race_control = bus.asm_bus_var.race_control_var;
+      assign("laps", race_control.lap_count);
+      assign("lap_time", race_control.lap_time);
+      assign("time_stamp", race_control.time_stamp);
     });
   }
 
@@ -1754,6 +1775,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Obsolete -> no need to fill other values than 0
       assign("comp_veh_num", 0);
       assign("comp_rank", 0);
       assign("comp_veh_flag", 0);
@@ -1810,7 +1832,9 @@ namespace asm_socketcan_bridge {
       const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
       assign("engine_oil_temperature", powertrain.engine_oil_temperature);
       assign("torque_wheels", powertrain.torque_wheels_nm);
+      // Todo low priority: Feedback of switch set by the teams in dash_sw_cmd_message
       assign("driver_traction_aim_swicth_fbk", 0);
+      // Todo low priority: Feedback of switch set by the teams in dash_sw_cmd_message
       assign("driver_traction_range_switch_fbk", 0);
       const auto &race_control = bus.asm_bus_var.race_control_var;
       assign("push2pass_status", race_control.push2pass_status);
@@ -1827,8 +1851,10 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("steering_motor_fdbk_counter", 0);
+      assign("steering_motor_fdbk_counter", this->steering_motor_fdbk_counter++);
+      // Todo medium priority: Fill from ASM with real value
       assign("primary_steering_angular_rate", 0);
+      // Todo high priority: Fill from ASM with real value
       assign("commanded_steering_rate", 0);
     });
   }
@@ -1836,14 +1862,15 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publish_steering_report_extd()
   {
     publishCanMessage("steering_report_extd", [&](PreparedCanMessage &message, const ASMBus &bus) {
-      auto assign = [&](std::string_view signal_name) {
+      auto assign = [&](std::string_view signal_name, auto value) {
         if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-          insertBits(message.frame.data, *signal, bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
+          insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("average_steering_ang_fdbk");
-      assign("primary_steering_angle_fbk");
-      assign("secondary_steering_ang_fdbk");
+      const auto &steering_angle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle;
+      assign("average_steering_ang_fdbk", steering_angle);
+      assign("primary_steering_angle_fbk", steering_angle);
+      assign("secondary_steering_ang_fdbk", steering_angle);
     });
   }
 
@@ -1855,12 +1882,19 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Todo priority medium: Output of feedback controller on raptor for steering system. Teams may use it for tuning low-level controllers
       assign("motor_duty_cycle_cmd", 0);
+      // Todo priority medium: Add 10 ms delay to cmd - Just an ack from DBW(steer) ECU of received cmd
       assign("motor_duty_cycle_fbk", 0);
+      // Todo priority low: Feedback of current sensor on motor controller
       assign("motor_current_fbk", 0);
+      // Not important: Feedback of voltage measured at DBW(steer) ECU
       assign("sbw_ecu_voltage", 0);
+      // Not important: Feedback of voltage measured at DBW(steer) ECU
       assign("sbw_ecu_temp", 0);
+      // Not important: Diagnostics
       assign("sbw_error_code", 0);
+      // Todo priority low: Lookup based on the motor_current_fbk
       assign("sbw_motor_torque_estimate", 0);
     });
   }
@@ -1873,8 +1907,11 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Todo priority medium
       assign("steering_p_contribution", 0);
+      // Todo priority medium
       assign("steering_i_contribution", 0);
+      // Todo priority medium
       assign("steering_d_contribution", 0);
     });
   }
@@ -1887,7 +1924,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("brk_pressure_fdbk_counter", 0);
+      assign("brk_pressure_fdbk_counter", this->brk_pressure_fdbk_counter++);
       const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
       assign("brake_pressure_fdbk_rear", vehicle.rear_brake_pressure);
       assign("brake_pressure_fdbk_front", vehicle.front_brake_pressure);
@@ -1902,9 +1939,13 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Todo priority low: Ouput position based on the front brake pressure controller (scaled)
       assign("F_brk_pos_cmd", 0);
+      // Todo priority low: Feeback position from linear actuator (abs actuator scale)
       assign("F_brk_pos_fbk", 0);
+      // Todo priority low: Ouput position based on the front brake pressure controller (scaled)
       assign("R_brk_pos_cmd", 0);
+      // Todo priority low: Feeback position from linear actuator (abs actuator scale)
       assign("R_brk_pos_fbk", 0);
     });
   }
@@ -1917,7 +1958,9 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Todo priority medium
       assign("f_brake_act_force", 0);
+      // Todo priority medium
       assign("r_brake_act_force", 0);
     });
   }
@@ -1930,7 +1973,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("acc_pedal_fdbk_counter", 0);
+      assign("acc_pedal_fdbk_counter", this->acc_pedal_fdbk_counter++);
       assign("acc_pedal_fdbk", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.accel_pedal_output);
     });
   }
@@ -2250,45 +2293,52 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::publish_wheel_strain_gauge()
   {
     publishCanMessage("wheel_strain_gauge", [&](PreparedCanMessage &message, const ASMBus &bus) {
-      for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
-             {"wheel_strain_gauge_RR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_wheel_load},
-             {"wheel_strain_gauge_RL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_wheel_load},
-             {"wheel_strain_gauge_FR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_wheel_load},
-             {"wheel_strain_gauge_FL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_wheel_load}}) {
-        if (const auto *signal = findSignal(message.metadata->id, name)) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
-      }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      // Todo priority medium: Check that wheel load on push rod is used
+      assign("wheel_strain_gauge_RR", vehicle.rr_wheel_load);
+      // Todo priority medium: Check that wheel load on push rod is used
+      assign("wheel_strain_gauge_RL", vehicle.rl_wheel_load);
+      // Todo priority medium: Check that wheel load on push rod is used
+      assign("wheel_strain_gauge_FR", vehicle.fr_wheel_load);
+      // Todo priority medium: Check that wheel load on push rod is used
+      assign("wheel_strain_gauge_FL", vehicle.fl_wheel_load);
     });
   }
 
   void AsmSocketCanBridgeNode::publish_wheel_potentiometer_data()
   {
     publishCanMessage("wheel_potentiometer_data", [&](PreparedCanMessage &message, const ASMBus &bus) {
-      for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
-             {"wheel_potentiometer_RR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_damper_linear_potentiometer},
-             {"wheel_potentiometer_RL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_damper_linear_potentiometer},
-             {"wheel_potentiometer_FR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_damper_linear_potentiometer},
-             {"wheel_potentiometer_FL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_damper_linear_potentiometer}}) {
-        if (const auto *signal = findSignal(message.metadata->id, name)) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
-      }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("wheel_potentiometer_RR", vehicle.rr_damper_linear_potentiometer);
+      assign("wheel_potentiometer_RL", vehicle.rl_damper_linear_potentiometer);
+      assign("wheel_potentiometer_FR", vehicle.fr_damper_linear_potentiometer);
+      assign("wheel_potentiometer_FL", vehicle.fl_damper_linear_potentiometer);
     });
   }
 
   void AsmSocketCanBridgeNode::publish_wheel_speed_report()
   {
     publishCanMessage("wheel_speed_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
-      for (const auto &[name, value] : std::initializer_list<std::pair<std::string_view, double>>{
-             {"wheel_speed_RR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_rear_right},
-             {"wheel_speed_RL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_rear_left},
-             {"wheel_speed_FR", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_front_right},
-             {"wheel_speed_FL", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.ws_front_left}}) {
-        if (const auto *signal = findSignal(message.metadata->id, name)) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
-      }
+      };
+      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
+      assign("wheel_speed_RR", vehicle.ws_rear_right);
+      assign("wheel_speed_RL", vehicle.ws_rear_left);
+      assign("wheel_speed_FR", vehicle.ws_front_right);
+      assign("wheel_speed_FL", vehicle.ws_front_left);
     });
   }
 
@@ -2305,7 +2355,7 @@ namespace asm_socketcan_bridge {
       assign("safety_switch_state", vehicle.safety_switch_state);
       assign("mode_switch_state", vehicle.mode_switch_state);
       assign("sys_state", vehicle.sys_state);
-      assign("raptor_rolling_counter", 0);
+      assign("raptor_rolling_counter", this->raptor_rolling_counter++);
     });
   }
 
@@ -2317,48 +2367,40 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_system_warning", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_system_failure", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_brake_warning1", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_brake_warning2", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_brake_warning3", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_steer_warning1", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_steer_warning2", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("sd_steer_warning3", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("motec_warning", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("est1_oos_front_brk", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("est2_oos_rear_brk", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("est3_low_eng_speed", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("est4_sd_comms_loss", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("est5_motec_comms_loss", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("est6_sd_ebrake", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("adlink_hb_lost", 0);
+      // Todo priority medium: Works for now but could be filled with dedicated signal to enable failure injection from ControlDesk
       assign("rc_lost", 0);
-    });
-  }
-
-  void AsmSocketCanBridgeNode::publish_VECTOR__INDEPENDENT_SIG_MSG()
-  {
-    publishCanMessage("VECTOR__INDEPENDENT_SIG_MSG", [&](PreparedCanMessage &message, const ASMBus &bus) {
-      auto assign = [&](std::string_view signal_name, auto value) {
-        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-          insertBits(message.frame.data, *signal, value);
-        }
-      };
-      const auto &vector_nav = bus.sim_interface_var.vector_nav_vn1_var.common_group_var;
-      assign("ang_heading", vector_nav.insstatus_var.gps_heading_ins);
-      assign("pos_y", vector_nav.position_var.y);
-      assign("pos_x", vector_nav.position_var.x);
-      assign("yaw_rate", vector_nav.angularrate_var.z);
-      assign("velocity_long", vector_nav.velocity_var.x);
-      assign("velocity_lat", vector_nav.velocity_var.y);
-      assign("motor_angle", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle);
-      assign("acceleration", vector_nav.accel_var.x);
-      assign("rc_base_sync_check", static_cast<uint8_t>(1));
-      assign("rc_lte_rssi", 0);
-      assign("duty_cycle_fbk", 0);
-      assign("duty_cycle_dmd", 0);
-      assign("steering_motor_ang_avg_fdbk", 0);
     });
   }
 

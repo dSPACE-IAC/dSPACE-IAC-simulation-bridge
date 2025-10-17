@@ -143,6 +143,10 @@ namespace asm_socketcan_bridge
         bool numberWarningSent = false;
         bool stackFeedbackConnectionWarningSent = false;
         uint8_t prestart_rolling_counter;
+        uint8_t raptor_rolling_counter = 0;
+        uint8_t brk_pressure_fdbk_counter = 0;
+        uint8_t acc_pedal_fdbk_counter = 0;
+        uint8_t steering_motor_fdbk_counter = 0;
 
         int16_t max_retries;
 
@@ -230,7 +234,6 @@ namespace asm_socketcan_bridge
         void publish_wheel_speed_report();
         void publish_misc_report();
         void publish_diagnostic_report();
-        void publish_VECTOR__INDEPENDENT_SIG_MSG();
         void publish_novatel_report();
         void publish_vectornav_attitude_group();
         void publish_vectornav_common_group();

@@ -26,7 +26,7 @@ asm_socketcan_bridge_node:
     publish_intervals.publish_marelli_report_1_ms: 10
     publish_intervals.publish_marelli_report_2_ms: 10
     publish_intervals.publish_base_to_car_timing_ms: 10
-    publish_intervals.publish_rest_of_field_ms: 10
+    publish_intervals.publish_rest_of_field_ms: 20
     publish_intervals.publish_pt_report_1_ms: 10
     publish_intervals.publish_pt_report_2_ms: 10
     publish_intervals.publish_pt_report_3_ms: 10
@@ -63,7 +63,6 @@ asm_socketcan_bridge_node:
     publish_intervals.publish_wheel_speed_report_ms: 10
     publish_intervals.publish_misc_report_ms: 10
     publish_intervals.publish_diagnostic_report_ms: 10
-    publish_intervals.publish_VECTOR__INDEPENDENT_SIG_MSG_ms: 10
     publish_intervals.publish_novatel_report_ms: 10
     publish_intervals.publish_novatel_bestpos1_ms: 10
     publish_intervals.publish_novatel_bestpos2_ms: 10
