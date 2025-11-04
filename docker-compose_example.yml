@@ -6,7 +6,7 @@ networks:
                 - subnet: 10.6.0.0/16
 services:
     ctun:
-        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2025-10-15
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2025-10-17
         container_name: ctun
         ports:
             - 1723:1723/udp
@@ -21,12 +21,12 @@ services:
                 condition: service_started
 
     veos:
-        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/combined_simphera_local_executor_246:race_2025-10-15
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/combined_simphera_local_executor_246:race_2025-10-17
         container_name: veos
         cap_add:
             - SYS_PTRACE
         environment:
-            - DS_CMU_SERVER=license-server-lb-37903434.eu-central-1.elb.amazonaws.com
+            - DS_CMU_SERVER=xxxx
             - DS_VEOS_LOAD_OSA=/home/dspace/VEOS/ASM_Traffic.osa
             - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Las Vegas, ID 3: Monza start in pit, ID 4: Monza start on racetrack, ID 5: Monza no bail out, ID 6: Kennedy Space Center
             - USE_SIMPHERA=false
@@ -42,7 +42,7 @@ services:
                 condition: service_started
 
     vesi:
-        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2025-10-15
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2025-10-17
         container_name: vesi
         restart: always
         tty: true
@@ -51,13 +51,13 @@ services:
                 ipv4_address: 10.6.0.3
 
     dspace_bridge:
-        image: dspace/iac_asm_socketcan_bridge:2025-10-15
+        image: dspace/iac_asm_socketcan_bridge:2025-10-17
         container_name: asm_socketcan_bridge
-        # image: dspace/iac_asm_ros2_bridge:2025-10-15
+        # image: dspace/iac_asm_ros2_bridge:2025-10-17
         # container_name: asm_ros2_bridge
-        # image: dspace/iac_aurelion_ros2_bridge:2025-10-15
+        # image: dspace/iac_aurelion_ros2_bridge:2025-10-17
         # container_name: aurelion_ros2_bridge
-        # image: dspace/iac_dspace_bridge_dev:2025-10-15
+        # image: dspace/iac_dspace_bridge_dev:2025-10-17
         # container_name: dspace_bridge_dev
         restart: no
         # volumes:
@@ -76,7 +76,7 @@ services:
                 condition: service_healthy
 
     dspace_foxglove_bridge:
-        image: dspace/iac_dspace_bridge_foxglove:2025-10-15
+        image: dspace/iac_dspace_bridge_foxglove:2025-10-17
         container_name: foxglove_bridge
         ports:
             - 8765:8765/tcp
@@ -85,7 +85,7 @@ services:
                 ipv4_address: 10.6.0.6
 
     uva_example_driving_stack:
-        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2025-10-15
+        image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2025-10-17
         container_name: driving_stack
         environment:
             - SIM_CLOCK_MODE=false
