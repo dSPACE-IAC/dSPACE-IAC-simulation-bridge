@@ -1,6 +1,6 @@
 # Currently the complete dSPACE team is code owner of this repository. Therefor it is required, that at least one team member approves a pull request.
 
-* @CarlGiest @DennisRos @dSPACE-IAC @DWUdsp
+* @CarlGiest @DennisRos @dSPACE-IAC @DWUdsp @airacingtech/maintainers
 
 sut-te-bridge/ros2_bridge_ws/src/sut_te_bridge/src @CarlGiest @DWUdsp
 sut-te-bridge/ros2_bridge_ws/src/sut_te_bridge/include @CarlGiest @DennisRos @DWUdsp

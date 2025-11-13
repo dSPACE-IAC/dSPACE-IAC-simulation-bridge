@@ -1,0 +1,227 @@
+name: AI Racing Tech  dSpace IAC sut-te-brige Docker
+
+on:
+    workflow_dispatch:
+    push:
+      branches: [ "art-iron" ]
+    pull_request:
+      branches: [ "art-iron" ]
+    repository_dispatch:
+      types: [ "trigger-dspace-workflow" ]
+
+concurrency:
+  group: bridge-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - SAVE_NAME: art_dspace_bridge
+            FOXGLOVE_NAME: art_dspace_foxglove
+            RACE_COMMON_NAME: art_dspace_race_common
+            BASE_IMAGE: ghcr.io/airacingtech/art_ros_iron_cpu-built-dspace:stable
+            DOCKERFILE: Dockerfile
+    outputs:
+      bridge_image_name: ${{ steps.save_image_name.outputs.image_name }}
+      bridge_cache_name: ${{ steps.save_image_name.outputs.cache_name }}
+      foxglove_image_name: ${{ steps.save_image_name_foxglove.outputs.image_name }}
+      foxglove_cache_name: ${{ steps.save_image_name_foxglove.outputs.cache_name }}
+      race_common_image_name: ${{ steps.save_image_name_race_common.outputs.image_name }}
+      race_common_cache_name: ${{ steps.save_image_name_race_common.outputs.cache_name }}
+      branch_name: ${{ steps.save_image_name.outputs.bridge_name }}
+      tag_name: ${{ steps.save_image_name.outputs.tag_name }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: airacingtechba
+          password: ${{ secrets.PAT }}
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+      - name: Get the Ref
+        id: get-ref
+        uses: sisaha9/ref-to-tag-action@v2
+        with:
+          ref: ${{ github.ref }}
+          head_ref: ${{ github.head_ref }}
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      # START: Build and Push Docker image
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+          key: ${{ runner.os }}-buildx-dev-${{ matrix.SAVE_NAME }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-dev-${{ matrix.SAVE_NAME }}
+            ${{ runner.os }}-buildx-dev
+      - name: Build and Push Docker image
+        id: docker_build_push_bridge
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          pull: true
+          push: true
+          tags: |
+            ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:${{ steps.get-ref.outputs.tag }}
+          ssh: |
+            default=${{ env.SSH_AUTH_SOCK }}
+          cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+          cache-to: type=local,dest=/tmp/.buildx-cache-new-${{ matrix.SAVE_NAME }},mode=max
+          build-args: |
+            BASE_IMAGE=${{ matrix.BASE_IMAGE }}
+          target: sut-te-bridge_simphera
+      - name: Delete old cache
+        run: |
+          rm -rf /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+          mv /tmp/.buildx-cache-new-${{ matrix.SAVE_NAME }} /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+      - name: Save image name to Github Output
+        id: save_image_name
+        run: |
+          echo "image_name=ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "cache_name=${{ matrix.SAVE_NAME }}" >> $GITHUB_OUTPUT
+          echo "tag_name=${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "bridge_name=${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+      - name: Cache Docker layers Foxglove
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-${{ matrix.FOXGLOVE_NAME }}
+          key: ${{ runner.os }}-buildx-dev-${{ matrix.FOXGLOVE_NAME }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-dev-${{ matrix.FOXGLOVE_NAME }}
+            ${{ runner.os }}-buildx-dev
+      - name: Build and Push Docker image Foxglove Bridge
+        id: docker_build_push_foxglove_bridge
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          pull: true
+          push: true
+          tags: |
+            ghcr.io/airacingtech/${{ matrix.FOXGLOVE_NAME }}:${{ steps.get-ref.outputs.tag }}
+          ssh: |
+            default=${{ env.SSH_AUTH_SOCK }}
+          cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.FOXGLOVE_NAME }}
+          cache-to: type=local,dest=/tmp/.buildx-cache-new-${{ matrix.FOXGLOVE_NAME }},mode=max
+          build-args: |
+            BASE_IMAGE=${{ matrix.BASE_IMAGE }}
+          target: sut-te-bridge_foxglove
+      - name: Delete old cache Foxglove
+        run: |
+          rm -rf /tmp/.buildx-cache-${{ matrix.FOXGLOVE_NAME }}
+          mv /tmp/.buildx-cache-new-${{ matrix.FOXGLOVE_NAME }} /tmp/.buildx-cache-${{ matrix.FOXGLOVE_NAME }}
+      - name: Save image name to Github Output Foxglove
+        id: save_image_name_foxglove
+        run: |
+          echo "image_name=ghcr.io/airacingtech/${{ matrix.FOXGLOVE_NAME }}:${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "cache_name=${{ matrix.FOXGLOVE_NAME }}" >> $GITHUB_OUTPUT
+          echo "tag_name=${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "bridge_name=${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+      - name: Cache Docker layers Race Common
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-${{ matrix.RACE_COMMON_NAME }}
+          key: ${{ runner.os }}-buildx-dev-${{ matrix.RACE_COMMON_NAME }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-dev-${{ matrix.RACE_COMMON_NAME }}
+            ${{ runner.os }}-buildx-dev
+      - name: Build and Push Docker image Race Common
+        id: docker_build_push_race_common
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          pull: true
+          push: true
+          tags: |
+            ghcr.io/airacingtech/${{ matrix.RACE_COMMON_NAME }}:${{ steps.get-ref.outputs.tag }}
+          ssh: |
+            default=${{ env.SSH_AUTH_SOCK }}
+          cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.RACE_COMMON_NAME }}
+          cache-to: type=local,dest=/tmp/.buildx-cache-new-${{ matrix.RACE_COMMON_NAME }},mode=max
+          build-args: |
+            BASE_IMAGE=${{ matrix.BASE_IMAGE }}
+          target: sut-te-bridge_art
+      - name: Delete old cache Race Common
+        run: |
+          rm -rf /tmp/.buildx-cache-${{ matrix.RACE_COMMON_NAME }}
+          mv /tmp/.buildx-cache-new-${{ matrix.RACE_COMMON_NAME }} /tmp/.buildx-cache-${{ matrix.RACE_COMMON_NAME }}
+      - name: Save image name to Github Output Race Common
+        id: save_image_name_race_common
+        run: |
+          echo "image_name=ghcr.io/airacingtech/${{ matrix.RACE_COMMON_NAME }}:${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "cache_name=${{ matrix.RACE_COMMON_NAME }}" >> $GITHUB_OUTPUT
+          echo "tag_name=${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+          echo "bridge_name=${{ steps.get-ref.outputs.tag }}" >> $GITHUB_OUTPUT
+  aws-push:
+    runs-on: ubuntu-latest
+    needs: [build-push]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - TEAM_NAME: ai-racing
+            BRIDGE_REPO: bridge
+            FOXGLOVE_REPO: foxglove
+            RACE_COMMON_REPO: art_driving_stack
+            IMAGE_TAG: ${{ needs.build-push.outputs.tag_name }}
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: airacingtechba
+          password: ${{ secrets.PAT }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.DSPACE_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DSPACE_AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1 # dSPACE aws-region
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Pull, tag, and push image to Amazon ECR
+        id: pull-push-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          GHCR_BRIDGE_IMAGE: ${{ needs.build-push.outputs.bridge_image_name }}
+          GHCR_FOXGLOVE_IMAGE: ${{ needs.build-push.outputs.foxglove_image_name }}
+          GHCR_RACE_COMMON_IMAGE: ${{ needs.build-push.outputs.race_common_image_name }}
+        run: |
+          # Pull docker images and push it to ECR
+          docker pull $GHCR_BRIDGE_IMAGE
+          docker tag $GHCR_BRIDGE_IMAGE $ECR_REGISTRY/${{ matrix.TEAM_NAME }}/${{ matrix.BRIDGE_REPO }}:${{ matrix.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ matrix.TEAM_NAME }}/${{ matrix.BRIDGE_REPO }}:${{ matrix.IMAGE_TAG }}
+
+          docker pull $GHCR_FOXGLOVE_IMAGE
+          docker tag $GHCR_FOXGLOVE_IMAGE $ECR_REGISTRY/${{ matrix.TEAM_NAME }}/${{ matrix.FOXGLOVE_REPO }}:${{ matrix.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ matrix.TEAM_NAME }}/${{ matrix.FOXGLOVE_REPO }}:${{ matrix.IMAGE_TAG }}
+
+          docker pull $GHCR_RACE_COMMON_IMAGE
+          docker tag $GHCR_RACE_COMMON_IMAGE $ECR_REGISTRY/${{ matrix.TEAM_NAME }}/${{ matrix.RACE_COMMON_REPO }}:${{ matrix.IMAGE_TAG }}
+          docker push $ECR_REGISTRY/${{ matrix.TEAM_NAME }}/${{ matrix.RACE_COMMON_REPO }}:${{ matrix.IMAGE_TAG }}
