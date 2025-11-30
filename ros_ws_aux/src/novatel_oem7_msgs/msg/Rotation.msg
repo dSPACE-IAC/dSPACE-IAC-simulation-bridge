@@ -1,9 +1,0 @@
-RotationalOffset    rotation
-INSFrame            frame
-float32             x_rotation
-float32             y_rotation
-float32             z_rotation
-float32             x_rotation_stdev
-float32             y_rotation_stdev
-float32             z_rotation_stdev
-INSSourceStatus     rotation_source
