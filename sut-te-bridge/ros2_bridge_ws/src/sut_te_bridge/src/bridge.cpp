@@ -1462,7 +1462,6 @@ namespace bridge {
     // Best Pos
     auto bestPos = novatel_oem7_msgs::msg::BESTPOS();
 
-    bestPos.nov_header.frame_id
     bestPos.nov_header.message_name = currentNovatel.best_pos_var.nov_header_var.message_name[0];
     bestPos.nov_header.message_id = currentNovatel.best_pos_var.nov_header_var.message_id;
     bestPos.nov_header.message_type = currentNovatel.best_pos_var.nov_header_var.message_type;
@@ -1752,3 +1751,4 @@ int main(int argc, char * argv[])
   }
   
 }
+
