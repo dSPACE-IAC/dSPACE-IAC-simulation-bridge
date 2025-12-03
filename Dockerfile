@@ -54,6 +54,7 @@ COPY sut-te-bridge/ros2_bridge_ws /root/ros2_bridge_ws
 RUN mkdir -p /root/record_log && \
     source /opt/ros/$ROS_DISTRO/local_setup.bash && \
     source /root/ros_ws_aux/install/local_setup.bash && \
+    source /opt/race_common/install/setup.bash && \
     rosdep install -i --from-path /root/ros2_bridge_ws/src --rosdistro $ROS_DISTRO -y && \
     colcon build --symlink-install --cmake-clean-first --base-paths /root/ros2_bridge_ws/ --build-base /root/ros2_bridge_ws/build --install-base /root/ros2_bridge_ws/install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
     echo 'source /root/ros2_bridge_ws/install/local_setup.bash' >> /root/.bashrc
@@ -71,3 +72,4 @@ FROM sut-te-bridge_base AS sut-te-bridge_art
 
 WORKDIR /race_common
 ENTRYPOINT [ "tail", "-f", "/dev/null" ]
+

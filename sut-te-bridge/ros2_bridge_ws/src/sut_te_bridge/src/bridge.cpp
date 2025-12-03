@@ -1503,7 +1503,7 @@ namespace bridge {
     bestPos.gps_glonass_sig_mask = currentNovatel.best_pos_var.gps_glonass_sig_mask;
 
     // Header
-    bestPos.header.frame_id = "world";
+    bestPos.header.frame_id = "gps_antenna_front";
 
     if(this->simModeEnabled)
     {
@@ -1543,7 +1543,7 @@ namespace bridge {
     bestVel.reserved = currentNovatel.best_vel_var.reserved;
 
     // Header
-    bestVel.header.frame_id = "ego";
+    bestVel.header.frame_id = "gps_antenna_front";
 
     if(this->simModeEnabled)
     {
@@ -1584,7 +1584,7 @@ namespace bridge {
     inspva.status.status = currentNovatel.inspava_var.status_var.status_var;
 
     // Header
-    inspva.header.frame_id = "world";
+    inspva.header.frame_id = "gps_antenna_front";
 
     if(this->simModeEnabled)
     {
@@ -1639,7 +1639,7 @@ namespace bridge {
     heading2.gps_glonass_sig_mask = currentNovatel.heading_2_var.gps_glonass_sig_mask;
     
     // Header
-    heading2.header.frame_id = "world";
+    heading2.header.frame_id = "gps_antenna_front";
 
     if(this->simModeEnabled)
     {
@@ -1679,7 +1679,7 @@ namespace bridge {
     rawImu.angular_velocity.z = currentNovatel.raw_imu_var.angular_velocity_var.z;
 
     // Header
-    rawImu.header.frame_id = "ego";
+    rawImu.header.frame_id = "novatel_imu";
 
     if(this->simModeEnabled)
     {
@@ -1714,7 +1714,7 @@ namespace bridge {
     for (size_t i = 0; i < 9; i++) {rawImuX.linear_acceleration_covariance[i] = 0;}
 
     // Header
-    rawImuX.header.frame_id = "ego";
+    rawImuX.header.frame_id = "novatel_imu";
 
     if(this->simModeEnabled)
     {
@@ -1751,3 +1751,4 @@ int main(int argc, char * argv[])
   }
   
 }
+
