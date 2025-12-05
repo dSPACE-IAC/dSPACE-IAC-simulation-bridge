@@ -1615,7 +1615,7 @@ namespace bridge {
 
     heading2.pos_type.type = currentNovatel.heading_2_var.pos_type;
 
-    heading2.length = currentNovatel.heading_2_var.length;
+    heading2.length = 1.9817;  // THIS IS THE EUCLIDEAN DISTANCE BETWEEN PRIMARY (FRONT) AND SECONDARY (REAR) AV24 ONLY
     heading2.heading = currentNovatel.heading_2_var.heading;
     heading2.pitch = currentNovatel.heading_2_var.pitch;
     heading2.reserved = currentNovatel.heading_2_var.reserved;
