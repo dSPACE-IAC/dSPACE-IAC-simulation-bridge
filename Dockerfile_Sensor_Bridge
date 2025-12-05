@@ -28,6 +28,19 @@ FROM dspace_ros_base AS sensor-bridge_base
 RUN mkdir -p /root/ros_ws_aux
 COPY ros_ws_aux /root/ros_ws_aux
 
+# Add novatel + vectornav message packages ONLY
+RUN cd /root/ros_ws_aux/src && \
+    \
+    # --- NOVATEL: clone repo, extract msgs only ---
+    git clone --depth 1 git@github.com:airacingtech/novatel_oem7_driver.git && \
+    mv novatel_oem7_driver/novatel_oem7_msgs . && \
+    rm -rf novatel_oem7_driver && \
+    \
+    # --- VECTORNAV: clone repo, extract msgs only ---
+    git clone --depth 1 git@github.com:airacingtech/vectornav-rtcm.git && \
+    mv vectornav-rtcm/vectornav_msgs . && \
+    rm -rf vectornav-rtcm
+
 RUN source /opt/ros/$ROS_DISTRO/local_setup.bash && \
     rosdep install -i --from-path /root/ros_ws_aux/src --rosdistro $ROS_DISTRO -y && \
     colcon build --symlink-install --base-paths /root/ros_ws_aux --build-base /root/ros_ws_aux/build --install-base /root/ros_ws_aux/install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo && \
