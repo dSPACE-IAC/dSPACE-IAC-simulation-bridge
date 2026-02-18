@@ -148,6 +148,8 @@ namespace asm_socketcan_bridge
         uint8_t acc_pedal_fdbk_counter = 0;
         uint8_t steering_motor_fdbk_counter = 0;
 
+        int64_t warning_throttle_intervall;
+
         int16_t max_retries;
 
         // DBC paths

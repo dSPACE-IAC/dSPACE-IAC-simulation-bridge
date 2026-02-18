@@ -34,15 +34,15 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
     echo "[INFO] Using CAN interface: $CAN_INTERFACE"
 
     # Try to create socket to test for privileges
-    ip link add dev $CAN_INTERFACE type vcan 2>/dev/null
+    # ip link add dev $CAN_INTERFACE type vcan 2>/dev/null
 
-    if [ $? -eq 0 ]; then
-        echo "[INFO] Privileged mode detected. Setting up vcan interfaces..."
-        ip link add dev $CAN_INTERFACE type vcan
-        ip link set up $CAN_INTERFACE
-    else
-        echo "[WARN] Not running in privileged mode or vcan module not available. Skipping automatic can interface setup. Setup of the interfaces needs to be done on the host and container needs to be started in host network."
-    fi
+    # if [ $? -eq 0 ]; then
+    #     echo "[INFO] Privileged mode detected. Setting up vcan interfaces..."
+    #     ip link add dev $CAN_INTERFACE type vcan
+    #     ip link set up $CAN_INTERFACE
+    # else
+    #     echo "[WARN] Not running in privileged mode or vcan module not available. Skipping automatic can interface setup. Setup of the interfaces needs to be done on the host and container needs to be started in host network."
+    # fi
 
     if [ $? -ne 0 ]; then
         echo "[ERROR] CAN interface setup failed."

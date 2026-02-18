@@ -5,10 +5,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-  int sanitize_port_value(int64_t value,
-                          int default_value,
-                          const rclcpp::Logger &logger,
-                          const std::string &description)
+  int sanitize_port_value(int64_t value, int default_value, const rclcpp::Logger &logger, const std::string &description)
   {
     if (value < 0 || value > std::numeric_limits<int>::max()) {
       RCLCPP_WARN(logger,
@@ -21,10 +18,7 @@ namespace {
     return static_cast<int>(value);
   }
 
-  uint32_t sanitize_interval_value(int64_t value,
-                                  uint32_t default_value,
-                                  const rclcpp::Logger &logger,
-                                  const std::string &description)
+  uint32_t sanitize_interval_value(int64_t value, uint32_t default_value, const rclcpp::Logger &logger, const std::string &description)
   {
     if (value < 0 || value > std::numeric_limits<uint32_t>::max()) {
       RCLCPP_WARN(logger,
@@ -37,10 +31,7 @@ namespace {
     return static_cast<uint32_t>(value);
   }
 
-  int16_t sanitize_retry_value(int64_t value,
-                              int16_t default_value,
-                              const rclcpp::Logger &logger,
-                              const std::string &description)
+  int16_t sanitize_retry_value(int64_t value, int16_t default_value, const rclcpp::Logger &logger, const std::string &description)
   {
     if (value < 0) {
       RCLCPP_WARN(logger,
@@ -93,6 +84,9 @@ namespace asm_socketcan_bridge {
       sanitize_port_value(sim_manager_port_param, 12345, this->get_logger(), "SimManager port");
     RCLCPP_INFO(this->get_logger(), "SimManager Port: %d", sim_manager_port);
     this->api.setSimManagerPort(sim_manager_port);
+
+    const int64_t warning_throttle_intervall =
+      this->declare_parameter<int64_t>("warn.throttle_interval", 478000);
 
     RCLCPP_INFO(this->get_logger(), "Configuring publisher timers (milliseconds)");
     publisher_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -527,65 +521,109 @@ namespace asm_socketcan_bridge {
     }
   }
 
-  template <typename T>
-  void AsmSocketCanBridgeNode::insertBits(uint8_t* data,
-                                          Signal signal_information,
-                                          T physical_value)
+
+  // general utilities
+  int AsmSocketCanBridgeNode::open_socket(const std::string &iface)
   {
-    if (signal_information.length == 0) {
-      return;
+    RCLCPP_INFO(get_logger(), "Socket open...");
+    int s = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (s < 0) {
+      RCLCPP_ERROR(get_logger(),
+                  "socket() failed for interface %s: %s",
+                  iface.c_str(), strerror(errno));
+      return -1;
     }
 
-    const auto length = signal_information.length;
-    const auto mask = length >= 64 ? std::numeric_limits<uint64_t>::max()
-                                   : ((1ULL << length) - 1ULL);
-    const long double scaled_value =
-      (static_cast<long double>(physical_value) - static_cast<long double>(signal_information.offset)) /
-      static_cast<long double>(signal_information.factor);
+    struct ifreq ifr {};
+    strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
+    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+    if (ioctl(s, SIOCGIFINDEX, &ifr) < 0) {
+      RCLCPP_ERROR(get_logger(),
+                  "ioctl(SIOCGIFINDEX) failed for %s: %s",
+                  iface.c_str(), strerror(errno));
+      close(s);
+      return -1;
+    }
 
-    uint64_t raw_value = 0;
+    RCLCPP_INFO(get_logger(), "Socket bind...");
+    struct sockaddr_can addr {};
+    addr.can_family  = AF_CAN;
+    addr.can_ifindex = ifr.ifr_ifindex;
+    if (bind(s, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
+      RCLCPP_ERROR(get_logger(),
+                  "bind() failed for %s: %s",
+                  iface.c_str(), strerror(errno));
+      close(s);
+      return -1;
+    }
 
-    if (signal_information.is_signed) {
-      int64_t min_value;
-      int64_t max_value;
-      if (length >= 64) {
-        min_value = std::numeric_limits<int64_t>::min();
-        max_value = std::numeric_limits<int64_t>::max();
-      } else {
-        const int64_t magnitude = static_cast<int64_t>(1ULL << (length - 1));
-        min_value = -magnitude;
-        max_value = magnitude - 1;
+    return s;
+  }
+  
+  void AsmSocketCanBridgeNode::buildMessageLookup()
+  {
+    message_lookup_.clear();
+    message_signal_lookup_.clear();
+    message_name_lookup_.clear();
+    message_lookup_.reserve(can_message_info.size());
+    message_signal_lookup_.reserve(can_message_info.size());
+    message_name_lookup_.reserve(can_message_info.size());
+
+    for (auto &message : can_message_info) {
+      message_lookup_.emplace(message.id, &message);
+      message_name_lookup_.emplace(std::string_view(message.name), &message);
+      auto &signal_map = message_signal_lookup_[message.id];
+      signal_map.reserve(message.signals.size());
+      for (const auto &signal : message.signals) {
+        signal_map.emplace(signal.name, &signal);
       }
-      const long double rounded = std::round(scaled_value);
-      const long double clamped =
-        std::clamp<long double>(rounded,
-                                static_cast<long double>(min_value),
-                                static_cast<long double>(max_value));
-      const auto quantized = static_cast<int64_t>(clamped);
-      raw_value = static_cast<uint64_t>(quantized) & mask;
-    } else {
-      const long double rounded = std::round(scaled_value);
-      const long double clamped =
-        std::clamp<long double>(rounded, 0.0L, static_cast<long double>(mask));
-      raw_value = static_cast<uint64_t>(clamped);
-    }
-
-    for (int i = 0; i < signal_information.length; ++i) {
-      const int bitIndex =
-        signal_information.endian ? (signal_information.start_bit + i)
-                                  : (signal_information.start_bit - i);
-      const int byteIndex = bitIndex / 8;
-      const int bitInByte =
-        signal_information.endian ? (bitIndex % 8) : (7 - (bitIndex % 8));
-
-      const uint8_t bitVal = (raw_value >> i) & 0x01;
-      data[byteIndex] &= ~(1 << bitInByte);
-      data[byteIndex] |= (bitVal << bitInByte);
     }
   }
 
-  int32_t AsmSocketCanBridgeNode::extractBits(const uint8_t* data,
-                                              Signal signal_information) const
+  const Message* AsmSocketCanBridgeNode::findMessageByID(uint32_t message_id) const
+  {
+    const auto iter = message_lookup_.find(message_id);
+    if (iter == message_lookup_.end()) {
+      return nullptr;
+    }
+    return iter->second;
+  }
+
+  const AsmSocketCanBridgeNode::SignalLookupMap* AsmSocketCanBridgeNode::findSignalLookup(uint32_t message_id) const
+  {
+    const auto iter = message_signal_lookup_.find(message_id);
+    if (iter == message_signal_lookup_.end()) {
+      return nullptr;
+    }
+    return &iter->second;
+  }
+
+  const Message* AsmSocketCanBridgeNode::findMessageByName(std::string_view message_name) const
+  {
+    const auto iter = message_name_lookup_.find(message_name);
+    if (iter == message_name_lookup_.end()) {
+      return nullptr;
+    }
+    return iter->second;
+  }
+
+  const Signal* AsmSocketCanBridgeNode::findSignal(uint32_t message_id, std::string_view signal_name) const
+  {
+    const auto *signal_map = findSignalLookup(message_id);
+    if (!signal_map) {
+      return nullptr;
+    }
+
+    const auto iter = signal_map->find(signal_name);
+    if (iter == signal_map->end()) {
+      return nullptr;
+    }
+    return iter->second;
+  }
+  
+  
+  // can read
+  int32_t AsmSocketCanBridgeNode::extractBits(const uint8_t* data, Signal signal_information) const
   {
     int32_t result = 0;
     for (int i = 0; i < signal_information.length; ++i) {
@@ -643,45 +681,7 @@ namespace asm_socketcan_bridge {
     this->feedbackCmd.to_raptor.push2pass_request = false;
   }
 
-  int AsmSocketCanBridgeNode::open_socket(const std::string &iface)
-  {
-    RCLCPP_INFO(get_logger(), "Socket open...");
-    int s = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    if (s < 0) {
-      RCLCPP_ERROR(get_logger(),
-                  "socket() failed for interface %s: %s",
-                  iface.c_str(), strerror(errno));
-      return -1;
-    }
-
-    struct ifreq ifr {};
-    strncpy(ifr.ifr_name, iface.c_str(), IFNAMSIZ - 1);
-    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
-    if (ioctl(s, SIOCGIFINDEX, &ifr) < 0) {
-      RCLCPP_ERROR(get_logger(),
-                  "ioctl(SIOCGIFINDEX) failed for %s: %s",
-                  iface.c_str(), strerror(errno));
-      close(s);
-      return -1;
-    }
-
-    RCLCPP_INFO(get_logger(), "Socket bind...");
-    struct sockaddr_can addr {};
-    addr.can_family  = AF_CAN;
-    addr.can_ifindex = ifr.ifr_ifindex;
-    if (bind(s, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
-      RCLCPP_ERROR(get_logger(),
-                  "bind() failed for %s: %s",
-                  iface.c_str(), strerror(errno));
-      close(s);
-      return -1;
-    }
-
-    return s;
-  }
-
-  void AsmSocketCanBridgeNode::can_reader_loop(int sock,
-                                               const std::string &bus_id)
+  void AsmSocketCanBridgeNode::can_reader_loop(int sock, const std::string &bus_id)
   {
     RCLCPP_INFO(get_logger(), "Can reader loop started for %s", bus_id.c_str());
     struct can_frame in_frame{};
@@ -848,8 +848,7 @@ namespace asm_socketcan_bridge {
             warn_missing_metadata(in_frame.can_id);
             break;
           }
-          if (const auto value = extractSignalScaled(in_frame.can_id,
-                                                     "desired_gear",
+          if (const auto value = extractSignalScaled(in_frame.can_id, "desired_gear",
                                                      in_frame.data)) {
             this->feedbackCmd.vehicle_inputs.brake_cmd_count =
               static_cast<uint8_t>(std::floor(*value));
@@ -1042,60 +1041,80 @@ namespace asm_socketcan_bridge {
     }
   }
 
-  void AsmSocketCanBridgeNode::can_write(int sock,
-                                         const struct can_frame &frame)
+  std::optional<double>
+  AsmSocketCanBridgeNode::extractSignalScaled(uint32_t message_id, std::string_view signal_name, const uint8_t* data) const
+  {
+    const auto *signal = findSignal(message_id, signal_name);
+    if (!signal) {
+      return std::nullopt;
+    }
+    const auto raw = extractBits(data, *signal);
+    return static_cast<double>(raw) * signal->factor + signal->offset;
+  }
+
+
+  // can send
+  template <typename T>
+  void AsmSocketCanBridgeNode::insertBits(uint8_t* data, Signal signal_information, T physical_value)
+  {
+    if (signal_information.length == 0) {
+      return;
+    }
+
+    const auto length = signal_information.length;
+    const auto mask = length >= 64 ? std::numeric_limits<uint64_t>::max()
+                                   : ((1ULL << length) - 1ULL);
+    const long double scaled_value =
+      (static_cast<long double>(physical_value) - static_cast<long double>(signal_information.offset)) /
+      static_cast<long double>(signal_information.factor);
+
+    uint64_t raw_value = 0;
+
+    if (signal_information.is_signed) {
+      int64_t min_value;
+      int64_t max_value;
+      if (length >= 64) {
+        min_value = std::numeric_limits<int64_t>::min();
+        max_value = std::numeric_limits<int64_t>::max();
+      } else {
+        const int64_t magnitude = static_cast<int64_t>(1ULL << (length - 1));
+        min_value = -magnitude;
+        max_value = magnitude - 1;
+      }
+      const long double rounded = std::round(scaled_value);
+      const long double clamped =
+        std::clamp<long double>(rounded,
+                                static_cast<long double>(min_value),
+                                static_cast<long double>(max_value));
+      const auto quantized = static_cast<int64_t>(clamped);
+      raw_value = static_cast<uint64_t>(quantized) & mask;
+    } else {
+      const long double rounded = std::round(scaled_value);
+      const long double clamped =
+        std::clamp<long double>(rounded, 0.0L, static_cast<long double>(mask));
+      raw_value = static_cast<uint64_t>(clamped);
+    }
+
+    for (int i = 0; i < signal_information.length; ++i) {
+      const int bitIndex =
+        signal_information.endian ? (signal_information.start_bit + i)
+                                  : (signal_information.start_bit - i);
+      const int byteIndex = bitIndex / 8;
+      const int bitInByte =
+        signal_information.endian ? (bitIndex % 8) : (7 - (bitIndex % 8));
+
+      const uint8_t bitVal = (raw_value >> i) & 0x01;
+      data[byteIndex] &= ~(1 << bitInByte);
+      data[byteIndex] |= (bitVal << bitInByte);
+    }
+  }
+
+  void AsmSocketCanBridgeNode::can_write(int sock, const struct can_frame &frame)
   {
     if (write(sock, &frame, sizeof(struct can_frame)) != sizeof(frame)) {
       perror("Write");
       return;
     }
-  }
-
-  void AsmSocketCanBridgeNode::buildMessageLookup()
-  {
-    message_lookup_.clear();
-    message_signal_lookup_.clear();
-    message_name_lookup_.clear();
-    message_lookup_.reserve(can_message_info.size());
-    message_signal_lookup_.reserve(can_message_info.size());
-    message_name_lookup_.reserve(can_message_info.size());
-
-    for (auto &message : can_message_info) {
-      message_lookup_.emplace(message.id, &message);
-      message_name_lookup_.emplace(std::string_view(message.name), &message);
-      auto &signal_map = message_signal_lookup_[message.id];
-      signal_map.reserve(message.signals.size());
-      for (const auto &signal : message.signals) {
-        signal_map.emplace(signal.name, &signal);
-      }
-    }
-  }
-
-  const Message* AsmSocketCanBridgeNode::findMessageByID(uint32_t message_id) const
-  {
-    const auto iter = message_lookup_.find(message_id);
-    if (iter == message_lookup_.end()) {
-      return nullptr;
-    }
-    return iter->second;
-  }
-
-  const AsmSocketCanBridgeNode::SignalLookupMap* AsmSocketCanBridgeNode::findSignalLookup(uint32_t message_id) const
-  {
-    const auto iter = message_signal_lookup_.find(message_id);
-    if (iter == message_signal_lookup_.end()) {
-      return nullptr;
-    }
-    return &iter->second;
-  }
-
-  const Message* AsmSocketCanBridgeNode::findMessageByName(std::string_view message_name) const
-  {
-    const auto iter = message_name_lookup_.find(message_name);
-    if (iter == message_name_lookup_.end()) {
-      return nullptr;
-    }
-    return iter->second;
   }
 
   std::optional<AsmSocketCanBridgeNode::PreparedCanMessage>
@@ -1133,281 +1152,8 @@ namespace asm_socketcan_bridge {
     can_write(can_socket, message.frame);
   }
 
-  void AsmSocketCanBridgeNode::setHeader(std_msgs::msg::Header &header,
-                                         std::string_view frame_id) const
-  {
-    header.frame_id = std::string(frame_id);
-    if (simModeEnabled) {
-      header.stamp.sec = sec;
-      header.stamp.nanosec = nsec;
-      return;
-    }
-    const auto now = std::chrono::system_clock::now();
-    const auto secs = std::chrono::time_point_cast<std::chrono::seconds>(now).time_since_epoch().count();
-    const auto nsecs_total = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
-    header.stamp.sec = static_cast<int32_t>(secs);
-    header.stamp.nanosec = static_cast<uint32_t>(nsecs_total - (secs * 1000000000LL));
-  }
 
-  void AsmSocketCanBridgeNode::populateBestPosMessage(novatel_oem7_msgs::msg::BESTPOS &message,
-                                                      const nova_tel_pwr_pak &data) const
-  {
-    const auto &source = data.best_pos_var;
-    message.nov_header.message_name = source.nov_header_var.message_name[0];
-    message.nov_header.message_id = source.nov_header_var.message_id;
-    message.nov_header.message_type = source.nov_header_var.message_type;
-    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
-    message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
-    message.nov_header.idle_time = source.nov_header_var.idle_time;
-    message.sol_status.status = source.sol_status;
-    message.pos_type.type = source.pos_type;
-    message.lat = source.lat;
-    message.lon = source.lon;
-    message.hgt = source.hgt;
-    message.undulation = source.undulation;
-    message.datum_id = source.datum_id;
-    message.lat_stdev = source.lat_stdev;
-    message.lon_stdev = source.lon_stdev;
-    message.hgt_stdev = source.hgt_stdev;
-    for (size_t i = 0; i < message.stn_id.size(); ++i) {
-      message.stn_id[i] = source.stn_id[i];
-    }
-    message.diff_age = source.diff_age;
-    message.sol_age = source.sol_age;
-    message.num_svs = source.num_svs;
-    message.num_sol_svs = source.num_sol_svs;
-    message.num_sol_l1_svs = source.num_sol_l1_svs;
-    message.num_sol_multi_svs = source.num_sol_multi_svs;
-    message.reserved = source.reserved;
-    message.ext_sol_stat.status = source.ext_sol_stat;
-    message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
-    message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
-    setHeader(message.header, "world");
-  }
-
-  void AsmSocketCanBridgeNode::populateBestVelMessage(novatel_oem7_msgs::msg::BESTVEL &message,
-                                                      const nova_tel_pwr_pak &data) const
-  {
-    const auto &source = data.best_vel_var;
-    message.nov_header.message_name = source.nov_header_var.message_name[0];
-    message.nov_header.message_id = source.nov_header_var.message_id;
-    message.nov_header.message_type = source.nov_header_var.message_type;
-    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
-    message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
-    message.nov_header.idle_time = source.nov_header_var.idle_time;
-    message.sol_status.status = source.sol_status;
-    message.vel_type.type = source.vel_type;
-    message.latency = source.latency;
-    message.diff_age = source.diff_age;
-    message.hor_speed = source.hor_speed;
-    message.trk_gnd = source.trk_gnd;
-    message.ver_speed = source.ver_speed;
-    message.reserved = source.reserved;
-    setHeader(message.header, "ego");
-  }
-
-  void AsmSocketCanBridgeNode::populateInspvaMessage(novatel_oem7_msgs::msg::INSPVA &message,
-                                                      const nova_tel_pwr_pak &data) const
-  {
-    const auto &source = data.inspava_var;
-    message.nov_header.message_name = source.nov_header_var.message_name[0];
-    message.nov_header.message_id = source.nov_header_var.message_id;
-    message.nov_header.message_type = source.nov_header_var.message_type;
-    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
-    message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
-    message.nov_header.idle_time = source.nov_header_var.idle_time;
-    message.latitude = source.latitude;
-    message.longitude = source.longitude;
-    message.height = source.height;
-    message.north_velocity = source.north_velocity;
-    message.east_velocity = source.east_velocity;
-    message.up_velocity = source.up_velocity;
-    message.roll = source.roll;
-    message.pitch = source.pitch;
-    message.azimuth = source.azimuth;
-    message.status.status = source.status_var.status_var;
-    setHeader(message.header, "world");
-  }
-
-  void AsmSocketCanBridgeNode::populateHeading2Message(novatel_oem7_msgs::msg::HEADING2 &message,
-                                                       const nova_tel_pwr_pak &data) const
-  {
-    const auto &source = data.heading_2_var;
-    message.nov_header.message_name = source.nov_header_var.message_name[0];
-    message.nov_header.message_id = source.nov_header_var.message_id;
-    message.nov_header.message_type = source.nov_header_var.message_type;
-    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
-    message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
-    message.nov_header.idle_time = source.nov_header_var.idle_time;
-    message.sol_status.status = source.sol_status;
-    message.pos_type.type = source.pos_type;
-    message.length = source.length;
-    message.heading = source.heading;
-    message.pitch = source.pitch;
-    message.reserved = source.reserved;
-    message.heading_stdev = source.heading_stdev;
-    message.pitch_stdev = source.pitch_stdev;
-    for (size_t i = 0; i < message.rover_stn_id.size(); ++i) {
-      message.rover_stn_id[i] = source.rover_stn_id[i];
-    }
-    for (size_t i = 0; i < message.master_stn_id.size(); ++i) {
-      message.master_stn_id[i] = source.master_stn_id[i];
-    }
-    message.num_sv_tracked = source.num_sv_tracked;
-    message.num_sv_in_sol = source.num_sv_in_sol;
-    message.num_sv_obs = source.num_sv_obs;
-    message.num_sv_multi = source.num_sv_multi;
-    message.sol_source.source = source.sol_source;
-    message.ext_sol_status.status = source.ext_sol_status;
-    message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
-    message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
-    setHeader(message.header, "world");
-  }
-
-  void AsmSocketCanBridgeNode::populateRawImuMessage(novatel_oem7_msgs::msg::RAWIMU &message,
-                                                     const nova_tel_pwr_pak &data) const
-  {
-    const auto &source = data.raw_imu_var;
-    message.nov_header.message_name = source.nov_header_var.message_name[0];
-    message.nov_header.message_id = source.nov_header_var.message_id;
-    message.nov_header.message_type = source.nov_header_var.message_type;
-    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
-    message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
-    message.nov_header.idle_time = source.nov_header_var.idle_time;
-    message.gnss_week = source.gnss_week;
-    message.gnss_seconds = source.gnss_seconds;
-    message.status = source.status_var;
-    message.linear_acceleration.x = source.linear_acceleration_var.x;
-    message.linear_acceleration.y = source.linear_acceleration_var.y;
-    message.linear_acceleration.z = source.linear_acceleration_var.z;
-    message.angular_velocity.x = source.angular_velocity_var.x;
-    message.angular_velocity.y = source.angular_velocity_var.y;
-    message.angular_velocity.z = source.angular_velocity_var.z;
-    setHeader(message.header, "ego");
-  }
-
-  void AsmSocketCanBridgeNode::populateRawImuXMessage(sensor_msgs::msg::Imu &message,
-                                                      const nova_tel_pwr_pak &data) const
-  {
-    const auto &source = data.raw_imu_var;
-    setHeader(message.header, "ego");
-    message.orientation.x = 0.0;
-    message.orientation.y = 0.0;
-    message.orientation.z = 0.0;
-    message.orientation.w = 0.0;
-    for (auto &value : message.orientation_covariance) {
-      value = -1.0;
-    }
-    message.angular_velocity.x = source.angular_velocity_var.x;
-    message.angular_velocity.y = source.angular_velocity_var.y;
-    message.angular_velocity.z = source.angular_velocity_var.z;
-    for (auto &value : message.angular_velocity_covariance) {
-      value = 0.0;
-    }
-    message.linear_acceleration.x = source.linear_acceleration_var.x;
-    message.linear_acceleration.y = source.linear_acceleration_var.y;
-    message.linear_acceleration.z = source.linear_acceleration_var.z;
-    for (auto &value : message.linear_acceleration_covariance) {
-      value = 0.0;
-    }
-  }
-
-  void AsmSocketCanBridgeNode::populateGpsGroupMessage(vectornav_msgs::msg::GpsGroup &message,
-                                                       const gps_group &source)
-  {
-    setHeader(message.header, "world");
-    message.utc.year = source.utc_var.year;
-    message.utc.month = source.utc_var.month;
-    message.utc.day = source.utc_var.day;
-    message.utc.hour = source.utc_var.hour;
-    message.utc.min = source.utc_var.min;
-    message.utc.sec = source.utc_var.sec;
-    message.utc.ms = source.utc_var.ms;
-    message.tow = source.tow;
-    message.week = source.week;
-    message.numsats = source.numsats;
-    message.fix = source.fix;
-    message.poslla.x = source.poslla_var.x;
-    message.poslla.y = source.poslla_var.y;
-    message.poslla.z = source.poslla_var.z;
-    message.posecef.x = source.posecef_var.x;
-    message.posecef.y = source.posecef_var.y;
-    message.posecef.z = source.posecef_var.z;
-    message.velned.x = source.velned_var.x;
-    message.velned.y = source.velned_var.y;
-    message.velned.z = source.velned_var.z;
-    message.velecef.x = source.velecef_var.x;
-    message.velecef.y = source.velecef_var.y;
-    message.velecef.z = source.velecef_var.z;
-    message.posu.x = source.posu_var.x;
-    message.posu.y = source.posu_var.y;
-    message.posu.z = source.posu_var.z;
-    message.velu = source.velu;
-    message.timeu = source.timeu;
-    message.timeinfo_status = source.timeinfo_status;
-    message.timeinfo_leapseconds = source.timeinfo_leapseconds;
-    message.dop.g = source.dop_var.g;
-    message.dop.p = source.dop_var.p;
-    message.dop.t = source.dop_var.t;
-    message.dop.v = source.dop_var.v;
-    message.dop.h = source.dop_var.h;
-    message.dop.n = source.dop_var.n;
-    message.dop.e = source.dop_var.e;
-  }
-
-  const Signal* AsmSocketCanBridgeNode::findSignal(uint32_t message_id,
-                                                   std::string_view signal_name) const
-  {
-    const auto *signal_map = findSignalLookup(message_id);
-    if (!signal_map) {
-      return nullptr;
-    }
-
-    const auto iter = signal_map->find(signal_name);
-    if (iter == signal_map->end()) {
-      return nullptr;
-    }
-    return iter->second;
-  }
-
-  std::optional<double>
-  AsmSocketCanBridgeNode::extractSignalScaled(uint32_t message_id,
-                                              std::string_view signal_name,
-                                              const uint8_t* data) const
-  {
-    const auto *signal = findSignal(message_id, signal_name);
-    if (!signal) {
-      return std::nullopt;
-    }
-    const auto raw = extractBits(data, *signal);
-    return static_cast<double>(raw) * signal->factor + signal->offset;
-  }
-
-  void AsmSocketCanBridgeNode::simClockTimeCallback()
-  {
-    std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
-    simClockTime.clock = rclcpp::Time(this->sec,this->nsec);
-    this->simClockTimePublisher_->publish(simClockTime);
-  }
-
-  void AsmSocketCanBridgeNode::simTimeIncreaseCallback(const std_msgs::msg::UInt16 & msg)
-  {
-    for (uint16_t timeIncreaseStep = 0; timeIncreaseStep < msg.data; ++timeIncreaseStep) {
-      vesiCallback();
-    }
-    simClockTimeCallback();
-  }
-
+  // ros
   void AsmSocketCanBridgeNode::vesiCallback()
   {
     auto now_ns = []() {
@@ -1542,6 +1288,253 @@ namespace asm_socketcan_bridge {
       this->simClockTimePublisher_->publish(simClockTime);
     }
   }
+  
+  void AsmSocketCanBridgeNode::simClockTimeCallback()
+  {
+    std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
+    simClockTime.clock = rclcpp::Time(this->sec,this->nsec);
+    this->simClockTimePublisher_->publish(simClockTime);
+  }
+
+  void AsmSocketCanBridgeNode::simTimeIncreaseCallback(const std_msgs::msg::UInt16 & msg)
+  {
+    for (uint16_t timeIncreaseStep = 0; timeIncreaseStep < msg.data; ++timeIncreaseStep) {
+      vesiCallback();
+    }
+    simClockTimeCallback();
+  }
+
+  void AsmSocketCanBridgeNode::switchRaceControlSourceCallback(const std_msgs::msg::Bool & msg)
+  {
+    if (this->verbosePrinting)
+      RCLCPP_INFO(get_logger(), "switchRaceControlSourceCallback");
+
+    this->useCustomRaceControl = msg.data;
+  }
+
+  void AsmSocketCanBridgeNode::setHeader(std_msgs::msg::Header &header, std::string_view frame_id) const
+  {
+    header.frame_id = std::string(frame_id);
+    if (simModeEnabled) {
+      header.stamp.sec = sec;
+      header.stamp.nanosec = nsec;
+      return;
+    }
+    const auto now = std::chrono::system_clock::now();
+    const auto secs = std::chrono::time_point_cast<std::chrono::seconds>(now).time_since_epoch().count();
+    const auto nsecs_total = std::chrono::time_point_cast<std::chrono::nanoseconds>(now).time_since_epoch().count();
+    header.stamp.sec = static_cast<int32_t>(secs);
+    header.stamp.nanosec = static_cast<uint32_t>(nsecs_total - (secs * 1000000000LL));
+  }
+
+  void AsmSocketCanBridgeNode::populateBestPosMessage(novatel_oem7_msgs::msg::BESTPOS &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.best_pos_var;
+    message.nov_header.message_name = source.nov_header_var.message_name[0];
+    message.nov_header.message_id = source.nov_header_var.message_id;
+    message.nov_header.message_type = source.nov_header_var.message_type;
+    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
+    message.nov_header.time_status = source.nov_header_var.time_status;
+    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
+    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
+    message.nov_header.idle_time = source.nov_header_var.idle_time;
+    message.sol_status.status = source.sol_status;
+    message.pos_type.type = source.pos_type;
+    message.lat = source.lat;
+    message.lon = source.lon;
+    message.hgt = source.hgt;
+    message.undulation = source.undulation;
+    message.datum_id = source.datum_id;
+    message.lat_stdev = source.lat_stdev;
+    message.lon_stdev = source.lon_stdev;
+    message.hgt_stdev = source.hgt_stdev;
+    for (size_t i = 0; i < message.stn_id.size(); ++i) {
+      message.stn_id[i] = source.stn_id[i];
+    }
+    message.diff_age = source.diff_age;
+    message.sol_age = source.sol_age;
+    message.num_svs = source.num_svs;
+    message.num_sol_svs = source.num_sol_svs;
+    message.num_sol_l1_svs = source.num_sol_l1_svs;
+    message.num_sol_multi_svs = source.num_sol_multi_svs;
+    message.reserved = source.reserved;
+    message.ext_sol_stat.status = source.ext_sol_stat;
+    message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
+    message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
+    setHeader(message.header, "world");
+  }
+
+  void AsmSocketCanBridgeNode::populateBestVelMessage(novatel_oem7_msgs::msg::BESTVEL &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.best_vel_var;
+    message.nov_header.message_name = source.nov_header_var.message_name[0];
+    message.nov_header.message_id = source.nov_header_var.message_id;
+    message.nov_header.message_type = source.nov_header_var.message_type;
+    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
+    message.nov_header.time_status = source.nov_header_var.time_status;
+    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
+    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
+    message.nov_header.idle_time = source.nov_header_var.idle_time;
+    message.sol_status.status = source.sol_status;
+    message.vel_type.type = source.vel_type;
+    message.latency = source.latency;
+    message.diff_age = source.diff_age;
+    message.hor_speed = source.hor_speed;
+    message.trk_gnd = source.trk_gnd;
+    message.ver_speed = source.ver_speed;
+    message.reserved = source.reserved;
+    setHeader(message.header, "ego");
+  }
+
+  void AsmSocketCanBridgeNode::populateInspvaMessage(novatel_oem7_msgs::msg::INSPVA &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.inspava_var;
+    message.nov_header.message_name = source.nov_header_var.message_name[0];
+    message.nov_header.message_id = source.nov_header_var.message_id;
+    message.nov_header.message_type = source.nov_header_var.message_type;
+    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
+    message.nov_header.time_status = source.nov_header_var.time_status;
+    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
+    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
+    message.nov_header.idle_time = source.nov_header_var.idle_time;
+    message.latitude = source.latitude;
+    message.longitude = source.longitude;
+    message.height = source.height;
+    message.north_velocity = source.north_velocity;
+    message.east_velocity = source.east_velocity;
+    message.up_velocity = source.up_velocity;
+    message.roll = source.roll;
+    message.pitch = source.pitch;
+    message.azimuth = source.azimuth;
+    message.status.status = source.status_var.status_var;
+    setHeader(message.header, "world");
+  }
+
+  void AsmSocketCanBridgeNode::populateHeading2Message(novatel_oem7_msgs::msg::HEADING2 &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.heading_2_var;
+    message.nov_header.message_name = source.nov_header_var.message_name[0];
+    message.nov_header.message_id = source.nov_header_var.message_id;
+    message.nov_header.message_type = source.nov_header_var.message_type;
+    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
+    message.nov_header.time_status = source.nov_header_var.time_status;
+    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
+    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
+    message.nov_header.idle_time = source.nov_header_var.idle_time;
+    message.sol_status.status = source.sol_status;
+    message.pos_type.type = source.pos_type;
+    message.length = source.length;
+    message.heading = source.heading;
+    message.pitch = source.pitch;
+    message.reserved = source.reserved;
+    message.heading_stdev = source.heading_stdev;
+    message.pitch_stdev = source.pitch_stdev;
+    for (size_t i = 0; i < message.rover_stn_id.size(); ++i) {
+      message.rover_stn_id[i] = source.rover_stn_id[i];
+    }
+    for (size_t i = 0; i < message.master_stn_id.size(); ++i) {
+      message.master_stn_id[i] = source.master_stn_id[i];
+    }
+    message.num_sv_tracked = source.num_sv_tracked;
+    message.num_sv_in_sol = source.num_sv_in_sol;
+    message.num_sv_obs = source.num_sv_obs;
+    message.num_sv_multi = source.num_sv_multi;
+    message.sol_source.source = source.sol_source;
+    message.ext_sol_status.status = source.ext_sol_status;
+    message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
+    message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
+    setHeader(message.header, "world");
+  }
+
+  void AsmSocketCanBridgeNode::populateRawImuMessage(novatel_oem7_msgs::msg::RAWIMU &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.raw_imu_var;
+    message.nov_header.message_name = source.nov_header_var.message_name[0];
+    message.nov_header.message_id = source.nov_header_var.message_id;
+    message.nov_header.message_type = source.nov_header_var.message_type;
+    message.nov_header.sequence_number = source.nov_header_var.sequence_number;
+    message.nov_header.time_status = source.nov_header_var.time_status;
+    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
+    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
+    message.nov_header.idle_time = source.nov_header_var.idle_time;
+    message.gnss_week = source.gnss_week;
+    message.gnss_seconds = source.gnss_seconds;
+    message.status = source.status_var;
+    message.linear_acceleration.x = source.linear_acceleration_var.x;
+    message.linear_acceleration.y = source.linear_acceleration_var.y;
+    message.linear_acceleration.z = source.linear_acceleration_var.z;
+    message.angular_velocity.x = source.angular_velocity_var.x;
+    message.angular_velocity.y = source.angular_velocity_var.y;
+    message.angular_velocity.z = source.angular_velocity_var.z;
+    setHeader(message.header, "ego");
+  }
+
+  void AsmSocketCanBridgeNode::populateRawImuXMessage(sensor_msgs::msg::Imu &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.raw_imu_var;
+    setHeader(message.header, "ego");
+    message.orientation.x = 0.0;
+    message.orientation.y = 0.0;
+    message.orientation.z = 0.0;
+    message.orientation.w = 0.0;
+    for (auto &value : message.orientation_covariance) {
+      value = -1.0;
+    }
+    message.angular_velocity.x = source.angular_velocity_var.x;
+    message.angular_velocity.y = source.angular_velocity_var.y;
+    message.angular_velocity.z = source.angular_velocity_var.z;
+    for (auto &value : message.angular_velocity_covariance) {
+      value = 0.0;
+    }
+    message.linear_acceleration.x = source.linear_acceleration_var.x;
+    message.linear_acceleration.y = source.linear_acceleration_var.y;
+    message.linear_acceleration.z = source.linear_acceleration_var.z;
+    for (auto &value : message.linear_acceleration_covariance) {
+      value = 0.0;
+    }
+  }
+
+  void AsmSocketCanBridgeNode::populateGpsGroupMessage(vectornav_msgs::msg::GpsGroup &message, const gps_group &source)
+  {
+    setHeader(message.header, "world");
+    message.utc.year = source.utc_var.year;
+    message.utc.month = source.utc_var.month;
+    message.utc.day = source.utc_var.day;
+    message.utc.hour = source.utc_var.hour;
+    message.utc.min = source.utc_var.min;
+    message.utc.sec = source.utc_var.sec;
+    message.utc.ms = source.utc_var.ms;
+    message.tow = source.tow;
+    message.week = source.week;
+    message.numsats = source.numsats;
+    message.fix = source.fix;
+    message.poslla.x = source.poslla_var.x;
+    message.poslla.y = source.poslla_var.y;
+    message.poslla.z = source.poslla_var.z;
+    message.posecef.x = source.posecef_var.x;
+    message.posecef.y = source.posecef_var.y;
+    message.posecef.z = source.posecef_var.z;
+    message.velned.x = source.velned_var.x;
+    message.velned.y = source.velned_var.y;
+    message.velned.z = source.velned_var.z;
+    message.velecef.x = source.velecef_var.x;
+    message.velecef.y = source.velecef_var.y;
+    message.velecef.z = source.velecef_var.z;
+    message.posu.x = source.posu_var.x;
+    message.posu.y = source.posu_var.y;
+    message.posu.z = source.posu_var.z;
+    message.velu = source.velu;
+    message.timeu = source.timeu;
+    message.timeinfo_status = source.timeinfo_status;
+    message.timeinfo_leapseconds = source.timeinfo_leapseconds;
+    message.dop.g = source.dop_var.g;
+    message.dop.p = source.dop_var.p;
+    message.dop.t = source.dop_var.t;
+    message.dop.v = source.dop_var.v;
+    message.dop.h = source.dop_var.h;
+    message.dop.n = source.dop_var.n;
+    message.dop.e = source.dop_var.e;
+  }
 
   void AsmSocketCanBridgeNode::publish_map2d_ego_position()
   {
@@ -1664,7 +1657,7 @@ namespace asm_socketcan_bridge {
         } else {
           RCLCPP_WARN_THROTTLE(get_logger(),
                                *this->get_clock(),
-                               5000,
+                               this->warning_throttle_intervall,
                                "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
         }
         raptor_connection_announced = false;
@@ -1690,14 +1683,6 @@ namespace asm_socketcan_bridge {
       this->api.increaseSimulationTime(0.001);
     else
       this->api.increaseSimulationTime(0.01);
-  }
-
-  void AsmSocketCanBridgeNode::switchRaceControlSourceCallback(const std_msgs::msg::Bool & msg)
-  {
-    if (this->verbosePrinting)
-      RCLCPP_INFO(get_logger(), "switchRaceControlSourceCallback");
-
-    this->useCustomRaceControl = msg.data;
   }
 
   void AsmSocketCanBridgeNode::publish_base_to_car_summary()
@@ -2350,11 +2335,10 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("battery_voltage", vehicle.battery_voltage);
-      assign("safety_switch_state", vehicle.safety_switch_state);
-      assign("mode_switch_state", vehicle.mode_switch_state);
-      assign("sys_state", vehicle.sys_state);
+      assign("battery_voltage", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.battery_voltage);
+      assign("safety_switch_state", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.safety_switch_state);
+      assign("mode_switch_state", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.mode_switch_state);
+      assign("sys_state", bus.asm_bus_var.race_control_var.sys_state);
       assign("raptor_rolling_counter", this->raptor_rolling_counter++);
     });
   }

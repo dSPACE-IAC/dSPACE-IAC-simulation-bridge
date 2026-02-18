@@ -3,6 +3,8 @@ asm_socketcan_bridge_node:
     sim_manager.host: "10.6.0.3"
     sim_manager.port: 12345
 
+    warn.throttle_interval: 478000
+
     asm.host: "10.6.0.2"
 
     use_sim_time: false
