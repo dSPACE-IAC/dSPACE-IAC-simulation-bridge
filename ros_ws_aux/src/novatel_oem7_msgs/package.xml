@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>novatel_oem7_msgs</name>
-  <version>10.4.0</version>
+  <version>20.1.0</version>
   <description>
       Messages for NovAtel Oem7 family of receivers.
   </description>
@@ -19,11 +19,10 @@
   
   <exec_depend>rosidl_default_runtime</exec_depend>
 
+  <export>
+      <build_type>ament_cmake </build_type>
+  </export>
 
   <member_of_group>rosidl_interface_packages</member_of_group>
-
-  <export>
-    <build_type>ament_cmake</build_type>
-  </export>
 
 </package>

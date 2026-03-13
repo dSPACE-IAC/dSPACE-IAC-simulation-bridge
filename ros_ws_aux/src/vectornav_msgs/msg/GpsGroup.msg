@@ -29,23 +29,23 @@ uint16                      GPSGROUP_DOP                    = 0x2000
 # TODO[Dereck] vncxx does not support SatInfo or RawMeas
 
 # Fields
-vectornav_msgs/TimeUTC      utc
-uint64                      tow
-uint16                      week
-uint8                       numsats
-uint8                       fix
-geometry_msgs/Point         poslla
-geometry_msgs/Point         posecef
-geometry_msgs/Vector3       velned
-geometry_msgs/Vector3       velecef
-geometry_msgs/Vector3       posu
-float32                     velu
-uint32                      timeu
-uint8                       timeinfo_status
-int8                        timeinfo_leapseconds
-vectornav_msgs/DOP          dop
+vectornav_msgs/TimeUTC              utc
+uint64                              tow
+uint16                              week
+uint8                               numsats
+uint8                               fix
+geometry_msgs/Point                 poslla
+geometry_msgs/Point                 posecef
+geometry_msgs/Vector3               velned
+geometry_msgs/Vector3               velecef
+geometry_msgs/Vector3               posu
+float32                             velu
+uint32                              timeu
+uint8                               timeinfo_status
+int8                                timeinfo_leapseconds
+vectornav_msgs/DOP                  dop
 
-uint8                       GPSFIX_NOFIX                    = 0
-uint8                       GPSFIX_TIMEONLY                 = 1
-uint8                       GPSFIX_2D                       = 2
-uint8                       GPSFIX_3D                       = 3
+uint8                               GPSFIX_NOFIX                    = 0
+uint8                               GPSFIX_TIMEONLY                 = 1
+uint8                               GPSFIX_2D                       = 2
+uint8                               GPSFIX_3D                       = 3

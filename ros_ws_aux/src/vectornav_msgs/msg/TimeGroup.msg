@@ -24,13 +24,13 @@ uint16                      TIMEGROUP_SYNCOUTCNT            = 0x0100
 uint16                      TIMEGROUP_TIMESTATUS            = 0x0200
 
 # Fields
-uint64                      timestartup
-uint64                      timegps
-uint64                      gpstow
-uint16                      gpsweek
-uint64                      timesyncin
-uint64                      timegpspps
-vectornav_msgs/TimeUTC      timeutc
-uint32                      syncincnt
-uint32                      syncoutcnt
-vectornav_msgs/TimeStatus   timestatus
+uint64                                  timestartup
+uint64                                  timegps
+uint64                                  gpstow
+uint16                                  gpsweek
+uint64                                  timesyncin
+uint64                                  timegpspps
+vectornav_msgs/TimeUTC                  timeutc
+uint32                                  syncincnt
+uint32                                  syncoutcnt
+vectornav_msgs/TimeStatus               timestatus

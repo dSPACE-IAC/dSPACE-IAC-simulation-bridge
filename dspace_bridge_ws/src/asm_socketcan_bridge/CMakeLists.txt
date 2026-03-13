@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_C_STANDARD 99)
 
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(tf2 REQUIRED)
@@ -38,6 +39,7 @@ include_directories(
 
 set(
   dependencies
+  ament_index_cpp
   rclcpp
   rosidl_default_generators
   tf2

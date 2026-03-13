@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "[INFO] Sourcing ROS environments..."
-source /opt/ros/humble/local_setup.sh
+source /opt/ros/$ROS_DISTRO/local_setup.sh
 source /root/ros_ws_aux/install/local_setup.sh
 
 if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
@@ -53,6 +53,10 @@ elif  [ $BRIDGE_TYPE = "CAN_DBW" ]; then
 
 elif  [ $BRIDGE_TYPE = "FOXGLOVE" ]; then
     echo "[INFO] Starting Foxglove bridge..."
+    if [ -f /opt/race_common/install/setup.bash ]; then
+        source /opt/race_common/install/setup.bash
+        echo "[INFO] Sourced race_common messages."
+    fi
     exec ros2 launch foxglove_bridge foxglove_bridge_launch.xml
 else
     echo "[ERROR] Unknown bridge type"
