@@ -1469,6 +1469,21 @@ namespace asm_socketcan_bridge {
     this->useCustomRaceControl = msg.data;
   }
 
+  static void fromStamp(
+    const builtin_interfaces::msg::Time & stamp,
+    uint16_t & gps_week,
+    uint32_t & gps_ms)
+  {
+    constexpr int64_t GPS_EPOCH_UNIX_SEC = 315964800;
+    constexpr int64_t SECS_PER_WEEK = 604800;
+    constexpr int64_t LEAP_SECONDS = 18;
+
+    int64_t gps_sec = static_cast<int64_t>(stamp.sec) - GPS_EPOCH_UNIX_SEC + LEAP_SECONDS;
+    gps_week = static_cast<uint16_t>(gps_sec / SECS_PER_WEEK);
+    int64_t week_sec = gps_sec % SECS_PER_WEEK;
+    gps_ms = static_cast<uint32_t>(week_sec * 1000 + stamp.nanosec / 1000000);
+  }
+
   void AsmSocketCanBridgeNode::setHeader(std_msgs::msg::Header &header, std::string_view frame_id) const
   {
     header.frame_id = std::string(frame_id);
@@ -1492,8 +1507,6 @@ namespace asm_socketcan_bridge {
     message.nov_header.message_type = source.nov_header_var.message_type;
     message.nov_header.sequence_number = source.nov_header_var.sequence_number;
     message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
     message.nov_header.idle_time = source.nov_header_var.idle_time;
     message.sol_status.status = source.sol_status;
     message.pos_type.type = source.pos_type;
@@ -1518,7 +1531,7 @@ namespace asm_socketcan_bridge {
     message.ext_sol_stat.status = source.ext_sol_stat;
     message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
     message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
-    setHeader(message.header, "world");
+    setHeader(message.header, "");
   }
 
   void AsmSocketCanBridgeNode::populateBestVelMessage(novatel_oem7_msgs::msg::BESTVEL &message, const nova_tel_pwr_pak &data) const
@@ -1529,8 +1542,6 @@ namespace asm_socketcan_bridge {
     message.nov_header.message_type = source.nov_header_var.message_type;
     message.nov_header.sequence_number = source.nov_header_var.sequence_number;
     message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
     message.nov_header.idle_time = source.nov_header_var.idle_time;
     message.sol_status.status = source.sol_status;
     message.vel_type.type = source.vel_type;
@@ -1540,7 +1551,7 @@ namespace asm_socketcan_bridge {
     message.trk_gnd = source.trk_gnd;
     message.ver_speed = source.ver_speed;
     message.reserved = source.reserved;
-    setHeader(message.header, "ego");
+    setHeader(message.header, "");
   }
 
   void AsmSocketCanBridgeNode::populateInspvaMessage(novatel_oem7_msgs::msg::INSPVA &message, const nova_tel_pwr_pak &data) const
@@ -1551,8 +1562,6 @@ namespace asm_socketcan_bridge {
     message.nov_header.message_type = source.nov_header_var.message_type;
     message.nov_header.sequence_number = source.nov_header_var.sequence_number;
     message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
     message.nov_header.idle_time = source.nov_header_var.idle_time;
     message.latitude = source.latitude;
     message.longitude = source.longitude;
@@ -1564,7 +1573,7 @@ namespace asm_socketcan_bridge {
     message.pitch = source.pitch;
     message.azimuth = source.azimuth;
     message.status.status = source.status_var.status_var;
-    setHeader(message.header, "world");
+    setHeader(message.header, "");
   }
 
   void AsmSocketCanBridgeNode::populateHeading2Message(novatel_oem7_msgs::msg::HEADING2 &message, const nova_tel_pwr_pak &data) const
@@ -1575,8 +1584,6 @@ namespace asm_socketcan_bridge {
     message.nov_header.message_type = source.nov_header_var.message_type;
     message.nov_header.sequence_number = source.nov_header_var.sequence_number;
     message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
     message.nov_header.idle_time = source.nov_header_var.idle_time;
     message.sol_status.status = source.sol_status;
     message.pos_type.type = source.pos_type;
@@ -1600,7 +1607,7 @@ namespace asm_socketcan_bridge {
     message.ext_sol_status.status = source.ext_sol_status;
     message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
     message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
-    setHeader(message.header, "world");
+    setHeader(message.header, "");
   }
 
   void AsmSocketCanBridgeNode::populateRawImuMessage(novatel_oem7_msgs::msg::RAWIMU &message, const nova_tel_pwr_pak &data) const
@@ -1611,8 +1618,6 @@ namespace asm_socketcan_bridge {
     message.nov_header.message_type = source.nov_header_var.message_type;
     message.nov_header.sequence_number = source.nov_header_var.sequence_number;
     message.nov_header.time_status = source.nov_header_var.time_status;
-    message.nov_header.gps_week_number = source.nov_header_var.gps_week_number;
-    message.nov_header.gps_week_milliseconds = source.nov_header_var.gps_week_milliseconds;
     message.nov_header.idle_time = source.nov_header_var.idle_time;
     message.gnss_week = source.gnss_week;
     message.gnss_seconds = source.gnss_seconds;
@@ -1623,13 +1628,13 @@ namespace asm_socketcan_bridge {
     message.angular_velocity.x = source.angular_velocity_var.x;
     message.angular_velocity.y = source.angular_velocity_var.y;
     message.angular_velocity.z = source.angular_velocity_var.z;
-    setHeader(message.header, "ego");
+    setHeader(message.header, "");
   }
 
   void AsmSocketCanBridgeNode::populateRawImuXMessage(sensor_msgs::msg::Imu &message, const nova_tel_pwr_pak &data) const
   {
     const auto &source = data.raw_imu_var;
-    setHeader(message.header, "ego");
+    setHeader(message.header, "");
     message.orientation.x = 0.0;
     message.orientation.y = 0.0;
     message.orientation.z = 0.0;
@@ -1825,6 +1830,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "gps_antenna_left" : "gps_antenna_front";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -1854,6 +1861,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "gps_antenna_left" : "gps_antenna_front";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -1883,6 +1892,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "gps_antenna_left" : "gps_antenna_front";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -1912,6 +1923,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "gps_antenna_left" : "gps_antenna_front";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -1941,6 +1954,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "gps_antenna_left" : "gps_antenna_front";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -1970,6 +1985,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "imu_top" : "imu_bottom";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -1999,6 +2016,7 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "imu_top" : "imu_bottom";
     publisher->publish(message);
   }
 
@@ -3147,6 +3165,8 @@ namespace asm_socketcan_bridge {
     if (!populated) {
       return;
     }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "gps_antenna_left" : "gps_antenna_front";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
