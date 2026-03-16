@@ -372,6 +372,10 @@ namespace asm_socketcan_bridge {
                    [this]() { this->publish_novatel_rawimux(1); });
     register_timer("publish_novatel_rawimux2_ms",
                    [this]() { this->publish_novatel_rawimux(2); });
+    register_timer("publish_novatel_corrimu1_ms",
+                   [this]() { this->publish_novatel_corrimu(1); });
+    register_timer("publish_novatel_corrimu2_ms",
+                   [this]() { this->publish_novatel_corrimu(2); });
     register_timer("publish_vectornav_attitude_group_ms",
                    [this]() { this->publish_vectornav_attitude_group(); });
     register_timer("publish_vectornav_common_group_ms",
@@ -581,6 +585,8 @@ namespace asm_socketcan_bridge {
         this->create_publisher<novatel_oem7_msgs::msg::RAWIMU>("novatel_top/rawimu", qos);
       novatel_top.raw_imu_x =
         this->create_publisher<sensor_msgs::msg::Imu>("novatel_top/rawimux", qos);
+      novatel_top.corrimu =
+        this->create_publisher<novatel_oem7_msgs::msg::CORRIMU>("novatel_top/corrimu", qos);
 
       auto &novatel_bottom = novatel_publishers_[kNovatelBottomIndex];
       novatel_bottom.best_pos =
@@ -599,6 +605,8 @@ namespace asm_socketcan_bridge {
         this->create_publisher<novatel_oem7_msgs::msg::RAWIMU>("novatel_bottom/rawimu", qos);
       novatel_bottom.raw_imu_x =
         this->create_publisher<sensor_msgs::msg::Imu>("novatel_bottom/rawimux", qos);
+      novatel_bottom.corrimu =
+        this->create_publisher<novatel_oem7_msgs::msg::CORRIMU>("novatel_bottom/corrimu", qos);
 
       this->foxgloveMapPublisher0_ = this->create_publisher<sensor_msgs::msg::NavSatFix>("map2d_ego_position", qos);
       this->foxgloveMapPublisher1_ = this->create_publisher<sensor_msgs::msg::NavSatFix>("map2d_fellow1_position", qos);
@@ -1608,6 +1616,48 @@ namespace asm_socketcan_bridge {
     message.galileo_beidou_sig_mask = source.galileo_beidou_sig_mask;
     message.gps_glonass_sig_mask = source.gps_glonass_sig_mask;
     setHeader(message.header, "");
+  }
+
+  void AsmSocketCanBridgeNode::populateCorrImuMessage(novatel_oem7_msgs::msg::CORRIMU &message, const nova_tel_pwr_pak &data) const
+  {
+    const auto &source = data.raw_imu_var;
+    message.longitudinal_acc = source.linear_acceleration_var.x;
+    message.lateral_acc = source.linear_acceleration_var.y;
+    message.vertical_acc = source.linear_acceleration_var.z;
+    message.roll_rate = source.angular_velocity_var.x;
+    message.pitch_rate = source.angular_velocity_var.y;
+    message.yaw_rate = source.angular_velocity_var.z;
+    setHeader(message.header, "");
+  }
+
+  void AsmSocketCanBridgeNode::publish_novatel_corrimu(uint8_t novatel_id)
+  {
+    const std::size_t index =
+      novatel_id == 1 ? kNovatelTopIndex
+                      : novatel_id == 2 ? kNovatelBottomIndex : novatel_publishers_.size();
+    if (index >= novatel_publishers_.size()) {
+      RCLCPP_ERROR(get_logger(), "Unknown ID of Novatel Device. Only two Novatels are supported.");
+      return;
+    }
+    auto publisher = novatel_publishers_[index].corrimu;
+    if (!publisher) {
+      return;
+    }
+    novatel_oem7_msgs::msg::CORRIMU message;
+    bool populated = false;
+    if (!withCanBusShared([&](const ASMBus &bus) {
+      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
+                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      populateCorrImuMessage(message, *data);
+      populated = true;
+    })) {
+      return;
+    }
+    if (!populated) {
+      return;
+    }
+    message.header.frame_id = (index == kNovatelTopIndex) ? "imu_top" : "imu_bottom";
+    publisher->publish(message);
   }
 
   void AsmSocketCanBridgeNode::populateRawImuMessage(novatel_oem7_msgs::msg::RAWIMU &message, const nova_tel_pwr_pak &data) const

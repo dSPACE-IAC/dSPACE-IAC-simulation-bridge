@@ -58,6 +58,7 @@
 #include "novatel_oem7_msgs/msg/inspva.hpp"
 #include "novatel_oem7_msgs/msg/heading2.hpp"
 #include "novatel_oem7_msgs/msg/rawimu.hpp"
+#include "novatel_oem7_msgs/msg/corrimu.hpp"
 
 #include "foxglove_msgs/msg/scene_update.hpp"
 
@@ -110,6 +111,7 @@ namespace asm_socketcan_bridge
             rclcpp::Publisher<novatel_oem7_msgs::msg::HEADING2>::SharedPtr heading2;
             rclcpp::Publisher<novatel_oem7_msgs::msg::RAWIMU>::SharedPtr raw_imu;
             rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr raw_imu_x;
+            rclcpp::Publisher<novatel_oem7_msgs::msg::CORRIMU>::SharedPtr corrimu;
         };
 
         VectorNavPublisherGroup vectornav_publishers_;
@@ -252,6 +254,7 @@ namespace asm_socketcan_bridge
         void publish_novatel_heading2(uint8_t novatel_id);
         void publish_novatel_rawimu(uint8_t novatel_id);
         void publish_novatel_rawimux(uint8_t novatel_id);
+        void publish_novatel_corrimu(uint8_t novatel_id);
 
         rclcpp::Publisher<autonoma_msgs::msg::GroundTruthArray>::SharedPtr groundTruthArrayPublisher_;
         void publishGroundTruthArray();
@@ -319,6 +322,7 @@ namespace asm_socketcan_bridge
         void populateHeading2Message(novatel_oem7_msgs::msg::HEADING2 &message, const nova_tel_pwr_pak &data) const;
         void populateRawImuMessage(novatel_oem7_msgs::msg::RAWIMU &message, const nova_tel_pwr_pak &data) const;
         void populateRawImuXMessage(sensor_msgs::msg::Imu &message, const nova_tel_pwr_pak &data) const;
+        void populateCorrImuMessage(novatel_oem7_msgs::msg::CORRIMU &message, const nova_tel_pwr_pak &data) const;
         void publishFoxgloveMapEntry(uint8_t fellowID);
         std::optional<double> extractSignalScaled(uint32_t message_id, std::string_view signal_name, const uint8_t* data) const;
 
