@@ -82,6 +82,8 @@ asm_socketcan_bridge_node:
     publish_intervals.publish_novatel_rawimu2_ms: 10
     publish_intervals.publish_novatel_rawimux1_ms: 10
     publish_intervals.publish_novatel_rawimux2_ms: 10
+    publish_intervals.publish_novatel_corrimu1_ms: 10
+    publish_intervals.publish_novatel_corrimu2_ms: 10
     publish_intervals.publish_vectornav_attitude_group_ms: 10
     publish_intervals.publish_vectornav_common_group_ms: 10
     publish_intervals.publish_vectornav_imu_group_ms: 10
