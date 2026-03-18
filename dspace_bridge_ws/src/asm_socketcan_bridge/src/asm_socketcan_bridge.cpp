@@ -1657,6 +1657,7 @@ namespace asm_socketcan_bridge {
       return;
     }
     message.header.frame_id = (index == kNovatelTopIndex) ? "imu_top" : "imu_bottom";
+    fromStamp(message.header.stamp, message.nov_header.gps_week_number, message.nov_header.gps_week_milliseconds);
     publisher->publish(message);
   }
 
@@ -2581,7 +2582,13 @@ namespace asm_socketcan_bridge {
       };
       const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
       assign("throttle_position", powertrain.throttle_position);
-      assign("current_gear", powertrain.current_gear);
+      // Our stack does not support 0 (neutral) gear.
+      if (powertrain.current_gear == 0.0) {
+        RCLCPP_WARN_STREAM_THROTTLE(
+          this->get_logger(), *this->get_clock(), 1000,
+          "D-Space reported gear=0 (neutral); clamping to 1.");
+      }
+      assign("current_gear", powertrain.current_gear == 0.0 ? 1.0 : powertrain.current_gear);
       assign("engine_speed_rpm", powertrain.engine_rpm);
       assign("vehicle_speed_kmph", powertrain.vehicle_speed_kmph);
       assign("engine_run_switch", powertrain.engine_run_switch_status);
