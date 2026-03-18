@@ -1,0 +1,88 @@
+name: AI Racing Tech dSpace IAC sut-te-bridge Docker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["daniel/socketcan_support"]
+  pull_request:
+    branches: ["daniel/socketcan_support"]
+
+concurrency:
+  group: bridge-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - SAVE_NAME: iac_dspace_bridge_dev
+            TARGET: dspace_bridge_dev
+          - SAVE_NAME: iac_asm_ros2_bridge
+            TARGET: asm_ros2_bridge_simphera
+          - SAVE_NAME: iac_asm_socketcan_bridge
+            TARGET: asm_socketcan_bridge_simphera
+          - SAVE_NAME: iac_aurelion_ros2_bridge
+            TARGET: aurelion_ros2_bridge_simphera
+          - SAVE_NAME: iac_dspace_bridge_foxglove
+            TARGET: dspace_foxglove_bridge
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: airacingtechba
+          password: ${{ secrets.PAT }}
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+          ssh: true
+      - name: Get the Ref
+        id: get-ref
+        uses: sisaha9/ref-to-tag-action@v2
+        with:
+          ref: ${{ github.ref }}
+          head_ref: ${{ github.head_ref }}
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+          key: ${{ runner.os }}-buildx-dev-${{ matrix.SAVE_NAME }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-dev-${{ matrix.SAVE_NAME }}
+            ${{ runner.os }}-buildx-dev
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          pull: true
+          push: true
+          tags: |
+            ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:${{ steps.get-ref.outputs.tag }}
+            ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:latest
+          ssh: |
+            default=${{ env.SSH_AUTH_SOCK }}
+          cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+          cache-to: type=local,dest=/tmp/.buildx-cache-new-${{ matrix.SAVE_NAME }},mode=max
+          build-args: |
+            BASE_IMAGE=ghcr.io/airacingtech/art_ros_jazzy_cpu-built-dspace:stable
+          target: ${{ matrix.TARGET }}
+      - name: Delete old cache
+        run: |
+          rm -rf /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+          mv /tmp/.buildx-cache-new-${{ matrix.SAVE_NAME }} /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
