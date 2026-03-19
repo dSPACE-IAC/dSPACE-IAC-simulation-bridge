@@ -2,8 +2,8 @@
 
 This repository contains the current state of the different bridge implementations for the dSPACE IAC simulation environment.
 Each bridge lives in its own ROS2 package inside `dspace_bridge_ws/src`.
-The asm_ros2_bridge and asm_socketcan_bridge enable the data exchange between the dSPACE car and environment model simulated using the Automotive Simulation Models (ASM) and the SUT of the IAC team.
-The asm_ros2_bridge creates a complete ROS2 message based interface, while the asm_socketcan_bridge uses the virtual socketcan interface in Linux for parts of the communication in order to have a closer match of the real car.
+The asm_socketcan_bridge enables the data exchange between the dSPACE car and environment model simulated using the Automotive Simulation Models (ASM) and the SUT of the IAC team.
+The asm_ros2_bridge is deprecated and has been removed from this repository.
 The ros2 bridge is currently deprecated and will not receive updates anymore from dSPACE.
 The socketcan package provides per-message timers, configurable publish rates and a dedicated CAN decoding layer that mirrors the race car CAN network.
 The aurelion_ros2_bridge communicates sensor data (camera, lidar, radar) between the dSPACE AURELION sensor simulation and the IAC team SUT.
@@ -21,7 +21,7 @@ You need to have the following tools installed:
 
 To run the complete simulation setup, you need to have access to the following instances:
 - dSPACE IAC license server
-- SIMPHERA AWS docker registry
+- dSPACE AWS docker registry
 
 For asm_socketcan_bridge:
 - socketcan kernel module (not available in default wsl ubuntu images -> use native install or VM)
@@ -31,12 +31,12 @@ For asm_socketcan_bridge:
 The following section provides an overview of the repository content, in order to speed up the process of finding what you are looking for and provide an understanding, where to add things when contributing.
 
 ### Dockerfile
-This Dockerfile is used to create all bridge versions (asm_ros2, asm_socketcan, aurelion_ros2 and foxglove).
-The images are differentiated by selecting the target of the docker build command (asm_ros2_bridge_simphera, asm_socketcan_bridge_simphera, aurelion_ros2_bridge_simphera, dspace_foxglove_bridge).
+This Dockerfile is used to create all bridge versions (asm_socketcan, aurelion_ros2 and foxglove).
+The images are differentiated by selecting the target of the docker build command (asm_socketcan_bridge, aurelion_ros2_bridge, dspace_foxglove_bridge).
 There is also a dev version (dspace_bridge_dev), which only contains the dependencies required by the bridge versions (e.g. ROS2, custom message definitions, socketcan packages etc) and a neutral entrypoint, so that could be used to quickly test new developments on the bridge.
-The simphera version contains the respective compiled bridge node and an entrypoint for automatic startup of that node.
-The simphera version is also recommended to be used for local testing, when working on the SUT code to check whether the system is capable to run with automatic startup procedure used for headless testing in the cloud.
-The foxglove version contains the foxglove-bridge application and an entrypoint to start the corresponding node.
+The standard version contains the respective compiled bridge node and an entrypoint for automatic startup of that node.
+The standard version is also recommended to be used for local testing, when working on the SUT code to check whether the system is capable to run with automatic startup procedure used for headless testing in the cloud.
+The foxglove version contains the foxglove-bridge application and an entrypoint to start the corresponding node. This can be connected to Lichtblick as well.
 
 ### build_dspace_bridge.sh
 This script could be used to quickly build all versions of the dSPACE bridges.
@@ -57,14 +57,14 @@ This auxilary ros workspace contains all ros packages, that are required by the 
 Currently this contains all custom message definitions used in the system.
 If you want to make your custom messages available in foxglove, the easiest way would be to add your definitions to this auxilary workspace and rebuild the foxglove bridge.
 There is no need to add your custom messages to the repository, if they should only be available in foxglove.
-If they should also be used by the simphera bridge please push them to a seperate branch and create a pull request.
+If they should also be used by the official bridge please push them to a seperate branch and create a pull request.
 
 ### dspace_bridge_ws
 This ros workspace contains the source code of the different bridge versions in seperate packages.
 Usually there is only one bridge type per Docker image, so the respective package is copied into the image during build.
 In case of the dev image, the suggested approach is to mount the dspace_bridge_ws directory into the running container.
 This should be your starting point, if you want to understand how the connection between your stack and the simulator is implemented and how the interface is designed.
-The `src` directory is split into the ROS2 packages `asm_ros2_bridge`, `asm_socketcan_bridge` and `aurelion_ros2_bridge`.
+The `src` directory is split into the ROS2 packages `asm_socketcan_bridge` and `aurelion_ros2_bridge`.
 The asm_socketcan_bridge package contains the full socketcan implementation:
 - `config/asm_socketcan_bridge.yaml` holds all runtime parameters. Every publish function has a dedicated timer interval parameter, so you can throttle or burst individual CAN messages by editing this file and rebuilding the image or by mounting an override.
 - `config/CAN1-INDY-V23.dbc` provides the CAN signal definitions that feed the decoder lookup tables. Extend or exchange them if your car uses a different CAN layout. After modifying the DBC, run `config/generate_dbc_c_code.py` to regenerate the C++ utility code.
@@ -88,8 +88,8 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 4. Adjust parameters in `docker-compose.yml` to match your registry tags and license server. Update the `dspace_bridge` service to point to the bridge variant you want to launch (socketcan, ros2, aurelion or dev).
 5. Provide your custom bridge parameters by editing `asm_socketcan_bridge_override.yaml` and removing the comment in the volume mount for the bridge. E.g. adjust the `publish_intervals.*` values whenever you want to slow down or speed up individual CAN and ROS2 message publishers.
 6. Open a terminal and execute `docker compose up`.
-7. Start Foxglove
-    1. Open Foxglove for visualisation `https://simphera-iac.dspace-dev.com/foxglove/`
+7. Start Lichtblick
+    1. Open Lichtblick for visualisation either the local container `localhost:8080` or from the Lichtblick suite `https://lichtblick-suite.github.io/lichtblick/`
     2. Click on *Open connection* and connect to the default address *ws://localhost:8765*
     3. Load layout by clicking View->Import layout from file->Select json file (example layout can be found under `foxglove_bridge/iac-layout-basic.json`)
 8. Attach to the running bridge container if you want to iterate on the code:
@@ -102,7 +102,7 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 
 ### Iterate
 To create an updated simulator image after touching the bridge sources, use `build_dspace_bridge.sh`.
-The script can build the dev image as well as the asm_ros2, asm_socketcan, aurelion and foxglove variants.
+The script can build the dev image as well as the asm_socketcan, aurelion and foxglove/Lichtblick variants.
 After succesful build, only update the tags of the bridge images inside your custom `docker-compose.yml` to the current date and restart the compose stack.
 
 ### Contribute

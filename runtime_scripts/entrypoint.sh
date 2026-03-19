@@ -40,11 +40,6 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
     echo "[INFO] Starting AsmSocketCanBridgeNode via launch file..."
     exec ros2 launch asm_socketcan_bridge asm_socketcan_bridge.launch.py params_file:="$PARAMS_FILE"
 
-elif  [ $BRIDGE_TYPE = "ASM_ROS2" ]; then
-    echo "[INFO] Starting AsmRos2BridgeNode..."
-    source /root/dspace_bridge_ws/install/local_setup.sh
-    exec ros2 run asm_ros2_bridge AsmRos2BridgeNode --ros-args -p use_sim_time:=$SIM_CLOCK_MODE
-
 elif  [ $BRIDGE_TYPE = "AURELION_ROS2" ]; then
     echo "[INFO] Starting AurelionRos2BridgeNode..."
     source /root/dspace_bridge_ws/install/local_setup.sh

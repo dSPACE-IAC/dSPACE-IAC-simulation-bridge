@@ -47,19 +47,6 @@ RUN mkdir -p /root/record_log && \
 
 ENTRYPOINT ["sh", "-c", "/root/runtime_scripts/entrypoint.sh"]
 
-FROM dspace_bridge_dev AS asm_ros2_bridge
-ENV BRIDGE_TYPE="ASM_ROS2"
-# Build bridge node and enable autostart for headless execution
-COPY dSPACE-IAC-simulation-bridge/dspace_bridge_ws/src/asm_ros2_bridge /root/dspace_bridge_ws/src/asm_ros2_bridge
-RUN mkdir -p /root/record_log && \
-    source /opt/ros/humble/local_setup.bash && \
-    source /root/ros_ws_aux/install/local_setup.bash && \
-    rosdep install -i --from-path /root/dspace_bridge_ws/src --rosdistro humble -y && \
-    colcon build --symlink-install --cmake-clean-first --base-paths /root/dspace_bridge_ws/ --build-base /root/dspace_bridge_ws/build --install-base /root/dspace_bridge_ws/install --cmake-args -DCMAKE_BUILD_TYPE=Release && \
-    echo 'source /root/dspace_bridge_ws/install/local_setup.bash' >> /root/.bashrc
-
-ENTRYPOINT ["sh", "-c", "/root/runtime_scripts/entrypoint.sh"]
-
 FROM dspace_bridge_dev AS asm_socketcan_bridge
 ENV BRIDGE_TYPE="ASM_CAN"
 # Build bridge node and enable autostart for headless execution

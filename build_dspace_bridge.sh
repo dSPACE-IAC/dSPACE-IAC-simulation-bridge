@@ -7,7 +7,6 @@ DATE=$(date '+%Y-%m-%d')
 # define name of the image
 NAME_BUILD=$TEAM/iac_dspace_bridge_build:$DATE
 NAME_DEV=$TEAM/iac_dspace_bridge_dev:$DATE
-NAME_ASM_ROS2=$TEAM/iac_asm_ros2_bridge:$DATE
 NAME_ASM_SOCKETCAN=$TEAM/iac_asm_socketcan_bridge:$DATE
 NAME_IAC_AURELION_ROS2=$TEAM/iac_aurelion_ros2_bridge:$DATE
 NAME_IAC_SOCKETCAN_DBW=$TEAM/iac_socketcan_dbw_bridge:$DATE
@@ -16,8 +15,6 @@ NAME_FOXGLOVE=$TEAM/iac_ros2_foxglove_bridge:$DATE
 # build image
 echo "---------- build general dspace_bridge_dev ----------"
 docker build -t $NAME_DEV --target=dspace_bridge_dev -f Dockerfile ..
-echo "---------- build asm_ros2_bridge ----------"
-docker build -t $NAME_ASM_ROS2 --target=asm_ros2_bridge -f Dockerfile ..
 echo "---------- build asm_socketcan_bridge ----------"
 docker build -t $NAME_ASM_SOCKETCAN --target=asm_socketcan_bridge -f Dockerfile ..
 echo "---------- build iac_aurelion_ros2_bridge ----------"

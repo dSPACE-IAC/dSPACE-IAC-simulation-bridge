@@ -80,8 +80,6 @@ services:
   dspace_bridge:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
     container_name: asm_socketcan_bridge
-    # image: dspace/iac_asm_ros2_bridge:2026-03-19
-    # container_name: asm_ros2_bridge
     # image: dspace/iac_aurelion_ros2_bridge:2026-03-19
     # container_name: aurelion_ros2_bridge
     # image: dspace/iac_dspace_bridge_dev:2026-03-19
