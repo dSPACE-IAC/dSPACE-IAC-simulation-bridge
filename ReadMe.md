@@ -9,7 +9,7 @@ The socketcan package provides per-message timers, configurable publish rates an
 The aurelion_ros2_bridge communicates sensor data (camera, lidar, radar) between the dSPACE AURELION sensor simulation and the IAC team SUT.
 The simulation data is published as ROS2 messages.
 The implementation of all bridges is in form of ROS2 nodes.
-There is also a foxglove bridge, which is used to make the messages published in ROS2 observable in Foxglove.
+There is also a foxglove bridge, which is used to make the messages published in ROS2 observable in Foxglove or Lichtblick.
 
 For further information please check the latest simulation package version.
 This repository is meant to provide further insights into the implementation and enables you to adapt the basic bridge implementations to the requirements of your SUT, in order to make full use of the dSPACE Indy Autonomous Challenge simulator.
@@ -32,7 +32,7 @@ The following section provides an overview of the repository content, in order t
 
 ### Dockerfile
 This Dockerfile is used to create all bridge versions (asm_socketcan, aurelion_ros2 and foxglove).
-The images are differentiated by selecting the target of the docker build command (asm_socketcan_bridge, aurelion_ros2_bridge, dspace_foxglove_bridge).
+The images are differentiated by selecting the target of the docker build command (asm_socketcan_bridge, aurelion_ros2_bridge, ros2_foxglove_bridge).
 There is also a dev version (dspace_bridge_dev), which only contains the dependencies required by the bridge versions (e.g. ROS2, custom message definitions, socketcan packages etc) and a neutral entrypoint, so that could be used to quickly test new developments on the bridge.
 The standard version contains the respective compiled bridge node and an entrypoint for automatic startup of that node.
 The standard version is also recommended to be used for local testing, when working on the SUT code to check whether the system is capable to run with automatic startup procedure used for headless testing in the cloud.
