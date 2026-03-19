@@ -2588,12 +2588,26 @@ namespace asm_socketcan_bridge {
           this->get_logger(), *this->get_clock(), 1000,
           "D-Space reported gear=0 (neutral); clamping to 1.");
       }
-      assign("current_gear", powertrain.current_gear == 0.0 ? 1.0 : powertrain.current_gear);
+      const auto effective_gear = powertrain.current_gear == 0.0 ? 1.0 : powertrain.current_gear;
+      assign("current_gear", effective_gear);
       assign("engine_speed_rpm", powertrain.engine_rpm);
       assign("vehicle_speed_kmph", powertrain.vehicle_speed_kmph);
       assign("engine_run_switch", powertrain.engine_run_switch_status);
       assign("engine_state", powertrain.engine_on_status);
-      assign("gear_shift_status", powertrain.gear_shift_status);
+      // D-Space does not update gear_shift_status; synthesize it from commanded vs actual gear.
+      // Values: AVAILABLE=1, UPSHIFTING=3, DOWNSHIFTING=4 (matching stack's GearShiftStatus enum).
+      {
+        const auto commanded = static_cast<double>(this->feedbackCmd.vehicle_inputs.gear_cmd);
+        uint8_t synthesized;
+        if (effective_gear < commanded) {
+          synthesized = 3;  // UPSHIFTING
+        } else if (effective_gear > commanded) {
+          synthesized = 4;  // DOWNSHIFTING
+        } else {
+          synthesized = 1;  // AVAILABLE
+        }
+        assign("gear_shift_status", synthesized);
+      }
     });
   }
 
