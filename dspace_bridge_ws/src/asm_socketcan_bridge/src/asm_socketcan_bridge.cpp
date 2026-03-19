@@ -973,7 +973,7 @@ namespace asm_socketcan_bridge {
           }
           if (const auto value = extractSignalScaled(in_frame.can_id, "desired_gear",
                                                      in_frame.data)) {
-            this->feedbackCmd.vehicle_inputs.brake_cmd_count =
+            this->feedbackCmd.vehicle_inputs.gear_cmd =
               static_cast<uint8_t>(std::floor(*value));
           }
           this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
@@ -981,7 +981,7 @@ namespace asm_socketcan_bridge {
           if (this->receivedDecodedMessagePrinting) {
             RCLCPP_INFO(get_logger(),
                         "desired_gear: %d",
-                        this->feedbackCmd.vehicle_inputs.brake_cmd_count);
+                        this->feedbackCmd.vehicle_inputs.gear_cmd);
           }
           break;
         }

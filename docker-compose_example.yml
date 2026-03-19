@@ -7,7 +7,7 @@ networks:
 
 services:
   ctun:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-02-18
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-03-19
     container_name: ctun
     ports:
         - 1723:1723/udp
@@ -22,7 +22,7 @@ services:
             condition: service_started
 
   veos:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/combined_simphera_local_executor_246:race_2026-02-18
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-03-19
     container_name: veos
     cap_add:
         - SYS_PTRACE
@@ -43,7 +43,7 @@ services:
             condition: service_started
 
   vesi:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-02-18
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-03-19
     container_name: vesi
     restart: always
     tty: true
@@ -55,7 +55,7 @@ services:
             condition: service_started
 
   can-netns:
-    image: dspace/iac_asm_socketcan_bridge:2026-02-18
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
     container_name: can-netns
     ipc: "shareable"
     shm_size: "512m"
@@ -78,18 +78,31 @@ services:
             ipv4_address: 10.6.0.4
 
   dspace_bridge:
-    image: dspace/iac_asm_socketcan_bridge:2026-02-18
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
     container_name: asm_socketcan_bridge
-    # image: dspace/iac_asm_ros2_bridge:2026-02-18
+    # image: dspace/iac_asm_ros2_bridge:2026-03-19
     # container_name: asm_ros2_bridge
-    # image: dspace/iac_aurelion_ros2_bridge:2026-02-18
+    # image: dspace/iac_aurelion_ros2_bridge:2026-03-19
     # container_name: aurelion_ros2_bridge
-    # image: dspace/iac_dspace_bridge_dev:2026-02-18
+    # image: dspace/iac_dspace_bridge_dev:2026-03-19
     # container_name: dspace_bridge_dev
     restart: no
     volumes:
         - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
-        - ./runtime_scripts:/root/runtime_scripts
+    cap_add:
+        - NET_ADMIN
+    network_mode: "service:can-netns"
+    ipc: "container:can-netns"
+    depends_on:
+        veos:
+            condition: service_healthy
+        can-netns:
+            condition: service_started
+
+  raptor_dbw:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:2026-03-19
+    container_name: raptor_dbw
+    restart: no
     cap_add:
         - NET_ADMIN
     network_mode: "service:can-netns"
@@ -101,7 +114,7 @@ services:
             condition: service_started
 
   dspace_foxglove_bridge:
-    image: dspace/iac_dspace_bridge_foxglove:2026-02-18
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-03-19
     container_name: foxglove_bridge
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
@@ -120,19 +133,17 @@ services:
       dspace_network:
         ipv4_address: 10.6.0.9
 
-  uva_example_driving_stack:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-02-18
-    container_name: uva_example_driving_stack
+  demo_stack_uva:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-03-19
+    container_name: demo_stack_uva
     environment:
         - SIM_CLOCK_MODE=false
         - CAR_NUM=78
     volumes:
-        - ./../uva-stack/sample_controller/runtime_scripts:/root/runtime_scripts
-        - ./../uva-stack/auto_tms.param_override.yaml:/root/ros_ws/src/npc_controller/config/auto_tms.param.yaml
-        - ./../uva-stack/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
+        - ./demo_stack_uva/auto_tms.param_override.yaml:/root/ros_ws/src/npc_controller/config/auto_tms.param.yaml
+        - ./demo_stack_uva/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
-    entrypoint: sh -c '/root/runtime_scripts/entrypoint.sh'
     depends_on:
       veos:
         condition: service_healthy

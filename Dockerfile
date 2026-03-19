@@ -34,7 +34,20 @@ WORKDIR /root/runtime_scripts
 
 ENTRYPOINT [ "tail", "-f", "/dev/null" ]
 
-FROM dspace_bridge_dev AS asm_ros2_bridge_simphera
+FROM dspace_bridge_dev AS socketcan_dbw_bridge
+ENV BRIDGE_TYPE="CAN_DBW"
+# Build bridge node and enable autostart for headless execution
+COPY dSPACE-IAC-simulation-bridge/ros_dbw_ws/src /root/ros_dbw_ws/src
+RUN mkdir -p /root/record_log && \
+    source /opt/ros/humble/local_setup.bash && \
+    source /root/ros_ws_aux/install/local_setup.bash && \
+    rosdep install -i --from-path /root/ros_dbw_ws/src --rosdistro humble -y && \
+    colcon build --symlink-install --cmake-clean-first --base-paths /root/ros_dbw_ws/ --build-base /root/ros_dbw_ws/build --install-base /root/ros_dbw_ws/install --cmake-args -DCMAKE_BUILD_TYPE=Release && \
+    echo 'source /root/ros_dbw_ws/install/local_setup.bash' >> /root/.bashrc
+
+ENTRYPOINT ["sh", "-c", "/root/runtime_scripts/entrypoint.sh"]
+
+FROM dspace_bridge_dev AS asm_ros2_bridge
 ENV BRIDGE_TYPE="ASM_ROS2"
 # Build bridge node and enable autostart for headless execution
 COPY dSPACE-IAC-simulation-bridge/dspace_bridge_ws/src/asm_ros2_bridge /root/dspace_bridge_ws/src/asm_ros2_bridge
@@ -47,7 +60,7 @@ RUN mkdir -p /root/record_log && \
 
 ENTRYPOINT ["sh", "-c", "/root/runtime_scripts/entrypoint.sh"]
 
-FROM dspace_bridge_dev AS asm_socketcan_bridge_simphera
+FROM dspace_bridge_dev AS asm_socketcan_bridge
 ENV BRIDGE_TYPE="ASM_CAN"
 # Build bridge node and enable autostart for headless execution
 RUN apt-get update && \
@@ -62,7 +75,7 @@ RUN mkdir -p /root/record_log && \
 
 ENTRYPOINT ["sh", "-c", "/root/runtime_scripts/entrypoint.sh"]
 
-FROM dspace_bridge_dev AS aurelion_ros2_bridge_simphera
+FROM dspace_bridge_dev AS aurelion_ros2_bridge
 ENV BRIDGE_TYPE="AURELION_ROS2"
 # Build bridge node and enable autostart for headless execution
 COPY dSPACE-IAC-simulation-bridge/dspace_bridge_ws/src/aurelion_ros2_bridge /root/dspace_bridge_ws/src/aurelion_ros2_bridge
@@ -75,7 +88,7 @@ RUN mkdir -p /root/record_log && \
 
 ENTRYPOINT ["sh", "-c", "/root/runtime_scripts/entrypoint.sh"]
 
-FROM dspace_bridge_dev AS dspace_foxglove_bridge
+FROM dspace_bridge_dev AS ros2_foxglove_bridge
 ENV BRIDGE_TYPE="FOXGLOVE"
 # Install Foxglove bridge 
 RUN apt-get update && \
