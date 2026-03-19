@@ -1,0 +1,57 @@
+/**:
+  ros__parameters:
+    use_sim_time: false
+    
+    can.can1_dbc_path: "config/CAN1-INDY-V23.dbc"
+    can.interface: "can0"
+    connection.max_retries: 1
+
+    publish_intervals.pure_pursuit_timer: 10
+    publish_intervals.long_control_timer: 10
+    publish_intervals.control_timer: 10
+    publish_intervals.state_machine_timer: 500
+
+    logging.verbose: false
+    logging.received_can_frames: false
+    logging.received_decoded_frames: false
+    logging.sent_can_frames: false
+
+    track_name: "ims"
+    vehicle:
+      wheelbase: 2.971
+      steering_ratio: 15.0
+      # min_steer: -0.2793
+      min_steer: -0.05
+      # max_steer: 0.2793
+      max_steer: 0.05
+      min_lookahead_dist: 15.0
+      max_lookahead_dist: 45.0
+      lookahead_gain: 0.2
+      min_throttle: 0.0
+      max_throttle: 100.0
+      min_brake: 0.0
+      max_brake: 5500.0
+      max_acc: 5.5
+      min_acc: -6.0
+      vel_kp: 0.2
+      vel_ki: 0.005
+      vel_kd: 0.08
+      throttle_kp: 0.03
+      throttle_ki: 0.01
+      throttle_kd: 0.05
+      braking_kp: 0.002
+      braking_ki: 0.0001
+      braking_kd: 0.0001
+    lap_state_machine:
+      yellow_flag_box_exit: 18.0
+      yellow_flag_pit_row: 30.0
+      yellow_flag_pit_lane: 45.0
+      yellow_flag_on_track: 70.0
+      green_flag: 180.0
+      black_flag_on_track: 50.0
+      pit_transition_out: 2514.432821833612
+      pit_transition_in: 3466.9929036148405
+      pit_entry_dec: 2966.99398809754
+      pit_inc_speed: 980.3156320337134
+      pit_dec_speed: 180.98267063665767
+      pit_stop: 534.2770520745947 # This value is subject to change based on pit box location

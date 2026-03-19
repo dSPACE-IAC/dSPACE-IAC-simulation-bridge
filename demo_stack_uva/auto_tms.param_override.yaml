@@ -1,0 +1,39 @@
+/**:
+  ros__parameters:
+    track_name: "auto-tms"
+    vehicle:
+      wheelbase: 2.971
+      steering_ratio: 15.0
+      min_steer: -0.2793
+      max_steer: 0.2793
+      min_lookahead_dist: 15.0
+      max_lookahead_dist: 45.0
+      lookahead_gain: 0.8
+      min_throttle: 0.0
+      max_throttle: 100.0
+      min_brake: 0.0
+      max_brake: 5500.0
+      max_acc: 5.5
+      min_acc: -6.0
+      vel_kp: 0.2
+      vel_ki: 0.005
+      vel_kd: 0.08
+      throttle_kp: 0.03
+      throttle_ki: 0.01
+      throttle_kd: 0.05
+      braking_kp: 0.002
+      braking_ki: 0.0001
+      braking_kd: 0.0001
+    lap_state_machine:
+      yellow_flag_box_exit: 18.0
+      yellow_flag_pit_row: 30.0
+      yellow_flag_pit_lane: 45.0
+      yellow_flag_on_track: 70.0
+      green_flag: 90.0
+      black_flag_on_track: 70.0
+      pit_transition_out: 1055.3165683121185
+      pit_transition_in: 1093.7091990052456
+      pit_entry_dec: 893.7091990052456
+      pit_inc_speed: 160.21269895019626
+      pit_dec_speed: 2003.823017429067
+      pit_stop: 115.29526969674424
