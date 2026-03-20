@@ -3,8 +3,7 @@
 This repository contains the current state of the different bridge implementations for the dSPACE IAC simulation environment.
 Each bridge lives in its own ROS2 package inside `dspace_bridge_ws/src`.
 The asm_socketcan_bridge enables the data exchange between the dSPACE car and environment model simulated using the Automotive Simulation Models (ASM) and the SUT of the IAC team.
-The asm_ros2_bridge is deprecated and has been removed from this repository.
-The ros2 bridge is currently deprecated and will not receive updates anymore from dSPACE.
+The asm_ros2_bridge is deprecated and has been removed from this repository. It will not receive updates anymore from dSPACE.
 The socketcan package provides per-message timers, configurable publish rates and a dedicated CAN decoding layer that mirrors the race car CAN network.
 The aurelion_ros2_bridge communicates sensor data (camera, lidar, radar) between the dSPACE AURELION sensor simulation and the IAC team SUT.
 The simulation data is published as ROS2 messages.
@@ -75,6 +74,13 @@ Mount the `asm_socketcan_bridge_override.yaml` from the repository root into you
 Runtime log files written by the bridge containers are stored here by default.
 Clean the directory regularly when iterating locally to keep disk usage in check.
 
+### demo_stack_uva
+Implementation of the demo controller working with the CAN bridge.
+
+### ASM_Maneuver.py
+Script that can be executed in the VEOS container to send flags manually. In the container the script is located in `/home/dspace/scripts`.
+
+
 ## How to
 The following instructions assume an execution in a Linux environment, either on a Linux host system or in WSL.
 This means that all given commands and scripts are written for Linux.
@@ -106,6 +112,6 @@ The script can build the dev image as well as the asm_socketcan, aurelion and fo
 After succesful build, only update the tags of the bridge images inside your custom `docker-compose.yml` to the current date and restart the compose stack.
 
 ### Contribute
-In general the bridge is maintained by dSPACE, so if you find any missing features or bugs it would be great if you make use of the github issue feature to share them with us.
-However you could also feel free to directly implement missing features by simply creating your own branch or fork of the main repository.
+In general the bridge is maintained by dSPACE, so if you find any missing features or bugs it would be great if you make use of the Github issue feature to share them with us.
+Also feel free to directly implement missing features by simply creating your own branch or fork of the main repository.
 In case that your enhancements might be useful to other teams, it would be great, if you could create a pull request, so that they become available for the rest of the community.
