@@ -1,0 +1,8 @@
+{
+  "build":
+  {
+    "cmake-args": [-DCMAKE_BUILD_TYPE=Release, -DCMAKE_CXX_STANDARD=17],
+    "ament-cmake-args": [-DCMAKE_BUILD_TYPE=Release, -DCMAKE_CXX_STANDARD=17],
+    "catkin-cmake-args": [-DCMAKE_BUILD_TYPE=Release, -DCMAKE_CXX_STANDARD=17]
+  }
+}

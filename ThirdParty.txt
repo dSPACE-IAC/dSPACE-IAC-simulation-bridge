@@ -37,13 +37,23 @@ raptor-dbw-msgs 1.0.0-1
   Repository: https://github.com/foxglove/rosmsg
   License: MIT
 
-AlgorithmLib 3.4.8.post0
+@foxglove/schemas 1.6.0
   Copyright: 
-    Copyright (C) 2011 Jon Polom <jmpolom@wayne.edu>
-    Copyright (C) British Telecommunications plc, 1998.
-    Copyright (c) 2011 Audience, Inc.
-    Copyright 1984-2018 The MathWorks, Inc.
-  Repository: https://github.com/pypa/sampleproject
+    Copyright (c) Foxglove Technologies Inc
+  Repository: https://github.com/foxglove/foxglove-sdk#readme
+  License: MIT
+
+@foxglove/schemas 1.6.3
+  Copyright: 
+    Copyright (c) Foxglove Technologies Inc
+  Repository: https://github.com/foxglove/foxglove-sdk#readme
+  License: MIT
+
+foxglove-msgs 2.3.0
+  Copyright: 
+    Copyright: See package copyright in source code for details
+    copyright-format/1.0/ Upstream-Name: foxglove_msgs Files: See file headers in repository for details
+  Repository: https://foxglove.dev/
   License: MIT
 
 novatel_oem7_msgs 10.4.0

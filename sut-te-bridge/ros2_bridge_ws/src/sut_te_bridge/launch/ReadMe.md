@@ -1,1 +1,0 @@
-This file only exists to be able to add an empty launch directory to the git repository. This directory is required to avoid colcon build errors.

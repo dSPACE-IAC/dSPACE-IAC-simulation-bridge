@@ -1,0 +1,14 @@
+kvaser_reader_node:
+  ros__parameters:
+    hardware_id: 42774
+    circuit_id: 0
+    bit_rate: 500000
+    enable_echo: false
+kvaser_writer_node:
+  ros__parameters:
+    hardware_id: 42774
+    circuit_id: 0
+    bit_rate: 500000
+    enable_echo: false
+
+    
