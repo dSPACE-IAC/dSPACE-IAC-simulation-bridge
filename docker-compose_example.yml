@@ -29,11 +29,9 @@ services:
     environment:
         - DS_CMU_SERVER=xxx
         - DS_VEOS_LOAD_OSA=/home/dspace/VEOS/ASM_Traffic.osa
-        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Las Vegas, ID 3: Monza start in pit, ID 4: Monza start on racetrack, ID 5: Monza no bail out, ID 6: Kennedy Space Center
-        - USE_SIMPHERA=false
+        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: LVMS, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
         - DS_START_COMMAND=deactivatepush2pass-start
         - DS_VEOS_REMOTE_CAPABLE=1
-    env_file: "start_executor_env.list"
     shm_size: 256m
     networks:
         dspace_network:
@@ -138,7 +136,6 @@ services:
         - SIM_CLOCK_MODE=false
         - CAR_NUM=78
     volumes:
-        - ./demo_stack_uva/auto_tms.param_override.yaml:/root/ros_ws/src/npc_controller/config/auto_tms.param.yaml
         - ./demo_stack_uva/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
     network_mode: "service:can-netns"
     ipc: "container:can-netns"

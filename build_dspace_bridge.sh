@@ -18,7 +18,7 @@ docker build -t $NAME_DEV --target=dspace_bridge_dev -f Dockerfile ..
 echo "---------- build asm_socketcan_bridge ----------"
 docker build -t $NAME_ASM_SOCKETCAN --target=asm_socketcan_bridge -f Dockerfile ..
 echo "---------- build iac_aurelion_ros2_bridge ----------"
-docker build -t $NAME_IAC_AURELION_ROS2 --target=aurelion_ros2_bridge -f Dockerfile .
+docker build -t $NAME_IAC_AURELION_ROS2 --target=aurelion_ros2_bridge -f Dockerfile ..
 echo "---------- build iac_socketcan_dbw_bridge ----------"
 docker build -t $NAME_IAC_SOCKETCAN_DBW --target=socketcan_dbw_bridge -f Dockerfile ..
 echo "---------- build ros2_foxglove_bridge ----------"
