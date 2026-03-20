@@ -38,6 +38,9 @@ FROM dspace_bridge_dev AS socketcan_dbw_bridge
 ENV BRIDGE_TYPE="CAN_DBW"
 # Build bridge node and enable autostart for headless execution
 COPY dSPACE-IAC-simulation-bridge/ros_dbw_ws/src /root/ros_dbw_ws/src
+# Add dependencies
+RUN cd /root/ros_dbw_ws/src && git clone https://github.com/autowarefoundation/ros2_socketcan.git
+# Build ros
 RUN mkdir -p /root/record_log && \
     source /opt/ros/humble/local_setup.bash && \
     source /root/ros_ws_aux/install/local_setup.bash && \
