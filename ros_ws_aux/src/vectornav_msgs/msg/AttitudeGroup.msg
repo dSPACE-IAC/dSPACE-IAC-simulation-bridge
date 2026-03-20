@@ -23,12 +23,12 @@ uint16                      ATTITUDEGROUP_LINEARACCELNED    = 0x0080
 uint16                      ATTITUDEGROUP_YPRU              = 0x0100
 
 # Fields 
-vectornav_msgs/VpeStatus        vpestatus         
-geometry_msgs/Vector3           yawpitchroll      
-geometry_msgs/Quaternion        quaternion       
-float32[9]                      dcm            
-geometry_msgs/Vector3           magned         
-geometry_msgs/Vector3           accelned         
-geometry_msgs/Vector3           linearaccelbody   
-geometry_msgs/Vector3           linearaccelned   
-geometry_msgs/Vector3           ypru            
+vectornav_msgs/VpeStatus    vpestatus         
+geometry_msgs/Vector3       yawpitchroll      
+geometry_msgs/Quaternion    quaternion       
+float32[9]                  dcm            
+geometry_msgs/Vector3       magned         
+geometry_msgs/Vector3       accelned         
+geometry_msgs/Vector3       linearaccelbody   
+geometry_msgs/Vector3       linearaccelned   
+geometry_msgs/Vector3       ypru            
