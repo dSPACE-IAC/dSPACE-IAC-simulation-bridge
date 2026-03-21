@@ -3,9 +3,11 @@ name: AI Racing Tech dSpace IAC sut-te-bridge Docker
 on:
   workflow_dispatch:
   push:
-    branches: ["daniel/socketcan_support"]
+    branches: ["art-jazzy"]
   pull_request:
-    branches: ["daniel/socketcan_support"]
+    branches: ["art-jazzy"]
+  repository_dispatch:
+    types: ["trigger-dspace-workflow"]
 
 concurrency:
   group: bridge-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -20,14 +22,21 @@ jobs:
         include:
           - SAVE_NAME: iac_dspace_bridge_dev
             TARGET: dspace_bridge_dev
-          - SAVE_NAME: iac_asm_ros2_bridge
-            TARGET: asm_ros2_bridge_simphera
+            ECR_REPO: iac_dspace_bridge_dev
           - SAVE_NAME: iac_asm_socketcan_bridge
-            TARGET: asm_socketcan_bridge_simphera
+            TARGET: asm_socketcan_bridge
+            ECR_REPO: iac_asm_socketcan_bridge
+          - SAVE_NAME: iac_socketcan_dbw_bridge
+            TARGET: socketcan_dbw_bridge
+            ECR_REPO: iac_socketcan_dbw_bridge
           - SAVE_NAME: iac_aurelion_ros2_bridge
-            TARGET: aurelion_ros2_bridge_simphera
-          - SAVE_NAME: iac_dspace_bridge_foxglove
-            TARGET: dspace_foxglove_bridge
+            TARGET: aurelion_ros2_bridge
+            ECR_REPO: iac_aurelion_ros2_bridge
+          - SAVE_NAME: iac_ros2_foxglove_bridge
+            TARGET: ros2_foxglove_bridge
+            ECR_REPO: foxglove
+    outputs:
+      tag_name: ${{ steps.save_tag.outputs.tag_name }}
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -53,6 +62,23 @@ jobs:
         with:
           ref: ${{ github.ref }}
           head_ref: ${{ github.head_ref }}
+      - name: Determine dispatch inputs
+        id: dispatch_inputs
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            tag="${{ github.event.client_payload.tag_name || '' }}"
+            base="${{ github.event.client_payload.image_name || '' }}"
+            if [[ -z "${tag}" || -z "${base}" ]]; then
+              echo "Repository dispatch missing tag_name or image_name in client_payload" >&2
+              exit 1
+            fi
+          else
+            tag="${{ steps.get-ref.outputs.tag }}"
+            base="ghcr.io/airacingtech/art_ros_jazzy_cpu-built-dspace:stable"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "base_image=${base}" >> "${GITHUB_OUTPUT}"
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
@@ -73,16 +99,66 @@ jobs:
           pull: true
           push: true
           tags: |
-            ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:${{ steps.get-ref.outputs.tag }}
-            ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:latest
+            ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:${{ steps.dispatch_inputs.outputs.tag }}
           ssh: |
             default=${{ env.SSH_AUTH_SOCK }}
           cache-from: type=local,src=/tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
           cache-to: type=local,dest=/tmp/.buildx-cache-new-${{ matrix.SAVE_NAME }},mode=max
           build-args: |
-            BASE_IMAGE=ghcr.io/airacingtech/art_ros_jazzy_cpu-built-dspace:stable
+            BASE_IMAGE=${{ steps.dispatch_inputs.outputs.base_image }}
           target: ${{ matrix.TARGET }}
       - name: Delete old cache
         run: |
           rm -rf /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
           mv /tmp/.buildx-cache-new-${{ matrix.SAVE_NAME }} /tmp/.buildx-cache-${{ matrix.SAVE_NAME }}
+      - name: Save tag name to Github Output
+        id: save_tag
+        run: |
+          echo "tag_name=${{ steps.dispatch_inputs.outputs.tag }}" >> $GITHUB_OUTPUT
+
+  aws-push:
+    runs-on: ubuntu-latest
+    needs: [build-push]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - SAVE_NAME: iac_dspace_bridge_dev
+            ECR_REPO: iac_dspace_bridge_dev
+          - SAVE_NAME: iac_asm_socketcan_bridge
+            ECR_REPO: iac_asm_socketcan_bridge
+          - SAVE_NAME: iac_socketcan_dbw_bridge
+            ECR_REPO: iac_socketcan_dbw_bridge
+          - SAVE_NAME: iac_aurelion_ros2_bridge
+            ECR_REPO: iac_aurelion_ros2_bridge
+          - SAVE_NAME: iac_ros2_foxglove_bridge
+            ECR_REPO: foxglove
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: airacingtechba
+          password: ${{ secrets.PAT }}
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.DSPACE_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DSPACE_AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Pull, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ needs.build-push.outputs.tag_name }}
+          TEAM_NAME: ai-racing
+        run: |
+          GHCR_IMAGE="ghcr.io/airacingtech/${{ matrix.SAVE_NAME }}:${IMAGE_TAG}"
+          ECR_IMAGE="${ECR_REGISTRY}/${TEAM_NAME}/${{ matrix.ECR_REPO }}:${IMAGE_TAG}"
+          docker pull "${GHCR_IMAGE}"
+          docker tag "${GHCR_IMAGE}" "${ECR_IMAGE}"
+          docker push "${ECR_IMAGE}"
