@@ -78,8 +78,6 @@ services:
   dspace_bridge:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
     container_name: asm_socketcan_bridge
-    # image: dspace/iac_aurelion_ros2_bridge:2026-03-19
-    # container_name: aurelion_ros2_bridge
     # image: dspace/iac_dspace_bridge_dev:2026-03-19
     # container_name: dspace_bridge_dev
     restart: no
@@ -144,3 +142,22 @@ services:
         condition: service_healthy
       can-netns:
         condition: service_started
+
+# Example for adding a sensor bridge for sensor simulation with AURELION
+    # dspace_aurelion_bridge:
+    #     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:2026-03-19
+    #     container_name: aurelion_ros2_bridge
+    #     restart: always
+    #     environment:
+    #         - VESI_SENSOR_IP=
+    #         - VESI_SENSOR_PORT=12345
+    #         - SENSOR_TYPE=Lidar
+    #         - SENSOR_ID=1
+    #         - ROS_TOPIC=lidar_front
+    #     cap_add:
+    #         - SYS_ADMIN
+    #         - DAC_READ_SEARCH
+    #         - SYS_PTRACE
+    #     networks:
+    #         mynetwork:
+    #             ipv4_address: 10.6.0.10
