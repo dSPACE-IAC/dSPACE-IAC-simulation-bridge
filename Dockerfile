@@ -57,6 +57,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends can-utils iproute2 kmod
 COPY dSPACE-IAC-simulation-bridge/dspace_bridge_ws/src/asm_socketcan_bridge /root/dspace_bridge_ws/src/asm_socketcan_bridge
 RUN mkdir -p /root/record_log && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get update && \
     source /opt/ros/humble/local_setup.bash && \
     source /root/ros_ws_aux/install/local_setup.bash && \
     rosdep install -i --from-path /root/dspace_bridge_ws/src --rosdistro humble -y && \
