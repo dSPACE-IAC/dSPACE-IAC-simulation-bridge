@@ -207,16 +207,22 @@ namespace asm_socketcan_bridge {
   AsmSocketCanBridgeNode::AsmSocketCanBridgeNode() : Node("asm_socketcan_bridge_node")
   {
     this->canBus = nullptr;
-
-    const auto sim_manager_host =
-      this->declare_parameter<std::string>("sim_manager.host", "127.0.0.1");
-    RCLCPP_INFO(this->get_logger(), "SimManager Host IP: %s", sim_manager_host.c_str());
-    this->api.setSimManagerHost(sim_manager_host);
-
-    const auto asm_host =
-      this->declare_parameter<std::string>("asm.host", "127.0.0.1");
-    RCLCPP_INFO(this->get_logger(), "ASM Host IP: %s", asm_host.c_str());
-    this->api.setASMHost(asm_host);
+    if (std::getenv("VESI_IP")){
+      this->api.setSimManagerHost(std::getenv("VESI_IP"));
+      RCLCPP_INFO(this->get_logger(), "SimManager Host IP override from environment variable: %s", std::getenv("VESI_IP"));
+    } else {
+      const auto sim_manager_host = this->declare_parameter<std::string>("sim_manager.host", "127.0.0.1");
+      RCLCPP_INFO(this->get_logger(), "SimManager Host IP: %s", sim_manager_host.c_str());
+      this->api.setSimManagerHost(sim_manager_host);
+    }
+    if (std::getenv("ASM_IP")){
+      this->api.setASMHost(std::getenv("ASM_IP"));
+      RCLCPP_INFO(this->get_logger(), "ASM Host IP override from environment variable: %s", std::getenv("ASM_IP"));
+    } else {
+      const auto asm_host = this->declare_parameter<std::string>("asm.host", "127.0.0.1");
+      RCLCPP_INFO(this->get_logger(), "ASM Host IP: %s", asm_host.c_str());
+      this->api.setASMHost(asm_host);
+    }
 
     const int64_t sim_manager_port_param =
       this->declare_parameter<int64_t>("sim_manager.port", 12345);
