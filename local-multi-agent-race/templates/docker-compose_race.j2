@@ -1,0 +1,187 @@
+#--------------------------------------------
+# Definitions of a single race car with stack and all requried containers
+#--------------------------------------------
+x-race_car: &race_car
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-03-19
+    cap_add:
+        - SYS_PTRACE
+    shm_size: 256m
+    env_file:
+        - docker-env.race_car
+
+x-vesi: &vesi
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-03-19
+    restart: always
+    tty: true
+
+x-dspace_bridge: &dspace_bridge
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
+    restart: no
+    cap_add:
+        - NET_ADMIN
+    volumes:
+        - ./mnt/asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
+    env_file:
+        - docker-env.bridge
+
+x-can-netns: &can-netns
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
+    cap_add:
+        - NET_ADMIN
+    ipc: "shareable"
+    shm_size: "512m"
+    entrypoint:
+        - sh
+        - -lc
+        - |
+            modprobe vcan 2>/dev/null || true
+            ip link add dev can0 type vcan 2>/dev/null || true
+            ip link add dev can1 type vcan 2>/dev/null || true
+            ip link set can0 up || true
+            ip link set can1 up || true
+            tail -f /dev/null
+
+x-dspace_foxglove_bridge: &dspace_foxglove_bridge
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-03-19
+
+
+x-demo_stack: &demo_stack
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-03-19
+    env_file:
+        - docker-env.stack
+    volumes:
+        - ./mnt/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
+
+x-race_orchestration: &race_orchestration
+    image:  722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-03-19
+    cap_add:
+        - SYS_PTRACE
+    env_file:
+        - docker-env.orchestrator
+    shm_size: 256m
+    volumes: 
+        - ./veos-orchestrator:/home/dspace/VEOS
+        - ./mnt/ASM_Maneuver.py:/home/dspace/scripts/ASM_Maneuver.py
+    networks:
+        dspace_network:
+            ipv4_address: {{ race.orchestrator.ip }}
+
+x-ctun: &ctun
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2025-07-25
+    cap_add:
+        - NET_ADMIN
+        - SYS_PTRACE
+    ports:
+        - 1723:1723/udp
+    networks:
+        dspace_network:
+            ipv4_address: {{ race.ctun.ip }}
+
+x-lichtblick_local: &lichtblick_local
+    image: ghcr.io/lichtblick-suite/lichtblick:latest
+    ports:
+      - 8080:8080
+    networks:
+      dspace_network:
+        ipv4_address: {{ race.lichtblick.ip }}
+
+networks:
+    dspace_network:
+        driver: bridge
+        ipam:
+            config:
+                - subnet: 10.6.0.0/16
+
+#--------------------------------------------
+# Services for a race with multiple cars
+#--------------------------------------------
+services:    
+    # Race orchestration
+    orchestrator:
+        <<: *race_orchestration
+        container_name: orchestrator
+        environment:
+            - DS_NUMBER_OF_CLIENTS={{ race.number_of_racecars }}
+
+    ctun:
+        <<: *ctun
+        container_name: ctun
+
+    lichtblick_local:
+        <<: *lichtblick_local
+        container_name: lichtblick_local
+    
+{% for instance in race_participants %}
+    # Race car ID {{ instance.race_car.ID }} ---- start ----
+    {{ instance.race_car.name }}:
+        <<: *race_car
+        container_name: {{ instance.race_car.name }}
+        environment:
+            - DS_ORCHESTRATOR_IP={{ race.orchestrator.ip }}
+            - DS_VESI_IP={{ instance.vesi.ip }}
+            - DS_INIT_S={{ instance.race_car.s }}
+        depends_on:
+            orchestrator:
+                condition: service_started
+            {{ instance.vesi.name }}:
+                condition: service_started
+        networks:
+            dspace_network:
+                ipv4_address: {{ instance.race_car.ip }}
+    
+    {{ instance.vesi.name }}:
+        <<: *vesi
+        container_name: {{ instance.vesi.name }}
+        networks:
+            dspace_network:
+                ipv4_address: {{ instance.vesi.ip }}
+
+    {{ instance.can_netns.name }}:
+        <<: *can-netns
+        container_name: {{ instance.can_netns.name }}
+        networks:
+            dspace_network:
+                ipv4_address: {{ instance.can_netns.ip }}
+
+    {{ instance.bridge.name }}:
+        <<: *dspace_bridge
+        container_name: {{ instance.bridge.name }}
+        environment:
+            - ASM_IP={{ instance.race_car.ip }}
+            - VESI_IP={{ instance.vesi.ip }}
+            - ROS_DOMAIN_ID={{ instance.ROS.DOMAIN_ID }}
+        network_mode: "service:{{ instance.can_netns.name }}"
+        ipc: "container:{{ instance.can_netns.name }}"
+        depends_on:
+            {{ instance.race_car.name }}:
+                condition: service_healthy
+            {{ instance.can_netns.name }}:
+                condition: service_started
+
+    {{ instance.foxglove.name }}:
+        <<: *dspace_foxglove_bridge
+        container_name: {{ instance.foxglove.name }}
+        environment:
+            - ROS_DOMAIN_ID={{ instance.ROS.DOMAIN_ID }}
+        ports:
+            - {{ instance.foxglove.port }}:8765/tcp
+        networks:
+            dspace_network:
+                ipv4_address: {{ instance.foxglove.ip }}
+        depends_on:
+            {{ instance.race_car.name }}:
+                condition: service_healthy
+
+    {{ instance.stack.name }}:
+        <<: *demo_stack
+        container_name: {{ instance.stack.name }}
+        environment:
+            - CAR_NUM={{ instance.race_car.ID }}
+            - ROS_DOMAIN_ID={{ instance.ROS.DOMAIN_ID }}
+        network_mode: "service:{{ instance.can_netns.name }}"
+        ipc: "container:{{ instance.can_netns.name }}"
+        depends_on:
+            {{ instance.can_netns.name }}:
+                condition: service_started
+    # Race car ID {{ instance.race_car.ID }} ---- end ----    
+{% endfor %}

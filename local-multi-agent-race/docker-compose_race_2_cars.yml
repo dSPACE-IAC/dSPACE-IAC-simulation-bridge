@@ -1,0 +1,258 @@
+#--------------------------------------------
+# Definitions of a single race car with stack and all requried containers
+#--------------------------------------------
+x-race_car: &race_car
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-03-19
+    cap_add:
+        - SYS_PTRACE
+    shm_size: 256m
+    env_file:
+        - docker-env.race_car
+
+x-vesi: &vesi
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-03-19
+    restart: always
+    tty: true
+
+x-dspace_bridge: &dspace_bridge
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
+    restart: no
+    cap_add:
+        - NET_ADMIN
+    volumes:
+        - ./mnt/asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
+    env_file:
+        - docker-env.bridge
+
+x-can-netns: &can-netns
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
+    cap_add:
+        - NET_ADMIN
+    ipc: "shareable"
+    shm_size: "512m"
+    entrypoint:
+        - sh
+        - -lc
+        - |
+            modprobe vcan 2>/dev/null || true
+            ip link add dev can0 type vcan 2>/dev/null || true
+            ip link add dev can1 type vcan 2>/dev/null || true
+            ip link set can0 up || true
+            ip link set can1 up || true
+            tail -f /dev/null
+
+x-dspace_foxglove_bridge: &dspace_foxglove_bridge
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-03-19
+
+
+x-demo_stack: &demo_stack
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-03-19
+    env_file:
+        - docker-env.stack
+    volumes:
+        - ./mnt/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
+
+x-race_orchestration: &race_orchestration
+    image:  722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-03-19
+    cap_add:
+        - SYS_PTRACE
+    env_file:
+        - docker-env.orchestrator
+    shm_size: 256m
+    volumes: 
+        - ./veos-orchestrator:/home/dspace/VEOS
+    networks:
+        dspace_network:
+            ipv4_address: 10.6.1.1
+
+x-ctun: &ctun
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2025-07-25
+    cap_add:
+        - NET_ADMIN
+        - SYS_PTRACE
+    ports:
+        - 1723:1723/udp
+    networks:
+        dspace_network:
+            ipv4_address: 10.6.1.2
+
+x-lichtblick_local: &lichtblick_local
+    image: ghcr.io/lichtblick-suite/lichtblick:latest
+    ports:
+      - 8080:8080
+    networks:
+      dspace_network:
+        ipv4_address: 10.6.1.3
+
+networks:
+    dspace_network:
+        driver: bridge
+        ipam:
+            config:
+                - subnet: 10.6.0.0/16
+
+#--------------------------------------------
+# Services for a race with multiple cars
+#--------------------------------------------
+services:    
+    # Race orchestration
+    orchestrator:
+        <<: *race_orchestration
+        container_name: orchestrator
+        environment:
+            - DS_NUMBER_OF_CLIENTS=2
+
+    ctun:
+        <<: *ctun
+        container_name: ctun
+
+    lichtblick_local:
+        <<: *lichtblick_local
+        container_name: lichtblick_local
+    
+
+    # Race car ID 10 ---- start ----
+    car1_veos:
+        <<: *race_car
+        container_name: car1_veos
+        environment:
+            - DS_ORCHESTRATOR_IP=10.6.1.1
+            - DS_VESI_IP=10.6.10.2
+            - DS_INIT_S=0
+        depends_on:
+            orchestrator:
+                condition: service_started
+            car1_vesi:
+                condition: service_started
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.10.1
+    
+    car1_vesi:
+        <<: *vesi
+        container_name: car1_vesi
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.10.2
+
+    car1_can_netns:
+        <<: *can-netns
+        container_name: car1_can_netns
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.10.6
+
+    car1_dspace_bridge:
+        <<: *dspace_bridge
+        container_name: car1_dspace_bridge
+        environment:
+            - ASM_IP=10.6.10.1
+            - VESI_IP=10.6.10.2
+            - ROS_DOMAIN_ID=10
+        network_mode: "service:car1_can_netns"
+        ipc: "container:car1_can_netns"
+        depends_on:
+            car1_veos:
+                condition: service_healthy
+            car1_can_netns:
+                condition: service_started
+
+    car1_foxglove_bridge:
+        <<: *dspace_foxglove_bridge
+        container_name: car1_foxglove_bridge
+        environment:
+            - ROS_DOMAIN_ID=10
+        ports:
+            - 8710:8765/tcp
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.10.4
+        depends_on:
+            car1_veos:
+                condition: service_healthy
+
+    car1_demo_stack:
+        <<: *demo_stack
+        container_name: car1_demo_stack
+        environment:
+            - CAR_NUM=10
+            - ROS_DOMAIN_ID=10
+        network_mode: "service:car1_can_netns"
+        ipc: "container:car1_can_netns"
+        depends_on:
+            car1_can_netns:
+                condition: service_started
+    # Race car ID 10 ---- end ----    
+
+    # Race car ID 20 ---- start ----
+    car2_veos:
+        <<: *race_car
+        container_name: car2_veos
+        environment:
+            - DS_ORCHESTRATOR_IP=10.6.1.1
+            - DS_VESI_IP=10.6.20.2
+            - DS_INIT_S=30
+        depends_on:
+            orchestrator:
+                condition: service_started
+            car2_vesi:
+                condition: service_started
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.20.1
+    
+    car2_vesi:
+        <<: *vesi
+        container_name: car2_vesi
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.20.2
+
+    car2_can_netns:
+        <<: *can-netns
+        container_name: car2_can_netns
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.20.6
+
+    car2_dspace_bridge:
+        <<: *dspace_bridge
+        container_name: car2_dspace_bridge
+        environment:
+            - ASM_IP=10.6.20.1
+            - VESI_IP=10.6.20.2
+            - ROS_DOMAIN_ID=20
+        network_mode: "service:car2_can_netns"
+        ipc: "container:car2_can_netns"
+        depends_on:
+            car2_veos:
+                condition: service_healthy
+            car2_can_netns:
+                condition: service_started
+
+    car2_foxglove_bridge:
+        <<: *dspace_foxglove_bridge
+        container_name: car2_foxglove_bridge
+        environment:
+            - ROS_DOMAIN_ID=20
+        ports:
+            - 8720:8765/tcp
+        networks:
+            dspace_network:
+                ipv4_address: 10.6.20.4
+        depends_on:
+            car2_veos:
+                condition: service_healthy
+
+    car2_demo_stack:
+        <<: *demo_stack
+        container_name: car2_demo_stack
+        environment:
+            - CAR_NUM=20
+            - ROS_DOMAIN_ID=20
+        network_mode: "service:car2_can_netns"
+        ipc: "container:car2_can_netns"
+        depends_on:
+            car2_can_netns:
+                condition: service_started
+    # Race car ID 20 ---- end ----    
