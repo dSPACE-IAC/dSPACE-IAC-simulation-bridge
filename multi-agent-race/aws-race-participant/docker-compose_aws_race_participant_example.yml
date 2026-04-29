@@ -110,7 +110,7 @@ services:
     container_name: demo_stack_uva
     environment:
         - SIM_CLOCK_MODE=false
-        - CAR_NUM=10 # Teams need to send veh_num message from 1-10 to get correct 3d asset
+        - CAR_NUM=10 # Teams need to send correct veh_num message from 1-10 to get respective 3d asset
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
     depends_on:
