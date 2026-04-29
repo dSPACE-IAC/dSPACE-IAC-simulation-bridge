@@ -1,0 +1,120 @@
+networks:
+    dspace_network:
+        driver: bridge
+        ipam:
+            config:
+                - subnet: 10.6.0.0/16
+
+services:
+  veos:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-04-23
+    container_name: veos
+    network_mode: host # need network_mode: host to get communication working
+    cap_add:
+        - SYS_PTRACE
+    environment:
+        - DS_CMU_SERVER=<license server>
+        - DS_VEOS_LOAD_OSA=/home/dspace/VEOS/ASM_Traffic.osa
+        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: LVMS, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
+        - DS_START_COMMAND=raceparam-start
+        - DS_VEOS_REMOTE_CAPABLE=1
+        - DS_ORCHESTRATOR_IP=<IP of orchestrator Windows VM>
+        - DS_VESI_IP=127.0.0.1
+        - DS_INIT_S=0
+    shm_size: 256m
+    depends_on:
+        vesi:
+            condition: service_started
+
+  vesi:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-04-23
+    container_name: vesi
+    restart: always
+    ports:
+        - 12345:12345
+        - 33334:33334
+    tty: true
+    networks:
+        dspace_network:
+            ipv4_address: 10.6.0.3
+    depends_on:
+        can-netns:
+            condition: service_started
+
+  can-netns:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-04-23
+    container_name: can-netns
+    ipc: "shareable"
+    shm_size: "512m"
+    ports:
+        - 8765:8765/tcp
+    cap_add:
+        - NET_ADMIN
+    entrypoint:
+        - sh
+        - -lc
+        - |
+            modprobe vcan 2>/dev/null || true
+            ip link add dev can0 type vcan 2>/dev/null || true
+            ip link add dev can1 type vcan 2>/dev/null || true
+            ip link set can0 up || true
+            ip link set can1 up || true
+            tail -f /dev/null
+    networks:
+        dspace_network:
+            ipv4_address: 10.6.0.4
+
+  dspace_restbus_bridge:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-04-23
+    container_name: asm_socketcan_bridge
+    restart: no
+    environment:
+        - SIMMANAGER_PORT=12345
+        - SIM_CLOCK_MODE=false
+        - ASM_IP=<IP of team's Linux race participant VM>
+        - VESI_IP=10.6.0.3
+    volumes:
+        - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
+    cap_add:
+        - NET_ADMIN
+    network_mode: "service:can-netns"
+    ipc: "container:can-netns"
+    depends_on:
+        veos:
+            condition: service_healthy
+        can-netns:
+            condition: service_started
+
+  dspace_foxglove_bridge:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-04-23
+    container_name: foxglove_bridge
+    network_mode: "service:can-netns"
+    ipc: "container:can-netns"
+    depends_on:
+        veos:
+            condition: service_healthy
+        can-netns:
+            condition: service_started
+
+  lichtblick_local:
+    image: ghcr.io/lichtblick-suite/lichtblick:latest
+    container_name: lichtblick_local
+    ports:
+      - 8080:8080
+    networks:
+      dspace_network:
+        ipv4_address: 10.6.0.9
+
+  demo_stack_uva:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-04-23
+    container_name: demo_stack_uva
+    environment:
+        - SIM_CLOCK_MODE=false
+        - CAR_NUM=10 # Teams need to send veh_num message from 1-10 to get correct 3d asset
+    network_mode: "service:can-netns"
+    ipc: "container:can-netns"
+    depends_on:
+      veos:
+        condition: service_healthy
+      can-netns:
+        condition: service_started
