@@ -1,0 +1,122 @@
+{
+  "configById": {
+    "map!17zi8or": {
+      "center": {
+        "lat": 39.79196397661473,
+        "lon": -86.23871415853502
+      },
+      "customTileUrl": "https://mt0.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+      "disabledTopics": [],
+      "followTopic": "/map2d_ego_position",
+      "layer": "custom",
+      "topicColors": {
+        "/foxglove_map": "#ff7ec9",
+        "/map2d_ego_position": "#f8bbf4",
+        "/map2d_fellow1_position": "#d3f9f6",
+        "/map2d_fellow2_position": "#e9e9c4",
+        "/map2d_fellow3_position": "#a6e9b4"
+      },
+      "maxNativeZoom": 24,
+      "foxglovePanelTitle": "IMS",
+      "zoomLevel": 18
+    },
+    "RawMessages!vn9zpj": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/vehicle_inputs",
+      "expansion": "none"
+    },
+    "RawMessages!333sbcq": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/raptor_dbw_interface/accelerator_pedal_cmd",
+      "expansion": "none"
+    },
+    "Plot!45aqqkg": {
+      "paths": [
+        {
+          "value": "/vehicle_inputs.gear_cmd",
+          "enabled": true,
+          "timestampMethod": "receiveTime"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "Plot!3jp32x3": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/clicked_point.header.frame_id",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/novatel_top/rawimu.linear_acceleration.y",
+          "enabled": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/novatel_top/rawimu.linear_acceleration.z",
+          "enabled": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 240
+    },
+    "RawMessages!44bmve0": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/to_raptor"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": {
+    "direction": "row",
+    "first": "map!17zi8or",
+    "second": {
+      "first": {
+        "first": "RawMessages!vn9zpj",
+        "second": {
+          "direction": "column",
+          "second": "Plot!45aqqkg",
+          "first": "RawMessages!333sbcq",
+          "splitPercentage": 59.422328439740525
+        },
+        "direction": "row",
+        "splitPercentage": 44.67712628548236
+      },
+      "second": {
+        "first": "Plot!3jp32x3",
+        "second": "RawMessages!44bmve0",
+        "direction": "row",
+        "splitPercentage": 44.755933797896205
+      },
+      "direction": "column",
+      "splitPercentage": 50.09920634920635
+    },
+    "splitPercentage": 33.63417569193742
+  }
+}
