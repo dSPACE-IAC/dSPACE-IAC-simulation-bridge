@@ -111,6 +111,8 @@ namespace controller
         bool receivedMessagePrinting = false;
         bool receivedDecodedMessagePrinting = false;
         bool sentMessagePrinting = false;
+        bool useRaptorDbwNode = false;
+        bool disableStateMachine = false;
 
         // Main control callback
         int rolling_counter = 0;
@@ -234,11 +236,6 @@ namespace controller
         // Constants
         double wgs84_a = 6378137.0;
         double wgs84_f = 1.0 / 298.257223563;
-
-        // This origin is for Autoverse TMS (Testing purposes only)
-        // double lat0 = 33.03644607463397;
-        // double lon0 = -97.28266786858255;
-        // double hgt0 = 191.2938295872882;
 
         // This origin is for IMS
         double lat0 = 39.7947350319205384;

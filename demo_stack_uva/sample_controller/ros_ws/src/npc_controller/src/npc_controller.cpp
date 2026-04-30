@@ -222,39 +222,58 @@ namespace controller
             veh_num = 42;
         }
 
-    this->verbosePrinting = this->declare_parameter<bool>(
-      "logging.verbose",
-      false);
-    this->receivedMessagePrinting = this->declare_parameter<bool>(
-      "logging.received_can_frames",
-      false);
-    this->receivedDecodedMessagePrinting = this->declare_parameter<bool>(
-      "logging.received_decoded_frames",
-      false);
-    this->sentMessagePrinting = this->declare_parameter<bool>(
-      "logging.sent_can_frames",
-      false);
+        this->verbosePrinting = this->declare_parameter<bool>(
+        "logging.verbose",
+        false);
+        this->receivedMessagePrinting = this->declare_parameter<bool>(
+        "logging.received_can_frames",
+        false);
+        this->receivedDecodedMessagePrinting = this->declare_parameter<bool>(
+        "logging.received_decoded_frames",
+        false);
+        this->sentMessagePrinting = this->declare_parameter<bool>(
+        "logging.sent_can_frames",
+        false);
 
-    if (this->verbosePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Verbose printing enabled");
-    }
-    if (this->receivedMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Raw CAN frame logging enabled");
-    }
-    if (this->receivedDecodedMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Decoded CAN frame logging enabled");
-    }
-    if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Sent CAN frame logging enabled");
-    }
-        
+        if (this->verbosePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Verbose printing enabled");
+        }
+        if (this->receivedMessagePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Raw CAN frame logging enabled");
+        }
+        if (this->receivedDecodedMessagePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Decoded CAN frame logging enabled");
+        }
+        if (this->sentMessagePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Sent CAN frame logging enabled");
+        }
+
+        this->useRaptorDbwNode = this->declare_parameter<bool>(
+            "connection.useRaptorDbwNode",
+            false);
+        if (this->useRaptorDbwNode) {
+            RCLCPP_INFO(this->get_logger(), "Raptor DBW node is used. Direct CAN communication is disabled");
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Direct CAN communication is enabled");
+        }
+        this->disableStateMachine = this->declare_parameter<bool>(
+            "disableStateMachine",
+            false);
+        if (this->disableStateMachine) {
+            RCLCPP_INFO(this->get_logger(), "Statemachine disabled. System will directly proceed to ct_state 8.");
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Statemachine enabled. System will wait for red flag to be initiated.");
+        }
+            
         // Initialize subscribers.
         // bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("/novatel_bottom/bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
-        bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
-        wheel_speed_sub_ = create_subscription<raptor_dbw_msgs::msg::WheelSpeedReport>("wheel_speed_report", qos, std::bind(&ControllerNode::wheel_speed_callback_ros_msg, this, std::placeholders::_1));
-        pt_report_sub_ = create_subscription<npc_controller_msgs::msg::PtReport>("pt_report", qos, std::bind(&ControllerNode::receivePtReport_ros_msg, this, std::placeholders::_1));
-        sys_state_sub_ = this->create_subscription<npc_controller_msgs::msg::MiscReport>("raptor_dbw_interface/misc_report_do", 1, std::bind(&ControllerNode::receiveSysState_ros_msg, this, std::placeholders::_1));
-        flags_sub_ = this->create_subscription<npc_controller_msgs::msg::RcToCt>("raptor_dbw_interface/rc_to_ct", 1, std::bind(&ControllerNode::receiveFlags_ros_msg, this, std::placeholders::_1));
+        if (this->useRaptorDbwNode) {
+            bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
+            wheel_speed_sub_ = create_subscription<raptor_dbw_msgs::msg::WheelSpeedReport>("wheel_speed_report", qos, std::bind(&ControllerNode::wheel_speed_callback_ros_msg, this, std::placeholders::_1));
+            pt_report_sub_ = create_subscription<npc_controller_msgs::msg::PtReport>("pt_report", qos, std::bind(&ControllerNode::receivePtReport_ros_msg, this, std::placeholders::_1));
+            sys_state_sub_ = this->create_subscription<npc_controller_msgs::msg::MiscReport>("raptor_dbw_interface/misc_report_do", 1, std::bind(&ControllerNode::receiveSysState_ros_msg, this, std::placeholders::_1));
+            flags_sub_ = this->create_subscription<npc_controller_msgs::msg::RcToCt>("raptor_dbw_interface/rc_to_ct", 1, std::bind(&ControllerNode::receiveFlags_ros_msg, this, std::placeholders::_1));
+        }
         ct_input_sub_ = this->create_subscription<std_msgs::msg::Int32>("ct_input", qos, std::bind(&ControllerNode::receiveCtInput, this, std::placeholders::_1));
 
         if(this->simModeEnabled)
@@ -414,60 +433,62 @@ namespace controller
         lap_state_inputs_.speeds = speeds;
         lap_state_inputs_.locs = locs;
 
-        const int16_t default_max_retries = 1;
-        const int64_t raw_max_retries = this->declare_parameter<int64_t>("connection.max_retries", static_cast<int64_t>(default_max_retries));
-        max_retries = sanitize_retry_value(raw_max_retries, default_max_retries, this->get_logger(), "Maximum connection retries");
-        RCLCPP_INFO(this->get_logger(), "Maximum connection retries: %d", static_cast<int>(max_retries));
+        if (!this->useRaptorDbwNode) {
+            const int16_t default_max_retries = 1;
+            const int64_t raw_max_retries = this->declare_parameter<int64_t>("connection.max_retries", static_cast<int64_t>(default_max_retries));
+            max_retries = sanitize_retry_value(raw_max_retries, default_max_retries, this->get_logger(), "Maximum connection retries");
+            RCLCPP_INFO(this->get_logger(), "Maximum connection retries: %d", static_cast<int>(max_retries));
 
-        auto pkg_share = ament_index_cpp::get_package_share_directory("npc_controller");
-        can1_dbc_path = this->declare_parameter<std::string>("can.can1_dbc_path", pkg_share + "/config/CAN1-INDY-V23.dbc");
-        auto dbc_path = std::filesystem::path(can1_dbc_path);
-        if (!dbc_path.is_absolute()) {
-        dbc_path = std::filesystem::path(pkg_share) / dbc_path;
-        can1_dbc_path = dbc_path.lexically_normal().string();
-        RCLCPP_INFO(this->get_logger(),
-                    "CAN1 DBC path resolved relative to package share: %s",
-                    can1_dbc_path.c_str());
-        } else {
-        RCLCPP_INFO(this->get_logger(), "CAN1 DBC path: %s", can1_dbc_path.c_str());
-        }
-        can_iface = this->declare_parameter<std::string>(
-            "can.interface",
-            "vcan0");
-        RCLCPP_INFO(this->get_logger(), "CAN interface: %s", can_iface.c_str());
-        const int16_t dbc_attempts = max_retries > 0 ? max_retries : static_cast<int16_t>(1);
-        for (int16_t attempt = 1; attempt <= dbc_attempts; ++attempt) {
-        if (access(can1_dbc_path.c_str(), F_OK) == 0) {
-            RCLCPP_INFO(get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
-            break;
-        }
+            auto pkg_share = ament_index_cpp::get_package_share_directory("npc_controller");
+            can1_dbc_path = this->declare_parameter<std::string>("can.can1_dbc_path", pkg_share + "/config/CAN1-INDY-V23.dbc");
+            auto dbc_path = std::filesystem::path(can1_dbc_path);
+            if (!dbc_path.is_absolute()) {
+            dbc_path = std::filesystem::path(pkg_share) / dbc_path;
+            can1_dbc_path = dbc_path.lexically_normal().string();
+            RCLCPP_INFO(this->get_logger(),
+                        "CAN1 DBC path resolved relative to package share: %s",
+                        can1_dbc_path.c_str());
+            } else {
+            RCLCPP_INFO(this->get_logger(), "CAN1 DBC path: %s", can1_dbc_path.c_str());
+            }
+            can_iface = this->declare_parameter<std::string>(
+                "can.interface",
+                "vcan0");
+            RCLCPP_INFO(this->get_logger(), "CAN interface: %s", can_iface.c_str());
+            const int16_t dbc_attempts = max_retries > 0 ? max_retries : static_cast<int16_t>(1);
+            for (int16_t attempt = 1; attempt <= dbc_attempts; ++attempt) {
+            if (access(can1_dbc_path.c_str(), F_OK) == 0) {
+                RCLCPP_INFO(get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
+                break;
+            }
 
-        if (attempt == dbc_attempts)
-        {
-            RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
-            rclcpp::shutdown();
-            return;
-        }
-
-        RCLCPP_WARN(get_logger(),
-                    "CAN1 DBC not found (%s), attempt %d/%d; retrying in 1 s",
-                    can1_dbc_path.c_str(), attempt, dbc_attempts);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-
-        this->can_socket = open_socket(can_iface);
-        if (this->can_socket < 0) {
-            RCLCPP_FATAL(get_logger(), "Could not open one or more CAN interfaces; shutting down.");
-            if (this->can_socket >= 0) close(this->can_socket);
+            if (attempt == dbc_attempts)
+            {
+                RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
                 rclcpp::shutdown();
-            return;
+                return;
+            }
+
+            RCLCPP_WARN(get_logger(),
+                        "CAN1 DBC not found (%s), attempt %d/%d; retrying in 1 s",
+                        can1_dbc_path.c_str(), attempt, dbc_attempts);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+            this->can_socket = open_socket(can_iface);
+            if (this->can_socket < 0) {
+                RCLCPP_FATAL(get_logger(), "Could not open one or more CAN interfaces; shutting down.");
+                if (this->can_socket >= 0) close(this->can_socket);
+                    rclcpp::shutdown();
+                return;
+            }
+            can_message_info = initialize_messages();
+            buildMessageLookup();
+            RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
+            reader_thread1 = std::thread([this]() {
+                can_reader_loop(this->can_socket, "CAN1");
+            });
         }
-        can_message_info = initialize_messages();
-        buildMessageLookup();
-        RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
-        reader_thread1 = std::thread([this]() {
-            can_reader_loop(this->can_socket, "CAN1");
-        });
     }
 
     // general utilities
@@ -781,10 +802,6 @@ namespace controller
     // Callbacks
     void ControllerNode::simClockTimeCallback(const rosgraph_msgs::msg::Clock &msg)
     {
-        // std::cout << "check controller now time second"<< this->now().seconds() << std::endl;
-        // std::cout << "ccheck controller now time nanosecond"<< this->now().nanoseconds() << std::endl;
-        // std::cout << "check controller message time second" << msg.clock.sec << std::endl;
-        // std::cout << "check controller message time nanosecond" << msg.clock.nanosec << std::endl;
         this->sec = msg.clock.sec;
         this->nsec = msg.clock.nanosec;
         if (msg.clock.sec != 0 && msg.clock.nanosec != 0)
@@ -842,7 +859,6 @@ namespace controller
 
     void ControllerNode::wheel_speed_callback()
     {
-        // void ControllerNode::wheel_speed_callback(const raptor_dbw_msgs::msg::WheelSpeedReport::SharedPtr msg){
         double fl = this->ws_front_left;
         double fr = this->ws_front_right;
         double rl = this->ws_rear_left;
@@ -1069,48 +1085,51 @@ namespace controller
         vehicle_cmd_msg_.header.stamp = this->now();
         vehicle_cmd_pub_->publish(vehicle_cmd_msg_);
 
-        publishCanMessage("gear_shift_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("desired_gear", gear_cmd);
-        });
-        publishCanMessage("accelerator_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("acc_pedal_cmd_counter", rolling_counter);
-            assign("acc_pedal_cmd", throttle_cmd);
-        });
-        publishCanMessage("brake_pressure_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("brk_pressure_cmd_counter", rolling_counter);
-            assign("F_brake_pressure_cmd", brake_cmd_front);
-            assign("R_brake_pressure_cmd", brake_cmd_rear);
-        });
-        raptor_dbw_msgs::msg::AcceleratorPedalCmd ros_accel_cmd;                                    
-        ros_accel_cmd.pedal_cmd = throttle_cmd;
-        ros_accel_cmd.enable  = true;
-        ros_accel_cmd.rolling_counter = rolling_counter;
-        throttle_cmd_pub_->publish(ros_accel_cmd);
+        if (!this->useRaptorDbwNode) {
+            publishCanMessage("gear_shift_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("desired_gear", gear_cmd);
+            });
+            publishCanMessage("accelerator_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("acc_pedal_cmd_counter", rolling_counter);
+                assign("acc_pedal_cmd", throttle_cmd);
+            });
+            publishCanMessage("brake_pressure_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("brk_pressure_cmd_counter", rolling_counter);
+                assign("F_brake_pressure_cmd", brake_cmd_front);
+                assign("R_brake_pressure_cmd", brake_cmd_rear);
+            });
+        } else {
+            raptor_dbw_msgs::msg::AcceleratorPedalCmd ros_accel_cmd;                                    
+            ros_accel_cmd.pedal_cmd = throttle_cmd;
+            ros_accel_cmd.enable  = true;
+            ros_accel_cmd.rolling_counter = rolling_counter;
+            throttle_cmd_pub_->publish(ros_accel_cmd);
 
-        raptor_dbw_msgs::msg::BrakeCmd ros_brake_cmd;
-        ros_brake_cmd.pedal_cmd = 2 * brake_cmd_front;
-        ros_brake_cmd.enable  = true;
-        ros_brake_cmd.rolling_counter = rolling_counter;
-        brake_cmd_pub_->publish(ros_brake_cmd);
+            raptor_dbw_msgs::msg::BrakeCmd ros_brake_cmd;
+            ros_brake_cmd.pedal_cmd = 2 * brake_cmd_front;
+            ros_brake_cmd.enable  = true;
+            ros_brake_cmd.rolling_counter = rolling_counter;
+            brake_cmd_pub_->publish(ros_brake_cmd);
 
-        std_msgs::msg::UInt8 ros_gear_cmd;
-        ros_gear_cmd.data = gear_cmd;
-        gear_cmd_pub_->publish(ros_gear_cmd);
+            std_msgs::msg::UInt8 ros_gear_cmd;
+            ros_gear_cmd.data = gear_cmd;
+            gear_cmd_pub_->publish(ros_gear_cmd);
+        }
 
         // Debug Publisher
         debug_msg_.desired_velocity = desired_velocity_;
@@ -1152,25 +1171,27 @@ namespace controller
             rolling_counter = 0;
         }
 
-        publishCanMessage("steering_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("steering_motor_cmd_counter", rolling_counter);
-            assign("steering_motor_ang_cmd", steering_cmd);
-            assign("driver_steering_P_cmd", 0);
-            assign("driver_steering_I_cmd", 0);
-            assign("driver_steering_D_cmd", 0);
-        });
+        if (!this->useRaptorDbwNode) {
+            publishCanMessage("steering_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("steering_motor_cmd_counter", rolling_counter);
+                assign("steering_motor_ang_cmd", steering_cmd);
+                assign("driver_steering_P_cmd", 0);
+                assign("driver_steering_I_cmd", 0);
+                assign("driver_steering_D_cmd", 0);
+            });
+        } else {
+            raptor_dbw_msgs::msg::SteeringCmd ros_steering_cmd;
+            ros_steering_cmd.angle_cmd = steering_cmd; 
+            ros_steering_cmd.enable = true; 
+            ros_steering_cmd.rolling_counter = rolling_counter;
 
-        raptor_dbw_msgs::msg::SteeringCmd ros_steering_cmd;
-        ros_steering_cmd.angle_cmd = steering_cmd; 
-        ros_steering_cmd.enable = true; 
-        ros_steering_cmd.rolling_counter = rolling_counter;
-
-        steering_cmd_pub_->publish(ros_steering_cmd);
+            steering_cmd_pub_->publish(ros_steering_cmd);
+        }
     }
 
     void ControllerNode::state_machine()
@@ -1197,7 +1218,7 @@ namespace controller
         pit_line_s_ = pit_line_.points[pit_bp].s;
 
         // Process Drive by Wire State Machine
-        ct_state_ = dbw_state_machine(ct_state_, track_flag_, vehicle_flag_, sys_state_, estop_, ct_input_, vehicle_state_.vx);
+        ct_state_ = dbw_state_machine(ct_state_, track_flag_, vehicle_flag_, sys_state_, estop_, ct_input_, vehicle_state_.vx, disableStateMachine);
 
         // Process Lap State Machine
         lap_state_inputs_.ct_state = ct_state_;
@@ -1246,26 +1267,28 @@ namespace controller
         ct_report_pub_->publish(ct_report_msg_);
         ct_counter_ = (ct_counter_ + 1) % 8;
 
-        publishCanMessage("ct_report", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("track_cond_ack", static_cast<int>(track_flag_));
-            assign("veh_sig_ack", static_cast<int>(vehicle_flag_));
-            assign("ct_state", static_cast<int>(ct_state_));
-            assign("ct_state_rolling_counter", ct_counter_);
-            assign("veh_num", veh_num);
-        });
-
-        // Publish CT Report
-        npc_ct_report_msg_.ct_state = static_cast<int>(ct_state_);
-        npc_ct_report_msg_.track_flag_ack = static_cast<int>(track_flag_);
-        npc_ct_report_msg_.veh_flag_ack = static_cast<int>(vehicle_flag_);
-        npc_ct_report_msg_.target_speed = target_speed_;
-        npc_ct_report_msg_.rolling_counter = ct_counter_;
-        npc_ct_report_pub_->publish(npc_ct_report_msg_);
+        if (!this->useRaptorDbwNode) {
+            publishCanMessage("ct_report", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("track_cond_ack", static_cast<int>(track_flag_));
+                assign("veh_sig_ack", static_cast<int>(vehicle_flag_));
+                assign("ct_state", static_cast<int>(ct_state_));
+                assign("ct_state_rolling_counter", ct_counter_);
+                assign("veh_num", veh_num);
+            });
+        } else {
+            // Publish CT Report
+            npc_ct_report_msg_.ct_state = static_cast<int>(ct_state_);
+            npc_ct_report_msg_.track_flag_ack = static_cast<int>(track_flag_);
+            npc_ct_report_msg_.veh_flag_ack = static_cast<int>(vehicle_flag_);
+            npc_ct_report_msg_.target_speed = target_speed_;
+            npc_ct_report_msg_.rolling_counter = ct_counter_;
+            npc_ct_report_pub_->publish(npc_ct_report_msg_);
+        }
 
         // Populate Debug Message
         debug_msg_.ct_state = static_cast<int>(ct_state_);

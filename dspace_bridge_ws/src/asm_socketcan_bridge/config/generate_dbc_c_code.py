@@ -141,7 +141,7 @@ def generate_source(messages, output_source):
         file.write('}\n')
 
 if __name__ == "__main__":
-    dbc_file = "CAN1-INDY-V23.dbc"
+    dbc_file = "CAN1-INDY-V26.dbc"
     output_header = f"./../include/{file_name}.h"
     # output_header = f"{file_name}.h"
     output_source = f"./../src/{file_name}_init.cpp"

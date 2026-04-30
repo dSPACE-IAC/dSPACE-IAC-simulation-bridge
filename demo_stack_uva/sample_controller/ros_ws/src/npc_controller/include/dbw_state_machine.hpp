@@ -4,13 +4,13 @@
 #include "rc_states.hpp"
 namespace controller
 {
-    CTState dbw_state_machine(CTState &ct_state, Rc2TrackFlags &track_flag, Rc2VehFlags &vehicle_flag_, SysState &sys_state, bool estop_, int &ct_input, double &velocity)
+    CTState dbw_state_machine(CTState &ct_state, Rc2TrackFlags &track_flag, Rc2VehFlags &vehicle_flag_, SysState &sys_state, bool estop_, int &ct_input, double &velocity, bool disableStateMachine)
     {
         switch (ct_state)
         {
 
         case CTState::CT255_DEFAULT: // CT255
-            if (track_flag == Rc2TrackFlags::Rc2TrackFlag_Red)
+            if (track_flag == Rc2TrackFlags::Rc2TrackFlag_Red || disableStateMachine)
             {
                 ct_state = CTState::CT1_PWR_ON;
             }
@@ -32,7 +32,7 @@ namespace controller
             {
                 ct_state = CTState::CT12_EMRG_SHUTDOWN;
             }
-            else if (track_flag == Rc2TrackFlags::Rc2TrackFlag_Red)
+            else if (track_flag == Rc2TrackFlags::Rc2TrackFlag_Red || disableStateMachine)
             {
                 ct_state = CTState::CT3_ACT_TEST;
             }
@@ -43,7 +43,7 @@ namespace controller
             {
                 ct_state = CTState::CT12_EMRG_SHUTDOWN;
             }
-            else if (track_flag == Rc2TrackFlags::Rc2TrackFlag_Red)
+            else if (track_flag == Rc2TrackFlags::Rc2TrackFlag_Red || disableStateMachine)
             {
                 ct_state = CTState::CT4_CRANKREADY;
             }
@@ -54,7 +54,7 @@ namespace controller
             {
                 ct_state = CTState::CT12_EMRG_SHUTDOWN;
             }
-            else if (vehicle_flag_ == Rc2VehFlags::Rc2VehFlag_Orange)
+            else if (vehicle_flag_ == Rc2VehFlags::Rc2VehFlag_Orange || disableStateMachine)
             {
                 ct_state = CTState::CT5_CRANKING;
             }
@@ -69,7 +69,7 @@ namespace controller
             {
                 ct_state = CTState::CT11_CNTRL_SHUTDOWN;
             }
-            else if (sys_state == SysState::SS8_ENG_RUNNING)
+            else if (sys_state == SysState::SS8_ENG_RUNNING || disableStateMachine)
             {
                 ct_state = CTState::CT6_RACEREADY;
             }
@@ -99,7 +99,7 @@ namespace controller
             {
                 ct_state = CTState::CT11_CNTRL_SHUTDOWN;
             }
-            else if (sys_state == SysState::SS9_DRIVING && (track_flag == Rc2TrackFlags::Rc2TrackFlag_FCY || vehicle_flag_ == Rc2VehFlags::Rc2VehFlag_Yellow))
+            else if ((sys_state == SysState::SS9_DRIVING && (track_flag == Rc2TrackFlags::Rc2TrackFlag_FCY || vehicle_flag_ == Rc2VehFlags::Rc2VehFlag_Yellow)) || disableStateMachine)
             {
                 ct_state = CTState::CT8_CAUTION;
             }

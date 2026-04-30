@@ -1,9 +1,9 @@
 #ifndef RTW_HEADER_ASMBus_h_
 #define RTW_HEADER_ASMBus_h_
 #include "rtwtypes.h"
-#include "ASMBus.h"
 #include "multiword_types.h"
-#pragma pack(push, 1) 
+
+#pragma pack(push, 1)
 typedef struct 
 {
   real_T angle_Alpha_FL_Wheel_deg;
@@ -1687,7 +1687,7 @@ typedef struct
 } GearShifter;
 typedef struct 
 {
-  real_T s_Preview_Lat_m;
+  real_T s_Preview_Lat_m[10];
   real_T angle_Steering_rad;
   real_T angle_SteeringWheel_deg;
 } LatCtrl1;
@@ -2315,6 +2315,7 @@ typedef struct
   int8_T timeinfo_leapseconds;
   dop dop_var;
 } gps_group;
+
 typedef struct 
 {
   insstatus insstatus_var;
@@ -2495,6 +2496,7 @@ typedef struct
   raw_imu raw_imu_var;
   inspava inspava_var;
 } nova_tel_pwr_pak;
+
 typedef struct 
 {
   race_control race_control_var;
@@ -2516,6 +2518,5 @@ typedef struct
   asm_bus asm_bus_var;
   sim_interface sim_interface_var;
 } ASMBus;
-
 #pragma pack(pop)
 #endif                                 /* RTW_HEADER_ASMBus_h_ */
