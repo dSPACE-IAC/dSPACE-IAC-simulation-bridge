@@ -17,6 +17,7 @@
     logging.received_can_frames: false
     logging.received_decoded_frames: false
     logging.sent_can_frames: false
+    logging.publish_ros_all: true
 
     track_name: "ims"
     vehicle:

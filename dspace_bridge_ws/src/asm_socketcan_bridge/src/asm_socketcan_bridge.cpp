@@ -3078,7 +3078,8 @@ namespace asm_socketcan_bridge {
       assign("safety_switch_state", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.safety_switch_state);
       assign("mode_switch_state", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.mode_switch_state);
       assign("sys_state", bus.asm_bus_var.race_control_var.sys_state);
-      assign("raptor_rolling_counter", this->raptor_rolling_counter++);
+      assign("raptor_rolling_counter", this->raptor_rolling_counter);
+      this->raptor_rolling_counter = (this->raptor_rolling_counter + 1u) % 16u;
     });
   }
 

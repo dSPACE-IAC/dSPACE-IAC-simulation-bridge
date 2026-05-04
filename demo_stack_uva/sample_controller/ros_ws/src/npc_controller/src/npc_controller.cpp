@@ -234,6 +234,9 @@ namespace controller
         this->sentMessagePrinting = this->declare_parameter<bool>(
         "logging.sent_can_frames",
         false);
+        this->publish_ros_all = this->declare_parameter<bool>(
+        "logging.publish_ros_all",
+        false);
 
         if (this->verbosePrinting) {
         RCLCPP_INFO(this->get_logger(), "Verbose printing enabled");
@@ -267,8 +270,8 @@ namespace controller
             
         // Initialize subscribers.
         // bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("/novatel_bottom/bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
+        bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
         if (this->useRaptorDbwNode) {
-            bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
             wheel_speed_sub_ = create_subscription<raptor_dbw_msgs::msg::WheelSpeedReport>("wheel_speed_report", qos, std::bind(&ControllerNode::wheel_speed_callback_ros_msg, this, std::placeholders::_1));
             pt_report_sub_ = create_subscription<npc_controller_msgs::msg::PtReport>("pt_report", qos, std::bind(&ControllerNode::receivePtReport_ros_msg, this, std::placeholders::_1));
             sys_state_sub_ = this->create_subscription<npc_controller_msgs::msg::MiscReport>("raptor_dbw_interface/misc_report_do", 1, std::bind(&ControllerNode::receiveSysState_ros_msg, this, std::placeholders::_1));
@@ -1113,7 +1116,7 @@ namespace controller
                 assign("F_brake_pressure_cmd", brake_cmd_front);
                 assign("R_brake_pressure_cmd", brake_cmd_rear);
             });
-        } else {
+        } else if (this->useRaptorDbwNode || this->publish_ros_all) {
             raptor_dbw_msgs::msg::AcceleratorPedalCmd ros_accel_cmd;                                    
             ros_accel_cmd.pedal_cmd = throttle_cmd;
             ros_accel_cmd.enable  = true;
@@ -1184,7 +1187,7 @@ namespace controller
                 assign("driver_steering_I_cmd", 0);
                 assign("driver_steering_D_cmd", 0);
             });
-        } else {
+        } else if (this->useRaptorDbwNode || this->publish_ros_all) {
             raptor_dbw_msgs::msg::SteeringCmd ros_steering_cmd;
             ros_steering_cmd.angle_cmd = steering_cmd; 
             ros_steering_cmd.enable = true; 
@@ -1280,7 +1283,7 @@ namespace controller
                 assign("ct_state_rolling_counter", ct_counter_);
                 assign("veh_num", veh_num);
             });
-        } else {
+        } else if (this->useRaptorDbwNode || this->publish_ros_all) {
             // Publish CT Report
             npc_ct_report_msg_.ct_state = static_cast<int>(ct_state_);
             npc_ct_report_msg_.track_flag_ack = static_cast<int>(track_flag_);
