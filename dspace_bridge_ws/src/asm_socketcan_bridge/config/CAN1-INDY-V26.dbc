@@ -330,8 +330,8 @@ BO_ 1250 marelli_report_1: 8 Vector__XXX
  SG_ marelli_rc_lte_rssi : 25|8@1- (1,0) [0|0] "" Vector__XXX
 
 BO_ 1251 marelli_report_2: 8 Vector__XXX
- SG_ marelli_gps_lat : 0|32@1- (1e-07,0) [0|0] "°" Vector__XXX
- SG_ marelli_gps_long : 32|32@1- (1e-07,0) [0|0] "°" Vector__XXX
+ SG_ marelli_gps_lat : 0|32@1- (1e-07,0) [0|0] "ï¿½" Vector__XXX
+ SG_ marelli_gps_long : 32|32@1- (1e-07,0) [0|0] "ï¿½" Vector__XXX
 
 BO_ 1405 ct_report_2: 8 Vector__XXX
  SG_ marelli_track_flag_ack : 0|8@1+ (1,0) [0|0] "" Vector__XXX

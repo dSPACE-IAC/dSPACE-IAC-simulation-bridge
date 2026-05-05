@@ -278,6 +278,8 @@ namespace asm_socketcan_bridge {
                    [this]() { this->publish_pt_report_2(); });
     register_timer("publish_pt_report_3_ms",
                    [this]() { this->publish_pt_report_3(); });
+    register_timer("publish_pt_report_4_ms",
+             [this]() { this->publish_pt_report_4(); });
     register_timer("publish_steering_report_ms",
                    [this]() { this->publish_steering_report(); });
     register_timer("publish_steering_report_extd_ms",
@@ -494,7 +496,7 @@ namespace asm_socketcan_bridge {
 
     can1_dbc_path = this->declare_parameter<std::string>(
       "can.can1_dbc_path",
-      pkg_share + "/config/CAN1-INDY-V23.dbc");
+      pkg_share + "/config/CAN1-INDY-V26.dbc");
     auto dbc_path = std::filesystem::path(can1_dbc_path);
     if (!dbc_path.is_absolute()) {
       dbc_path = std::filesystem::path(pkg_share) / dbc_path;
@@ -797,6 +799,10 @@ namespace asm_socketcan_bridge {
     this->feedbackCmd.vehicle_inputs.steering_cmd = 0.0;
     this->feedbackCmd.vehicle_inputs.steering_cmd_count = 0;
     this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 0;
+    this->feedbackCmd.vehicle_inputs.driver_steering_FF_cmd = 0.0f;
+    this->feedbackCmd.vehicle_inputs.driver_steering_P_cmd = 0.0f;
+    this->feedbackCmd.vehicle_inputs.driver_steering_I_cmd = 0.0f;
+    this->feedbackCmd.vehicle_inputs.driver_steering_D_cmd = 0.0f;
 
     this->feedbackCmd.vehicle_inputs.gear_cmd = 1;
     this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 0;
@@ -807,7 +813,9 @@ namespace asm_socketcan_bridge {
     this->feedbackCmd.to_raptor.rolling_counter = 0;
     this->feedbackCmd.to_raptor.veh_num = 255;
 
-    this->feedbackCmd.to_raptor.push2pass_request = false;
+    this->feedbackCmd.to_raptor.push2pass_switch = 0;
+    this->feedbackCmd.to_raptor.push2pass_request = 0;
+    this->feedbackCmd.to_raptor.drive_steering_FF_cntrl_switch = 0;
   }
 
   void AsmSocketCanBridgeNode::can_reader_loop(int sock, const std::string &bus_id)
@@ -871,12 +879,12 @@ namespace asm_socketcan_bridge {
           if (const auto value = get_scaled("F_brake_pressure_cmd")) {
             // Todo priority high: Change datatype to int16 to match DBC
             this->feedbackCmd.vehicle_inputs.brake_cmd_front =
-              static_cast<uint16_t>(std::floor(*value));
+              static_cast<int16_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("R_brake_pressure_cmd")) {
             // Todo priority high: Change datatype to int16 to match DBC
             this->feedbackCmd.vehicle_inputs.brake_cmd_rear =
-              static_cast<uint16_t>(std::floor(*value));
+              static_cast<int16_t>(std::floor(*value));
           }
           this->feedbackCmd.vehicle_inputs.enable_brake_cmd = 1;
           this->feedbackDataAvailabe = true;
@@ -931,6 +939,7 @@ namespace asm_socketcan_bridge {
           float driver_steering_P_cmd = 0.0f;
           float driver_steering_I_cmd = 0.0f;
           float driver_steering_D_cmd = 0.0f;
+          float driver_steering_FF_cmd = 0.0f;
           const auto get_scaled = [&](std::string_view name) {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
@@ -941,28 +950,36 @@ namespace asm_socketcan_bridge {
           if (const auto value = get_scaled("steering_motor_ang_cmd")) {
             // Todo priority high: Change datatype to int16 to match DBC
             this->feedbackCmd.vehicle_inputs.steering_cmd =
-              static_cast<float>(*value);
+              static_cast<int16_t>(std::floor(*value));
+          }
+          if (const auto value = get_scaled("driver_steering_FF_cmd")) {
+            driver_steering_FF_cmd = static_cast<float>(*value);
+            this->feedbackCmd.vehicle_inputs.driver_steering_FF_cmd = driver_steering_FF_cmd;
           }
           if (const auto value = get_scaled("driver_steering_P_cmd")) {
             // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
             driver_steering_P_cmd = static_cast<float>(*value);
+            this->feedbackCmd.vehicle_inputs.driver_steering_P_cmd = driver_steering_P_cmd;
           }
           if (const auto value = get_scaled("driver_steering_I_cmd")) {
             // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
             driver_steering_I_cmd = static_cast<float>(*value);
+            this->feedbackCmd.vehicle_inputs.driver_steering_I_cmd = driver_steering_I_cmd;
           }
           if (const auto value = get_scaled("driver_steering_D_cmd")) {
             // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
             driver_steering_D_cmd = static_cast<float>(*value);
+            this->feedbackCmd.vehicle_inputs.driver_steering_D_cmd = driver_steering_D_cmd;
           }
           this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
           this->feedbackDataAvailabe = true;
           if (this->receivedDecodedMessagePrinting) {
             RCLCPP_INFO(get_logger(),
-                        "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f  ",
+                        "steering_cmd_count: %d  steering_cmd: %f  enable_steering_cmd: %d  driver_steering_FF_cmd: %f  driver_steering_P_cmd: %f  driver_steering_I_cmd: %f  driver_steering_D_cmd: %f",
                         this->feedbackCmd.vehicle_inputs.steering_cmd_count,
                         static_cast<double>(this->feedbackCmd.vehicle_inputs.steering_cmd),
                         this->feedbackCmd.vehicle_inputs.enable_steering_cmd,
+                        static_cast<double>(driver_steering_FF_cmd),
                         static_cast<double>(driver_steering_P_cmd),
                         static_cast<double>(driver_steering_I_cmd),
                         static_cast<double>(driver_steering_D_cmd));
@@ -1082,6 +1099,8 @@ namespace asm_socketcan_bridge {
           uint8_t driver_traction_aim_switch = 0U;
           uint8_t driver_traction_range_switch = 0U;
           uint8_t drive_steering_gain_cntrl_switch = 0U;
+          uint8_t drive_steering_FF_cntrl_switch = 0U;
+          uint8_t push2pass_switch = 0U;
           const auto get_scaled = [&](std::string_view name) {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
@@ -1090,10 +1109,12 @@ namespace asm_socketcan_bridge {
             this->feedbackCmd.vehicle_inputs.brake_bias_switch =
               static_cast<uint8_t>(std::floor(*value));
           }
-          if (const auto value = get_scaled("push2pass_request")) {
+          if (const auto value = get_scaled("push2pass_switch")) {
             // Todo priority high: Change datatype to uint8 to match DBC
+            push2pass_switch = static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.push2pass_switch = push2pass_switch;
             this->feedbackCmd.to_raptor.push2pass_request =
-              static_cast<uint8_t>(std::floor(*value));
+              push2pass_switch;
           }
           if (const auto value = get_scaled("driver_traction_aim_switch")) {
             // Todo priority low
@@ -1110,15 +1131,22 @@ namespace asm_socketcan_bridge {
             drive_steering_gain_cntrl_switch =
               static_cast<uint8_t>(std::floor(*value));
           }
+          if (const auto value = get_scaled("drive_steering_FF_cntrl_switch")) {
+            drive_steering_FF_cntrl_switch =
+              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.drive_steering_FF_cntrl_switch =
+              drive_steering_FF_cntrl_switch;
+          }
           this->feedbackDataAvailabe = true;
           if (this->receivedDecodedMessagePrinting) {
             RCLCPP_INFO(get_logger(),
-                        "brake_bias_aim_switch: %d  push2pass_request: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d",
+                        "brake_bias_aim_switch: %d  push2pass_switch: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d  drive_steering_FF_cntrl_switch: %d",
                         this->feedbackCmd.vehicle_inputs.brake_bias_switch,
-                        this->feedbackCmd.to_raptor.push2pass_request,
+                        this->feedbackCmd.to_raptor.push2pass_switch,
                         driver_traction_aim_switch,
                         driver_traction_range_switch,
-                        drive_steering_gain_cntrl_switch);
+                        drive_steering_gain_cntrl_switch,
+                        drive_steering_FF_cntrl_switch);
           }
           break;
         }
@@ -1347,11 +1375,11 @@ namespace asm_socketcan_bridge {
         if (canbus_raw_buffer_.size() >= required_canbus_size) {
           std::memcpy(&canBusStorage_, canbus_raw_buffer_.data(), required_canbus_size);
           this->canBus = &canBusStorage_;
-          if (this->canBus->asm_bus_var.environment.maneuver.maneuverScheduler.info.maneuverState == 3 &&
+          if (this->canBus->maneuverInfo.maneuverState == 3 &&
               !this->maneuverStarted) {
             this->maneuverStarted = true;
             RCLCPP_INFO(get_logger(), "Maneuver started. Data will be published.");
-          } else if (this->canBus->asm_bus_var.environment.maneuver.maneuverScheduler.info.maneuverState != 3 &&
+          } else if (this->canBus->maneuverInfo.maneuverState != 3 &&
                      this->maneuverStarted) {
             RCLCPP_INFO(get_logger(), "Maneuver stopped. System will be reset.");
             initializeFeedback();
@@ -1732,30 +1760,30 @@ namespace asm_socketcan_bridge {
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
       if (fellowID == 0) {
-        foxgloveMap.latitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat;
-        foxgloveMap.longitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon;
-        foxgloveMap.altitude = bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.hgt;
+        foxgloveMap.latitude = bus.nova_tel_pwr_pak1_var.best_pos_var.lat;
+        foxgloveMap.longitude = bus.nova_tel_pwr_pak1_var.best_pos_var.lon;
+        foxgloveMap.altitude = bus.nova_tel_pwr_pak1_var.best_pos_var.hgt;
         populated = true;
         return;
       }
       if (fellowID == 1) {
-        foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[0];
-        foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[0];
-        foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[0];
+        foxgloveMap.latitude = bus.ground_truth_var.lat[0];
+        foxgloveMap.longitude = bus.ground_truth_var.lon[0];
+        foxgloveMap.altitude = bus.ground_truth_var.hgt[0];
         populated = true;
         return;
       }
       if (fellowID == 2) {
-        foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[1];
-        foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[1];
-        foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[1];
+        foxgloveMap.latitude = bus.ground_truth_var.lat[1];
+        foxgloveMap.longitude = bus.ground_truth_var.lon[1];
+        foxgloveMap.altitude = bus.ground_truth_var.hgt[1];
         populated = true;
         return;
       }
       if (fellowID == 3) {
-        foxgloveMap.latitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[2];
-        foxgloveMap.longitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[2];
-        foxgloveMap.altitude = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[2];
+        foxgloveMap.latitude = bus.ground_truth_var.lat[2];
+        foxgloveMap.longitude = bus.ground_truth_var.lon[2];
+        foxgloveMap.altitude = bus.ground_truth_var.hgt[2];
         populated = true;
         return;
       }
@@ -1821,8 +1849,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::BESTPOS message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateBestPosMessage(message, *data);
       populated = true;
     })) {
@@ -1850,8 +1878,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::BESTVEL message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateBestVelMessage(message, *data);
       populated = true;
     })) {
@@ -1879,8 +1907,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::BESTVEL message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateBestVelMessage(message, *data);
       populated = true;
     })) {
@@ -1908,8 +1936,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::INSPVA message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateInspvaMessage(message, *data);
       populated = true;
     })) {
@@ -1937,8 +1965,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::HEADING2 message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateHeading2Message(message, *data);
       populated = true;
     })) {
@@ -1966,8 +1994,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::RAWIMU message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateRawImuMessage(message, *data);
       populated = true;
     })) {
@@ -1995,8 +2023,8 @@ namespace asm_socketcan_bridge {
     sensor_msgs::msg::Imu message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateRawImuXMessage(message, *data);
       populated = true;
     })) {
@@ -2016,8 +2044,8 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("novatel_lat", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
-      assign("novatel_long", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
+      assign("novatel_lat", bus.nova_tel_pwr_pak1_var.best_pos_var.lat);
+      assign("novatel_long", bus.nova_tel_pwr_pak1_var.best_pos_var.lon);
     });
   }
 
@@ -2027,7 +2055,7 @@ namespace asm_socketcan_bridge {
     setHeader(attitudeGroup.header, "world");
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.attitude_group_var;
+      const auto &source = bus.vector_nav_vn1_var.attitude_group_var;
       attitudeGroup.vpestatus.attitude_quality = source.vpestatus_var.attitude_quality;
       attitudeGroup.vpestatus.gyro_saturation = source.vpestatus_var.gyro_saturation;
       attitudeGroup.vpestatus.gyro_saturation_recovery = source.vpestatus_var.gyro_saturation_recovery;
@@ -2082,7 +2110,7 @@ namespace asm_socketcan_bridge {
     setHeader(commonGroup.header, "world");
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.common_group_var;
+      const auto &source = bus.vector_nav_vn1_var.common_group_var;
       commonGroup.timestartup = source.timestartup;
       commonGroup.timegps = source.timegps;
       commonGroup.timesyncin = source.timesyncin;
@@ -2152,7 +2180,7 @@ namespace asm_socketcan_bridge {
     setHeader(imuGroup.header, "world");
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.imu_group_var;
+      const auto &source = bus.vector_nav_vn1_var.imu_group_var;
       imuGroup.imustatus = source.imustatus;
       imuGroup.uncompmag.x = source.uncompmag_var.x;
       imuGroup.uncompmag.y = source.uncompmag_var.y;
@@ -2200,7 +2228,7 @@ namespace asm_socketcan_bridge {
   {
     vectornav_msgs::msg::GpsGroup gpsGroup;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      populateGpsGroupMessage(gpsGroup, bus.sim_interface_var.vector_nav_vn1_var.gps_group1_var);
+      populateGpsGroupMessage(gpsGroup, bus.vector_nav_vn1_var.gps_group1_var);
     })) {
       return;
     }
@@ -2215,7 +2243,7 @@ namespace asm_socketcan_bridge {
   {
     vectornav_msgs::msg::GpsGroup gpsGroup;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      populateGpsGroupMessage(gpsGroup, bus.sim_interface_var.vector_nav_vn1_var.gps_group2_var);
+      populateGpsGroupMessage(gpsGroup, bus.vector_nav_vn1_var.gps_group2_var);
     })) {
       return;
     }
@@ -2232,7 +2260,7 @@ namespace asm_socketcan_bridge {
     setHeader(insGroup.header, "world");
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.ins_group_var;
+      const auto &source = bus.vector_nav_vn1_var.ins_group_var;
       insGroup.insstatus.gps_fix = source.insstatus_var.gps_fix;
       insGroup.insstatus.time_error = source.insstatus_var.time_error;
       insGroup.insstatus.imu_error = source.insstatus_var.imu_error;
@@ -2286,7 +2314,7 @@ namespace asm_socketcan_bridge {
     setHeader(timeGroup.header, "");
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto &source = bus.sim_interface_var.vector_nav_vn1_var.time_group_var;
+      const auto &source = bus.vector_nav_vn1_var.time_group_var;
       timeGroup.timestartup = source.timestartup;
       timeGroup.timegps = source.timegps;
       timeGroup.gpstow = source.gpstow;
@@ -2346,7 +2374,7 @@ namespace asm_socketcan_bridge {
     bool groundTruthArrayFilled = false;
 
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto fellow_count_raw = bus.sim_interface_var.vehicle_sensors_var.fellow_count;
+      const auto fellow_count_raw = bus.ground_truth_var.fellow_count;
       const auto fellow_count = static_cast<size_t>(fellow_count_raw);
       if (fellow_count == 0) {
         groundTruthArray.vehicles.resize(1);
@@ -2365,25 +2393,25 @@ namespace asm_socketcan_bridge {
           RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 3");
         }
 
-        vehicle.car_num = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.car_num[vehicleID];
-        vehicle.lat = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lat[vehicleID];
-        vehicle.lon = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.lon[vehicleID];
-        vehicle.hgt = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.hgt[vehicleID];
-        vehicle.vx = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.vx[vehicleID];
-        vehicle.vy = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.vy[vehicleID];
-        vehicle.vz = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.vz[vehicleID];
+        vehicle.car_num = bus.ground_truth_var.car_num[vehicleID];
+        vehicle.lat = bus.ground_truth_var.lat[vehicleID];
+        vehicle.lon = bus.ground_truth_var.lon[vehicleID];
+        vehicle.hgt = bus.ground_truth_var.hgt[vehicleID];
+        vehicle.vx = bus.ground_truth_var.vx[vehicleID];
+        vehicle.vy = bus.ground_truth_var.vy[vehicleID];
+        vehicle.vz = bus.ground_truth_var.vz[vehicleID];
         if (this->verbosePrinting) {
           RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 4");
         }
-        vehicle.yaw = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.yaw[vehicleID];
-        vehicle.pitch = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.pitch[vehicleID];
-        vehicle.roll = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.roll[vehicleID];
+        vehicle.yaw = bus.ground_truth_var.yaw[vehicleID];
+        vehicle.pitch = bus.ground_truth_var.pitch[vehicleID];
+        vehicle.roll = bus.ground_truth_var.roll[vehicleID];
         if (this->verbosePrinting) {
           RCLCPP_INFO(this->get_logger(), "publishGroundTruthArray Checkpoint 5");
         }
-        vehicle.del_x = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.del_x[vehicleID];
-        vehicle.del_y = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.del_y[vehicleID];
-        vehicle.del_z = bus.sim_interface_var.vehicle_sensors_var.ground_truth_var.del_z[vehicleID];
+        vehicle.del_x = bus.ground_truth_var.del_x[vehicleID];
+        vehicle.del_y = bus.ground_truth_var.del_y[vehicleID];
+        vehicle.del_z = bus.ground_truth_var.del_z[vehicleID];
         groundTruthArrayFilled = true;
       }
     })) {
@@ -2432,7 +2460,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &race_control = bus.asm_bus_var.race_control_var;
+      const auto &race_control = bus.race_control_var;
       assign("base_to_car_heartbeat", race_control.base_to_car_heartbeat);
       assign("track_flag", race_control.track_flag);
       assign("veh_flag", race_control.veh_flag);
@@ -2451,12 +2479,10 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("marelli_track_flag", bus.asm_bus_var.race_control_var.track_flag);
-      assign("marelli_vehicle_flag", bus.asm_bus_var.race_control_var.veh_flag);
-      // Todo medium priority: Check whether track flag or veh flag is the better choice here. Low priority long term implement sector flag simulation.
-      assign("marelli_sector_flag", bus.asm_bus_var.race_control_var.track_flag);
-      // Todo low priority: Feed from ASM and set to 0 if timeout of more than 10s occurs
-      assign("marelli_rc_base_sync_check", static_cast<uint8_t>(1));
+      assign("marelli_track_flag", bus.race_control_var.track_flag);
+      assign("marelli_vehicle_flag", bus.race_control_var.veh_flag);
+      assign("marelli_sector_flag", bus.race_control_var.marelli_sector_flag);
+      assign("marelli_rc_base_sync_check", bus.race_control_var.marelli_rc_base_sync_check);
       // Not important -> no need to fill other values than 0
       assign("marelli_rc_lte_rssi", 0);
     });
@@ -2471,8 +2497,8 @@ namespace asm_socketcan_bridge {
         }
       };
       // Todo low priority: Change to dedicated signal later
-      assign("marelli_gps_lat", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lat);
-      assign("marelli_gps_long", bus.sim_interface_var.nova_tel_pwr_pak1_var.best_pos_var.lon);
+      assign("marelli_gps_lat", bus.nova_tel_pwr_pak1_var.best_pos_var.lat);
+      assign("marelli_gps_long", bus.nova_tel_pwr_pak1_var.best_pos_var.lon);
     });
   }
 
@@ -2484,8 +2510,8 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &race_control = bus.asm_bus_var.race_control_var;
-      assign("laps", race_control.lap_count);
+      const auto &race_control = bus.race_control_var;
+      assign("laps", race_control.laps);
       assign("lap_time", race_control.lap_time);
       assign("time_stamp", race_control.time_stamp);
     });
@@ -2517,7 +2543,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
+      const auto &powertrain = bus.vehicle_sensors_var.power_train_data_var;
       assign("throttle_position", powertrain.throttle_position);
       assign("current_gear", powertrain.current_gear);
       assign("engine_speed_rpm", powertrain.engine_rpm);
@@ -2536,7 +2562,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
+      const auto &powertrain = bus.vehicle_sensors_var.power_train_data_var;
       assign("fuel_pressure_kPa", powertrain.fuel_pressure);
       assign("engine_oil_pressure_kPa", powertrain.engine_oil_pressure);
       assign("coolant_temperature", powertrain.engine_coolant_temperature);
@@ -2553,33 +2579,45 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &powertrain = bus.sim_interface_var.vehicle_sensors_var.power_train_data_var;
+      const auto &powertrain = bus.vehicle_sensors_var.power_train_data_var;
       assign("engine_oil_temperature", powertrain.engine_oil_temperature);
       assign("torque_wheels", powertrain.torque_wheels_nm);
-      // Todo low priority: Feedback of switch set by the teams in dash_sw_cmd_message
-      assign("driver_traction_aim_swicth_fbk", 0);
-      // Todo low priority: Feedback of switch set by the teams in dash_sw_cmd_message
-      assign("driver_traction_range_switch_fbk", 0);
-      const auto &race_control = bus.asm_bus_var.race_control_var;
+      assign("driver_traction_aim_swicth_fbk", powertrain.driver_traction_aim_switch_fbk);
+      assign("driver_traction_range_switch_fbk", powertrain.driver_traction_range_switch_fbk);
+      const auto &race_control = bus.race_control_var;
       assign("push2pass_status", race_control.push2pass_status);
       assign("push2pass_budget_s", race_control.push2pass_budget_s);
       assign("push2pass_active_app_limit", race_control.push2pass_active_app_limit);
     });
   }
 
+  void AsmSocketCanBridgeNode::publish_pt_report_4()
+  {
+    publishCanMessage("pt_report_4", [&](PreparedCanMessage &message, const ASMBus &bus) {
+      auto assign = [&](std::string_view signal_name, auto value) {
+        if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+          insertBits(message.frame.data, *signal, value);
+        }
+      };
+      const auto &powertrain = bus.vehicle_sensors_var.power_train_data_var;
+      assign("boost_aim_psi", powertrain.boost_aim_psi);
+      assign("boost_press_psi", powertrain.boost_press_psi);
+      assign("intake_manifold_press_kPa", powertrain.intake_manifold_press_kPa);
+      assign("intake_air_temp_degC", powertrain.intake_air_temp_degC);
+    });
+  }
+
   void AsmSocketCanBridgeNode::publish_steering_report()
   {
-    publishCanMessage("steering_report", [&](PreparedCanMessage &message, const ASMBus &) {
+    publishCanMessage("steering_report", [&](PreparedCanMessage &message, const ASMBus &bus) {
       auto assign = [&](std::string_view signal_name, auto value) {
         if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
       };
       assign("steering_motor_fdbk_counter", this->steering_motor_fdbk_counter++);
-      // Todo medium priority: Fill from ASM with real value
-      assign("primary_steering_angular_rate", 0);
-      // Todo high priority: Fill from ASM with real value
-      assign("commanded_steering_rate", 0);
+      assign("primary_steering_angular_rate", bus.vehicle_sensors_var.vehicle_data_var.steering_var.primary_steering_angular_rate);
+      assign("commanded_steering_rate", bus.vehicle_sensors_var.vehicle_data_var.steering_var.commanded_steering_rate);
     });
   }
 
@@ -2591,7 +2629,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &steering_angle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.steering_wheel_angle;
+      const auto &steering_angle = bus.vehicle_sensors_var.vehicle_data_var.steering_var.steering_wheel_angle;
       assign("average_steering_ang_fdbk", steering_angle);
       assign("primary_steering_angle_fbk", steering_angle);
       assign("secondary_steering_ang_fdbk", steering_angle);
@@ -2600,43 +2638,38 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::publish_steering_report_extd_2()
   {
-    publishCanMessage("steering_report_extd_2", [&](PreparedCanMessage &message, const ASMBus &) {
+    publishCanMessage("steering_report_extd_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
       auto assign = [&](std::string_view signal_name, auto value) {
         if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      // Todo priority medium: Output of feedback controller on raptor for steering system. Teams may use it for tuning low-level controllers
-      assign("motor_duty_cycle_cmd", 0);
-      // Todo priority medium: Add 10 ms delay to cmd - Just an ack from DBW(steer) ECU of received cmd
-      assign("motor_duty_cycle_fbk", 0);
-      // Todo priority low: Feedback of current sensor on motor controller
-      assign("motor_current_fbk", 0);
+      const auto &steering = bus.vehicle_sensors_var.vehicle_data_var.steering_var;
+      assign("motor_duty_cycle_cmd", steering.motor_duty_cycle_cmd);
+      assign("motor_duty_cycle_fbk", steering.motor_duty_cycle_fbk);
+      assign("motor_current_fbk", steering.motor_current_fbk);
       // Not important: Feedback of voltage measured at DBW(steer) ECU
       assign("sbw_ecu_voltage", 0);
       // Not important: Feedback of voltage measured at DBW(steer) ECU
       assign("sbw_ecu_temp", 0);
       // Not important: Diagnostics
       assign("sbw_error_code", 0);
-      // Todo priority low: Lookup based on the motor_current_fbk
-      assign("sbw_motor_torque_estimate", 0);
+      assign("sbw_motor_torque_estimate", steering.sbw_motor_torque_estimate);
     });
   }
 
   void AsmSocketCanBridgeNode::publish_steering_report_extd_3()
   {
-    publishCanMessage("steering_report_extd_3", [&](PreparedCanMessage &message, const ASMBus &) {
+    publishCanMessage("steering_report_extd_3", [&](PreparedCanMessage &message, const ASMBus &bus) {
       auto assign = [&](std::string_view signal_name, auto value) {
         if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      // Todo priority medium
-      assign("steering_p_contribution", 0);
-      // Todo priority medium
-      assign("steering_i_contribution", 0);
-      // Todo priority medium
-      assign("steering_d_contribution", 0);
+      const auto &steering = bus.vehicle_sensors_var.vehicle_data_var.steering_var;
+      assign("steering_p_contribution", steering.steering_p_contribution);
+      assign("steering_i_contribution", steering.steering_i_contribution);
+      assign("steering_d_contribution", steering.steering_d_contribution);
     });
   }
 
@@ -2649,43 +2682,39 @@ namespace asm_socketcan_bridge {
         }
       };
       assign("brk_pressure_fdbk_counter", this->brk_pressure_fdbk_counter++);
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("brake_pressure_fdbk_rear", vehicle.rear_brake_pressure);
-      assign("brake_pressure_fdbk_front", vehicle.front_brake_pressure);
+      const auto &brake = bus.vehicle_sensors_var.vehicle_data_var.brake_var;
+      assign("brake_pressure_fdbk_rear", brake.rear_brake_pressure);
+      assign("brake_pressure_fdbk_front", brake.front_brake_pressure);
     });
   }
 
   void AsmSocketCanBridgeNode::publish_brake_report_extd()
   {
-    publishCanMessage("brake_report_extd", [&](PreparedCanMessage &message, const ASMBus &) {
+    publishCanMessage("brake_report_extd", [&](PreparedCanMessage &message, const ASMBus &bus) {
       auto assign = [&](std::string_view signal_name, auto value) {
         if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      // Todo priority low: Ouput position based on the front brake pressure controller (scaled)
-      assign("F_brk_pos_cmd", 0);
-      // Todo priority low: Feeback position from linear actuator (abs actuator scale)
-      assign("F_brk_pos_fbk", 0);
-      // Todo priority low: Ouput position based on the front brake pressure controller (scaled)
-      assign("R_brk_pos_cmd", 0);
-      // Todo priority low: Feeback position from linear actuator (abs actuator scale)
-      assign("R_brk_pos_fbk", 0);
+      const auto &brake = bus.vehicle_sensors_var.vehicle_data_var.brake_var;
+      assign("F_brk_pos_cmd", brake.f_brk_pos_cmd);
+      assign("F_brk_pos_fbk", brake.f_brk_pos_fbk);
+      assign("R_brk_pos_cmd", brake.r_brk_pos_cmd);
+      assign("R_brk_pos_fbk", brake.r_brk_pos_fbk);
     });
   }
 
   void AsmSocketCanBridgeNode::publish_brake_report_extd_2()
   {
-    publishCanMessage("brake_report_extd_2", [&](PreparedCanMessage &message, const ASMBus &) {
+    publishCanMessage("brake_report_extd_2", [&](PreparedCanMessage &message, const ASMBus &bus) {
       auto assign = [&](std::string_view signal_name, auto value) {
         if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      // Todo priority medium
-      assign("f_brake_act_force", 0);
-      // Todo priority medium
-      assign("r_brake_act_force", 0);
+      const auto &brake = bus.vehicle_sensors_var.vehicle_data_var.brake_var;
+      assign("f_brake_act_force", brake.f_brake_act_force);
+      assign("r_brake_act_force", brake.r_brake_act_force);
     });
   }
 
@@ -2698,7 +2727,7 @@ namespace asm_socketcan_bridge {
         }
       };
       assign("acc_pedal_fdbk_counter", this->acc_pedal_fdbk_counter++);
-      assign("acc_pedal_fdbk", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.accel_pedal_output);
+      assign("acc_pedal_fdbk", bus.vehicle_sensors_var.vehicle_data_var.accelerator_var.accel_pedal_output);
     });
   }
 
@@ -2710,7 +2739,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_right_var.rr_tire_temperature;
       assign("RR_Tire_Temp_04", temp);
       assign("RR_Tire_Temp_03", temp);
       assign("RR_Tire_Temp_02", temp);
@@ -2726,7 +2755,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_right_var.rr_tire_temperature;
       assign("RR_Tire_Temp_08", temp);
       assign("RR_Tire_Temp_07", temp);
       assign("RR_Tire_Temp_06", temp);
@@ -2742,7 +2771,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_right_var.rr_tire_temperature;
       assign("RR_Tire_Temp_12", temp);
       assign("RR_Tire_Temp_11", temp);
       assign("RR_Tire_Temp_10", temp);
@@ -2758,7 +2787,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_right_var.rr_tire_temperature;
       assign("RR_Tire_Temp_16", temp);
       assign("RR_Tire_Temp_15", temp);
       assign("RR_Tire_Temp_14", temp);
@@ -2774,7 +2803,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_left_tire_var.rl_tire_temperature;
       assign("RL_Tire_Temp_04", temp);
       assign("RL_Tire_Temp_03", temp);
       assign("RL_Tire_Temp_02", temp);
@@ -2790,7 +2819,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_left_tire_var.rl_tire_temperature;
       assign("RL_Tire_Temp_08", temp);
       assign("RL_Tire_Temp_07", temp);
       assign("RL_Tire_Temp_06", temp);
@@ -2806,7 +2835,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_left_tire_var.rl_tire_temperature;
       assign("RL_Tire_Temp_12", temp);
       assign("RL_Tire_Temp_11", temp);
       assign("RL_Tire_Temp_10", temp);
@@ -2822,7 +2851,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.rl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_left_tire_var.rl_tire_temperature;
       assign("RL_Tire_Temp_16", temp);
       assign("RL_Tire_Temp_15", temp);
       assign("RL_Tire_Temp_14", temp);
@@ -2838,7 +2867,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_right_tire_var.fr_tire_temperature;
       assign("FR_Tire_Temp_04", temp);
       assign("FR_Tire_Temp_03", temp);
       assign("FR_Tire_Temp_02", temp);
@@ -2854,7 +2883,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_right_tire_var.fr_tire_temperature;
       assign("FR_Tire_Temp_08", temp);
       assign("FR_Tire_Temp_07", temp);
       assign("FR_Tire_Temp_06", temp);
@@ -2870,7 +2899,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_right_tire_var.fr_tire_temperature;
       assign("FR_Tire_Temp_12", temp);
       assign("FR_Tire_Temp_11", temp);
       assign("FR_Tire_Temp_10", temp);
@@ -2886,7 +2915,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fr_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_right_tire_var.fr_tire_temperature;
       assign("FR_Tire_Temp_16", temp);
       assign("FR_Tire_Temp_15", temp);
       assign("FR_Tire_Temp_14", temp);
@@ -2902,7 +2931,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_left_tire_var.fl_tire_temperature;
       assign("FL_Tire_Temp_04", temp);
       assign("FL_Tire_Temp_03", temp);
       assign("FL_Tire_Temp_02", temp);
@@ -2918,7 +2947,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_left_tire_var.fl_tire_temperature;
       assign("FL_Tire_Temp_08", temp);
       assign("FL_Tire_Temp_07", temp);
       assign("FL_Tire_Temp_06", temp);
@@ -2934,7 +2963,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_left_tire_var.fl_tire_temperature;
       assign("FL_Tire_Temp_12", temp);
       assign("FL_Tire_Temp_11", temp);
       assign("FL_Tire_Temp_10", temp);
@@ -2950,7 +2979,7 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto temp = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.fl_tire_temperature;
+      const auto temp = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_left_tire_var.fl_tire_temperature;
       assign("FL_Tire_Temp_16", temp);
       assign("FL_Tire_Temp_15", temp);
       assign("FL_Tire_Temp_14", temp);
@@ -2966,9 +2995,9 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("RR_Tire_Pressure_Gauge", vehicle.rr_tire_pressure_gauge);
-      assign("RR_Tire_Pressure", vehicle.rr_tire_pressure);
+      const auto &tire = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_right_var;
+      assign("RR_Tire_Pressure_Gauge", tire.rr_tire_pressure_gauge);
+      assign("RR_Tire_Pressure", tire.rr_tire_pressure);
     });
   }
 
@@ -2980,9 +3009,9 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("RL_Tire_Pressure_Gauge", vehicle.rl_tire_pressure_gauge);
-      assign("RL_Tire_Pressure", vehicle.rl_tire_pressure);
+      const auto &tire = bus.vehicle_sensors_var.vehicle_data_var.tires_var.rear_left_tire_var;
+      assign("RL_Tire_Pressure_Gauge", tire.rl_tire_pressure_gauge);
+      assign("RL_Tire_Pressure", tire.rl_tire_pressure);
     });
   }
 
@@ -2994,9 +3023,9 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("FR_Tire_Pressure_Gauge", vehicle.fr_tire_pressure_gauge);
-      assign("FR_Tire_Pressure", vehicle.fr_tire_pressure);
+      const auto &tire = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_right_tire_var;
+      assign("FR_Tire_Pressure_Gauge", tire.fr_tire_pressure_gauge);
+      assign("FR_Tire_Pressure", tire.fr_tire_pressure);
     });
   }
 
@@ -3008,9 +3037,9 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("FL_Tire_Pressure_Gauge", vehicle.fl_tire_pressure_gauge);
-      assign("FL_Tire_Pressure", vehicle.fl_tire_pressure);
+      const auto &tire = bus.vehicle_sensors_var.vehicle_data_var.tires_var.front_left_tire_var;
+      assign("FL_Tire_Pressure_Gauge", tire.fl_tire_pressure_gauge);
+      assign("FL_Tire_Pressure", tire.fl_tire_pressure);
     });
   }
 
@@ -3022,15 +3051,11 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      // Todo priority medium: Check that wheel load on push rod is used
-      assign("wheel_strain_gauge_RR", vehicle.rr_wheel_load);
-      // Todo priority medium: Check that wheel load on push rod is used
-      assign("wheel_strain_gauge_RL", vehicle.rl_wheel_load);
-      // Todo priority medium: Check that wheel load on push rod is used
-      assign("wheel_strain_gauge_FR", vehicle.fr_wheel_load);
-      // Todo priority medium: Check that wheel load on push rod is used
-      assign("wheel_strain_gauge_FL", vehicle.fl_wheel_load);
+      const auto &tires = bus.vehicle_sensors_var.vehicle_data_var.tires_var;
+      assign("wheel_strain_gauge_RR", tires.rear_right_var.rr_wheel_load);
+      assign("wheel_strain_gauge_RL", tires.rear_left_tire_var.rl_wheel_load);
+      assign("wheel_strain_gauge_FR", tires.front_right_tire_var.fr_wheel_load);
+      assign("wheel_strain_gauge_FL", tires.front_left_tire_var.fl_wheel_load);
     });
   }
 
@@ -3042,11 +3067,11 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("wheel_potentiometer_RR", vehicle.rr_damper_linear_potentiometer);
-      assign("wheel_potentiometer_RL", vehicle.rl_damper_linear_potentiometer);
-      assign("wheel_potentiometer_FR", vehicle.fr_damper_linear_potentiometer);
-      assign("wheel_potentiometer_FL", vehicle.fl_damper_linear_potentiometer);
+      const auto &suspension = bus.vehicle_sensors_var.vehicle_data_var.suspension_var;
+      assign("wheel_potentiometer_RR", suspension.rr_damper_linear_potentiometer);
+      assign("wheel_potentiometer_RL", suspension.rl_damper_linear_potentiometer);
+      assign("wheel_potentiometer_FR", suspension.fr_damper_linear_potentiometer);
+      assign("wheel_potentiometer_FL", suspension.fl_damper_linear_potentiometer);
     });
   }
 
@@ -3058,11 +3083,11 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      const auto &vehicle = bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var;
-      assign("wheel_speed_RR", vehicle.ws_rear_right);
-      assign("wheel_speed_RL", vehicle.ws_rear_left);
-      assign("wheel_speed_FR", vehicle.ws_front_right);
-      assign("wheel_speed_FL", vehicle.ws_front_left);
+      const auto &wheel_speed = bus.vehicle_sensors_var.vehicle_data_var.wheel_speed_var;
+      assign("wheel_speed_RR", wheel_speed.ws_rear_right);
+      assign("wheel_speed_RL", wheel_speed.ws_rear_left);
+      assign("wheel_speed_FR", wheel_speed.ws_front_right);
+      assign("wheel_speed_FL", wheel_speed.ws_front_left);
     });
   }
 
@@ -3074,10 +3099,11 @@ namespace asm_socketcan_bridge {
           insertBits(message.frame.data, *signal, value);
         }
       };
-      assign("battery_voltage", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.battery_voltage);
-      assign("safety_switch_state", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.safety_switch_state);
-      assign("mode_switch_state", bus.sim_interface_var.vehicle_sensors_var.vehicle_data_var.mode_switch_state);
-      assign("sys_state", bus.asm_bus_var.race_control_var.sys_state);
+      assign("battery_voltage", bus.vehicle_sensors_var.vehicle_data_var.misc_report_var.battery_voltage);
+      assign("safety_switch_state", bus.vehicle_sensors_var.vehicle_data_var.misc_report_var.safety_switch_state);
+      assign("mode_switch_state", bus.vehicle_sensors_var.vehicle_data_var.misc_report_var.mode_switch_state);
+      assign("sys_state", bus.race_control_var.sys_state);
+      assign("target_speed_multi_car_race", bus.race_control_var.target_speed_multi_car_race);
       assign("raptor_rolling_counter", this->raptor_rolling_counter);
       this->raptor_rolling_counter = (this->raptor_rolling_counter + 1u) % 16u;
     });
@@ -3144,8 +3170,8 @@ namespace asm_socketcan_bridge {
     novatel_oem7_msgs::msg::BESTPOS message;
     bool populated = false;
     if (!withCanBusShared([&](const ASMBus &bus) {
-      const auto *data = index == kNovatelTopIndex ? &bus.sim_interface_var.nova_tel_pwr_pak1_var
-                                                   : &bus.sim_interface_var.nova_tel_pwr_pak2_var;
+      const auto *data = index == kNovatelTopIndex ? &bus.nova_tel_pwr_pak1_var
+                                                   : &bus.nova_tel_pwr_pak2_var;
       populateBestPosMessage(message, *data);
       populated = true;
     })) {

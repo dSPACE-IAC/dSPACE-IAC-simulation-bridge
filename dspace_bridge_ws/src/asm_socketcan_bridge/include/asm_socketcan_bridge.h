@@ -203,6 +203,7 @@ namespace asm_socketcan_bridge
         void publish_pt_report_1();
         void publish_pt_report_2();
         void publish_pt_report_3();
+        void publish_pt_report_4();
         void publish_steering_report();
         void publish_steering_report_extd();
         void publish_steering_report_extd_2();

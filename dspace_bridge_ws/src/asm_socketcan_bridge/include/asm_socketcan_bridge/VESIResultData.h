@@ -9,21 +9,25 @@
 typedef struct
 {
     // Throttle command (%)
-    float throttle_cmd;
+    double throttle_cmd;
     uint8_t throttle_cmd_count;
     uint8_t enable_throttle_cmd;
 
     // Brake pressure command (kPa)
-    float brake_cmd_front;
-    float brake_cmd_rear;
+    int16_t brake_cmd_front;
+    int16_t brake_cmd_rear;
     uint8_t brake_bias_switch;
     uint8_t brake_cmd_count;
     uint8_t enable_brake_cmd;
 
     // Steering motor angle command (degrees)
-    float steering_cmd;
+    int16_t steering_cmd;
     uint8_t steering_cmd_count;
     uint8_t enable_steering_cmd;
+    float driver_steering_FF_cmd;
+    float driver_steering_P_cmd;
+    float driver_steering_I_cmd;
+    float driver_steering_D_cmd;
 
     // Gear command
     uint8_t gear_cmd;
@@ -33,13 +37,16 @@ VehicleInputs;
 
 typedef struct
 {
-    uint8_t track_cond_ack; // track flag
+    uint16_t track_cond_ack; // track flag
     uint8_t veh_sig_ack; // vehicle flag
-    uint8_t ct_state;
+    uint16_t ct_state;
     uint8_t rolling_counter;
     uint8_t veh_num;
 
-    boolean_T push2pass_request;
+    uint8_t push2pass_switch;
+    uint8_t push2pass_request;
+
+    uint8_t drive_steering_FF_cntrl_switch;
 }
 ToRaptor;
 
