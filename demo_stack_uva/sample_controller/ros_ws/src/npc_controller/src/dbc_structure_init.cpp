@@ -3,7 +3,7 @@
 #include <cstdlib>
 
 std::vector<Message> initialize_messages() {
-    size_t message_count = 53;
+    size_t message_count = 54;
     std::vector<Message> messages(message_count);
 
     messages[0].id = 3221225472;
@@ -272,13 +272,14 @@ std::vector<Message> initialize_messages() {
     messages[24].dlc = 8;
     messages[24].name = "steering_cmd";
     messages[24].transmitter = "Vector__XXX";
-    messages[24].signal_count = 5;
+    messages[24].signal_count = 6;
     messages[24].signals.resize(messages[24].signal_count);
     messages[24].signals[0] = Signal{ "steering_motor_cmd_counter", 16, 8, 1, false, 1.0f, 0.0f, 0.0f, 255.0f, "" };
     messages[24].signals[1] = Signal{ "steering_motor_ang_cmd", 0, 11, 1, true, 0.5f, 0.0f, -1024.0f, 1023.0f, "deg" };
     messages[24].signals[2] = Signal{ "driver_steering_P_cmd", 24, 8, 1, false, 0.1f, 0.0f, 0.0f, 0.0f, "" };
     messages[24].signals[3] = Signal{ "driver_steering_I_cmd", 32, 8, 1, false, 0.1f, 0.0f, 0.0f, 0.0f, "" };
     messages[24].signals[4] = Signal{ "driver_steering_D_cmd", 40, 8, 1, false, 0.01f, 0.0f, 0.0f, 0.0f, "" };
+    messages[24].signals[5] = Signal{ "driver_steering_FF_cmd", 48, 5, 1, false, 0.1f, 0.0f, 0.0f, 3.1f, "" };
 
     messages[25].id = 1401;
     messages[25].dlc = 8;
@@ -322,16 +323,17 @@ std::vector<Message> initialize_messages() {
     messages[28].signals[3] = Signal{ "wheel_strain_gauge_FL", 0, 12, 1, false, 10.0f, 0.0f, 0.0f, 8190.0f, "" };
 
     messages[29].id = 1304;
-    messages[29].dlc = 5;
+    messages[29].dlc = 6;
     messages[29].name = "misc_report";
     messages[29].transmitter = "Vector__XXX";
-    messages[29].signal_count = 5;
+    messages[29].signal_count = 6;
     messages[29].signals.resize(messages[29].signal_count);
     messages[29].signals[0] = Signal{ "battery_voltage", 0, 8, 1, false, 0.1f, 0.0f, 0.0f, 0.0f, "V" };
     messages[29].signals[1] = Signal{ "safety_switch_state", 32, 3, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
     messages[29].signals[2] = Signal{ "mode_switch_state", 16, 1, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
     messages[29].signals[3] = Signal{ "sys_state", 8, 8, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
     messages[29].signals[4] = Signal{ "raptor_rolling_counter", 19, 8, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
+    messages[29].signals[5] = Signal{ "target_speed_multi_car_race", 40, 8, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "mph" };
 
     messages[30].id = 1303;
     messages[30].dlc = 8;
@@ -496,13 +498,14 @@ std::vector<Message> initialize_messages() {
     messages[43].dlc = 8;
     messages[43].name = "dash_switches_cmd";
     messages[43].transmitter = "Vector__XXX";
-    messages[43].signal_count = 5;
+    messages[43].signal_count = 6;
     messages[43].signals.resize(messages[43].signal_count);
     messages[43].signals[0] = Signal{ "driver_traction_aim_switch", 0, 4, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
     messages[43].signals[1] = Signal{ "driver_traction_range_switch", 4, 4, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
     messages[43].signals[2] = Signal{ "brake_bias_aim_switch", 8, 4, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
     messages[43].signals[3] = Signal{ "drive_steering_gain_cntrl_switch", 12, 1, 1, false, 1.0f, 0.0f, 0.0f, 1.0f, "" };
     messages[43].signals[4] = Signal{ "push2pass_switch", 13, 1, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
+    messages[43].signals[5] = Signal{ "drive_steering_FF_cntrl_switch", 14, 1, 1, false, 1.0f, 0.0f, 0.0f, 0.0f, "" };
 
     messages[44].id = 1450;
     messages[44].dlc = 8;
@@ -597,6 +600,17 @@ std::vector<Message> initialize_messages() {
     messages[52].signals[0] = Signal{ "steering_p_contribution", 0, 10, 1, true, 1.0f, 0.0f, 0.0f, 0.0f, "%" };
     messages[52].signals[1] = Signal{ "steering_i_contribution", 10, 10, 1, true, 1.0f, 0.0f, 0.0f, 0.0f, "%" };
     messages[52].signals[2] = Signal{ "steering_d_contribution", 20, 10, 1, true, 1.0f, 0.0f, 0.0f, 0.0f, "%" };
+
+    messages[53].id = 1344;
+    messages[53].dlc = 8;
+    messages[53].name = "pt_report_4";
+    messages[53].transmitter = "Vector__XXX";
+    messages[53].signal_count = 4;
+    messages[53].signals.resize(messages[53].signal_count);
+    messages[53].signals[0] = Signal{ "boost_aim_psi", 0, 16, 1, false, 0.1f, 0.0f, 0.0f, 35.0f, "psi" };
+    messages[53].signals[1] = Signal{ "boost_press_psi", 16, 16, 1, true, 0.1f, 0.0f, -1.0f, 35.0f, "psi" };
+    messages[53].signals[2] = Signal{ "intake_manifold_press_kPa", 32, 16, 1, true, 0.1f, 0.0f, 0.0f, 500.0f, "kPa" };
+    messages[53].signals[3] = Signal{ "intake_air_temp_degC", 48, 16, 1, true, 0.1f, 0.0f, -40.0f, 120.0f, "degC" };
 
     return messages;
 }

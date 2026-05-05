@@ -111,6 +111,7 @@ namespace controller
         bool receivedMessagePrinting = false;
         bool receivedDecodedMessagePrinting = false;
         bool sentMessagePrinting = false;
+        bool publish_ros_all = false;
         bool useRaptorDbwNode = false;
         bool disableStateMachine = false;
 

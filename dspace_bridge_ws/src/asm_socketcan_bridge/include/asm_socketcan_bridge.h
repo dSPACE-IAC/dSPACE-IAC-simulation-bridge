@@ -283,6 +283,8 @@ namespace asm_socketcan_bridge
         const Message* findMessageByName(std::string_view message_name) const;
         std::optional<PreparedCanMessage> prepareCanMessage(std::string_view message_name);
         void finalizeCanMessage(const PreparedCanMessage &message);
+        mutable rclcpp::Clock log_throttle_clock_{RCL_STEADY_TIME};
+        void logCanBusNullThrottled() const {RCLCPP_ERROR_THROTTLE(get_logger(), log_throttle_clock_, 5000, "canBus pointer is null.");}
         template <typename Populator>
         bool publishCanMessage(std::string_view message_name, Populator &&populate)
         {
@@ -293,7 +295,7 @@ namespace asm_socketcan_bridge
             {
                 std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
                 if (!this->canBus) {
-                    RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
+                    logCanBusNullThrottled();
                     return false;
                 }
                 std::forward<Populator>(populate)(*prepared, *this->canBus);
@@ -306,7 +308,7 @@ namespace asm_socketcan_bridge
         {
             std::shared_lock<std::shared_mutex> lock(can_bus_mutex_);
             if (!this->canBus) {
-                RCLCPP_ERROR(get_logger(), "canBus pointer is null.");
+                logCanBusNullThrottled();
                 return false;
             }
             std::forward<Func>(func)(*this->canBus);

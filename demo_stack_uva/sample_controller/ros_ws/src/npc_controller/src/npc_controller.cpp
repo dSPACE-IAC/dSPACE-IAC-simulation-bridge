@@ -443,7 +443,7 @@ namespace controller
             RCLCPP_INFO(this->get_logger(), "Maximum connection retries: %d", static_cast<int>(max_retries));
 
             auto pkg_share = ament_index_cpp::get_package_share_directory("npc_controller");
-            can1_dbc_path = this->declare_parameter<std::string>("can.can1_dbc_path", pkg_share + "/config/CAN1-INDY-V23.dbc");
+            can1_dbc_path = this->declare_parameter<std::string>("can.can1_dbc_path", pkg_share + "/config/CAN1-INDY-V26.dbc");
             auto dbc_path = std::filesystem::path(can1_dbc_path);
             if (!dbc_path.is_absolute()) {
             dbc_path = std::filesystem::path(pkg_share) / dbc_path;

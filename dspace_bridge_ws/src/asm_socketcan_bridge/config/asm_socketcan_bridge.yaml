@@ -16,7 +16,7 @@ asm_socketcan_bridge_node:
     logging.received_decoded_frames: false
     logging.sent_can_frames: false
 
-    can.can1_dbc_path: "config/CAN1-INDY-V23.dbc"
+    can.can1_dbc_path: "config/CAN1-INDY-V26.dbc"
     can.interface: "dsvcan0"
 
     connection.max_retries: 1
