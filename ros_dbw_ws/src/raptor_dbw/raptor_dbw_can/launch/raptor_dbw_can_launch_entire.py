@@ -75,7 +75,7 @@ def generate_launch_description():
     # dbc_file_path = get_package_share_directory('raptor_dbw_can') + \
     #     "/launch/New_Eagle_DBW_3.3.542.dbc"
     dbc_file_path = get_package_share_directory('raptor_dbw_can') + \
-        "/launch/CAN1-INDY-V23.dbc"
+        "/launch/CAN1-INDY-V26.dbc"
 
     socket_can_receiver_node = LifecycleNode(
         package='ros2_socketcan',

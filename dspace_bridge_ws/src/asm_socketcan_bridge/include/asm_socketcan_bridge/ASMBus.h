@@ -672,5 +672,5 @@ typedef struct
   nova_tel_pwr_pak nova_tel_pwr_pak1_var;
   nova_tel_pwr_pak nova_tel_pwr_pak2_var;
 } ASMBus;
-#pragma pack(pop)
+
 #endif                                 /* RTW_HEADER_ASMBus_h_ */

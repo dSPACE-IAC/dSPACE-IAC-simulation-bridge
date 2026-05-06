@@ -799,23 +799,28 @@ namespace asm_socketcan_bridge {
     this->feedbackCmd.vehicle_inputs.steering_cmd = 0.0;
     this->feedbackCmd.vehicle_inputs.steering_cmd_count = 0;
     this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 0;
+    this->feedbackCmd.vehicle_inputs.drive_steering_FF_cntrl_switch = 0;
     this->feedbackCmd.vehicle_inputs.driver_steering_FF_cmd = 0.0f;
+    this->feedbackCmd.vehicle_inputs.drive_steering_gain_cntrl_switch = 0;
     this->feedbackCmd.vehicle_inputs.driver_steering_P_cmd = 0.0f;
     this->feedbackCmd.vehicle_inputs.driver_steering_I_cmd = 0.0f;
     this->feedbackCmd.vehicle_inputs.driver_steering_D_cmd = 0.0f;
+
+    this->feedbackCmd.vehicle_inputs.driver_traction_aim_switch = 0;
+    this->feedbackCmd.vehicle_inputs.driver_traction_range_switch = 0;
 
     this->feedbackCmd.vehicle_inputs.gear_cmd = 1;
     this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 0;
     
     this->feedbackCmd.to_raptor.track_cond_ack = 0;
     this->feedbackCmd.to_raptor.veh_sig_ack = 0;
+    this->feedbackCmd.to_raptor.marelli_sector_flag_ack = 0;
     this->feedbackCmd.to_raptor.ct_state = 0;
     this->feedbackCmd.to_raptor.rolling_counter = 0;
     this->feedbackCmd.to_raptor.veh_num = 255;
 
     this->feedbackCmd.to_raptor.push2pass_switch = 0;
     this->feedbackCmd.to_raptor.push2pass_request = 0;
-    this->feedbackCmd.to_raptor.drive_steering_FF_cntrl_switch = 0;
   }
 
   void AsmSocketCanBridgeNode::can_reader_loop(int sock, const std::string &bus_id)
@@ -914,8 +919,7 @@ namespace asm_socketcan_bridge {
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("acc_pedal_cmd")) {
-            this->feedbackCmd.vehicle_inputs.throttle_cmd =
-              static_cast<float>(*value);
+            this->feedbackCmd.vehicle_inputs.throttle_cmd = *value;
           }
           this->feedbackCmd.vehicle_inputs.enable_throttle_cmd = 1;
           this->feedbackDataAvailabe = true;
@@ -1074,9 +1078,9 @@ namespace asm_socketcan_bridge {
               static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("marelli_sector_flag_ack")) {
-            // Todo priority low
             marelli_sector_flag_ack =
               static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.marelli_sector_flag_ack = marelli_sector_flag_ack;
           }
           this->raptorDataAvailabe = true;
           if (this->receivedDecodedMessagePrinting) {
@@ -1117,24 +1121,24 @@ namespace asm_socketcan_bridge {
               push2pass_switch;
           }
           if (const auto value = get_scaled("driver_traction_aim_switch")) {
-            // Todo priority low
             driver_traction_aim_switch =
               static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.driver_traction_aim_switch = driver_traction_aim_switch;
           }
           if (const auto value = get_scaled("driver_traction_range_switch")) {
-            // Todo priority low
             driver_traction_range_switch =
               static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.driver_traction_range_switch = driver_traction_range_switch;
           }
           if (const auto value = get_scaled("drive_steering_gain_cntrl_switch")) {
-            // Todo priority high
             drive_steering_gain_cntrl_switch =
               static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.drive_steering_gain_cntrl_switch = drive_steering_gain_cntrl_switch;
           }
           if (const auto value = get_scaled("drive_steering_FF_cntrl_switch")) {
             drive_steering_FF_cntrl_switch =
               static_cast<uint8_t>(std::floor(*value));
-            this->feedbackCmd.to_raptor.drive_steering_FF_cntrl_switch =
+            this->feedbackCmd.vehicle_inputs.drive_steering_FF_cntrl_switch =
               drive_steering_FF_cntrl_switch;
           }
           this->feedbackDataAvailabe = true;
@@ -1165,18 +1169,14 @@ namespace asm_socketcan_bridge {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("long_ct_vehicle_acc_fbk")) {
-            // Todo priority low: Only relevant for traction control on low-level 
             long_ct_vehicle_acc_fbk = static_cast<float>(*value);
           }
           if (const auto value = get_scaled("lat_ct_vehicle_acc_fbk")) {
-            // Todo priority low: Only relevant for traction control on low-level 
             lat_ct_vehicle_acc_fbk = static_cast<float>(*value);
           }
           if (const auto value = get_scaled("vertical_ct_vehicle_acc_fbk")) {
-            // Todo priority low: Only relevant for traction control on low-level 
             vertical_ct_vehicle_acc_fbk = static_cast<float>(*value);
           }
-          this->feedbackDataAvailabe = true;
           if (this->receivedDecodedMessagePrinting) {
             RCLCPP_INFO(get_logger(),
                         "long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f  long_ct_vehicle_acc_fbk: %f",
