@@ -1183,6 +1183,7 @@ namespace controller
                 };
                 assign("steering_motor_cmd_counter", rolling_counter);
                 assign("steering_motor_ang_cmd", steering_cmd);
+                assign("driver_steering_FF_cmd", 0);
                 assign("driver_steering_P_cmd", 0);
                 assign("driver_steering_I_cmd", 0);
                 assign("driver_steering_D_cmd", 0);

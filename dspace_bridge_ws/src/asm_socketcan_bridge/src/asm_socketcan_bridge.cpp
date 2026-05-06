@@ -915,8 +915,7 @@ namespace asm_socketcan_bridge {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("acc_pedal_cmd_counter")) {
-            this->feedbackCmd.vehicle_inputs.throttle_cmd_count =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.throttle_cmd_count = static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("acc_pedal_cmd")) {
             this->feedbackCmd.vehicle_inputs.throttle_cmd = *value;
@@ -940,40 +939,30 @@ namespace asm_socketcan_bridge {
             warn_missing_metadata(in_frame.can_id);
             break;
           }
-          float driver_steering_P_cmd = 0.0f;
-          float driver_steering_I_cmd = 0.0f;
-          float driver_steering_D_cmd = 0.0f;
-          float driver_steering_FF_cmd = 0.0f;
           const auto get_scaled = [&](std::string_view name) {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("steering_motor_cmd_counter")) {
-            this->feedbackCmd.vehicle_inputs.steering_cmd_count =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.steering_cmd_count = static_cast<uint8_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("steering_motor_ang_cmd")) {
             // Todo priority high: Change datatype to int16 to match DBC
-            this->feedbackCmd.vehicle_inputs.steering_cmd =
-              static_cast<int16_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.steering_cmd = static_cast<int16_t>(std::floor(*value));
           }
           if (const auto value = get_scaled("driver_steering_FF_cmd")) {
-            driver_steering_FF_cmd = static_cast<float>(*value);
-            this->feedbackCmd.vehicle_inputs.driver_steering_FF_cmd = driver_steering_FF_cmd;
+            this->feedbackCmd.vehicle_inputs.driver_steering_FF_cmd = static_cast<float>(*value);;
           }
           if (const auto value = get_scaled("driver_steering_P_cmd")) {
             // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
-            driver_steering_P_cmd = static_cast<float>(*value);
-            this->feedbackCmd.vehicle_inputs.driver_steering_P_cmd = driver_steering_P_cmd;
+            this->feedbackCmd.vehicle_inputs.driver_steering_P_cmd = static_cast<float>(*value);;
           }
           if (const auto value = get_scaled("driver_steering_I_cmd")) {
             // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
-            driver_steering_I_cmd = static_cast<float>(*value);
-            this->feedbackCmd.vehicle_inputs.driver_steering_I_cmd = driver_steering_I_cmd;
+            this->feedbackCmd.vehicle_inputs.driver_steering_I_cmd = static_cast<float>(*value);;
           }
           if (const auto value = get_scaled("driver_steering_D_cmd")) {
             // Todo priority high: When the drive_steering_gain_cntrl_switch is 1 - these commanded gains should be used for PID loop on IAC software for steering control
-            driver_steering_D_cmd = static_cast<float>(*value);
-            this->feedbackCmd.vehicle_inputs.driver_steering_D_cmd = driver_steering_D_cmd;
+            this->feedbackCmd.vehicle_inputs.driver_steering_D_cmd = static_cast<float>(*value);;
           }
           this->feedbackCmd.vehicle_inputs.enable_steering_cmd = 1;
           this->feedbackDataAvailabe = true;
@@ -983,10 +972,10 @@ namespace asm_socketcan_bridge {
                         this->feedbackCmd.vehicle_inputs.steering_cmd_count,
                         static_cast<double>(this->feedbackCmd.vehicle_inputs.steering_cmd),
                         this->feedbackCmd.vehicle_inputs.enable_steering_cmd,
-                        static_cast<double>(driver_steering_FF_cmd),
-                        static_cast<double>(driver_steering_P_cmd),
-                        static_cast<double>(driver_steering_I_cmd),
-                        static_cast<double>(driver_steering_D_cmd));
+                        this->feedbackCmd.vehicle_inputs.driver_steering_FF_cmd,
+                        this->feedbackCmd.vehicle_inputs.driver_steering_P_cmd,
+                        this->feedbackCmd.vehicle_inputs.driver_steering_I_cmd,
+                        this->feedbackCmd.vehicle_inputs.driver_steering_D_cmd);
           }
           break;
         }
@@ -1000,8 +989,7 @@ namespace asm_socketcan_bridge {
           }
           if (const auto value = extractSignalScaled(in_frame.can_id, "desired_gear",
                                                      in_frame.data)) {
-            this->feedbackCmd.vehicle_inputs.gear_cmd =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.gear_cmd = *value;
           }
           this->feedbackCmd.vehicle_inputs.enable_gear_cmd = 1;
           this->feedbackDataAvailabe = true;
@@ -1024,26 +1012,19 @@ namespace asm_socketcan_bridge {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("track_cond_ack")) {
-            // Todo priority medium: Change datatype to uint16 to match DBC
-            this->feedbackCmd.to_raptor.track_cond_ack =
-              static_cast<uint16_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.track_cond_ack = *value;
           }
           if (const auto value = get_scaled("veh_sig_ack")) {
-            this->feedbackCmd.to_raptor.veh_sig_ack =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.veh_sig_ack = *value;
           }
           if (const auto value = get_scaled("ct_state")) {
-            // Todo priority high: Change datatype to uint16 to match DBC
-            this->feedbackCmd.to_raptor.ct_state =
-              static_cast<uint16_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.ct_state = *value;
           }
           if (const auto value = get_scaled("ct_state_rolling_counter")) {
-            this->feedbackCmd.to_raptor.rolling_counter =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.rolling_counter = *value;
           }
           if (const auto value = get_scaled("veh_num")) {
-            this->feedbackCmd.to_raptor.veh_num =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.to_raptor.veh_num = *value;
           }
           this->raptorDataAvailabe = true;
           if (this->receivedDecodedMessagePrinting) {
@@ -1100,46 +1081,27 @@ namespace asm_socketcan_bridge {
             warn_missing_metadata(in_frame.can_id);
             break;
           }
-          uint8_t driver_traction_aim_switch = 0U;
-          uint8_t driver_traction_range_switch = 0U;
-          uint8_t drive_steering_gain_cntrl_switch = 0U;
-          uint8_t drive_steering_FF_cntrl_switch = 0U;
-          uint8_t push2pass_switch = 0U;
           const auto get_scaled = [&](std::string_view name) {
             return extractSignalScaled(in_frame.can_id, name, in_frame.data);
           };
           if (const auto value = get_scaled("brake_bias_aim_switch")) {
-            // Todo priority high: Change datatype to uint8 to match DBC
-            this->feedbackCmd.vehicle_inputs.brake_bias_switch =
-              static_cast<uint8_t>(std::floor(*value));
+            this->feedbackCmd.vehicle_inputs.brake_bias_switch = *value;
           }
           if (const auto value = get_scaled("push2pass_switch")) {
-            // Todo priority high: Change datatype to uint8 to match DBC
-            push2pass_switch = static_cast<uint8_t>(std::floor(*value));
-            this->feedbackCmd.to_raptor.push2pass_switch = push2pass_switch;
-            this->feedbackCmd.to_raptor.push2pass_request =
-              push2pass_switch;
+            this->feedbackCmd.to_raptor.push2pass_switch = *value;
+            this->feedbackCmd.to_raptor.push2pass_request = *value;
           }
           if (const auto value = get_scaled("driver_traction_aim_switch")) {
-            driver_traction_aim_switch =
-              static_cast<uint8_t>(std::floor(*value));
-            this->feedbackCmd.vehicle_inputs.driver_traction_aim_switch = driver_traction_aim_switch;
+            this->feedbackCmd.vehicle_inputs.driver_traction_aim_switch = *value;
           }
           if (const auto value = get_scaled("driver_traction_range_switch")) {
-            driver_traction_range_switch =
-              static_cast<uint8_t>(std::floor(*value));
-            this->feedbackCmd.vehicle_inputs.driver_traction_range_switch = driver_traction_range_switch;
+            this->feedbackCmd.vehicle_inputs.driver_traction_range_switch = *value;
           }
           if (const auto value = get_scaled("drive_steering_gain_cntrl_switch")) {
-            drive_steering_gain_cntrl_switch =
-              static_cast<uint8_t>(std::floor(*value));
-            this->feedbackCmd.vehicle_inputs.drive_steering_gain_cntrl_switch = drive_steering_gain_cntrl_switch;
+            this->feedbackCmd.vehicle_inputs.drive_steering_gain_cntrl_switch = *value;
           }
           if (const auto value = get_scaled("drive_steering_FF_cntrl_switch")) {
-            drive_steering_FF_cntrl_switch =
-              static_cast<uint8_t>(std::floor(*value));
-            this->feedbackCmd.vehicle_inputs.drive_steering_FF_cntrl_switch =
-              drive_steering_FF_cntrl_switch;
+            this->feedbackCmd.vehicle_inputs.drive_steering_FF_cntrl_switch = *value;
           }
           this->feedbackDataAvailabe = true;
           if (this->receivedDecodedMessagePrinting) {
@@ -1147,10 +1109,10 @@ namespace asm_socketcan_bridge {
                         "brake_bias_aim_switch: %d  push2pass_switch: %d  driver_traction_aim_switch: %d  driver_traction_range_switch: %d  drive_steering_gain_cntrl_switch: %d  drive_steering_FF_cntrl_switch: %d",
                         this->feedbackCmd.vehicle_inputs.brake_bias_switch,
                         this->feedbackCmd.to_raptor.push2pass_switch,
-                        driver_traction_aim_switch,
-                        driver_traction_range_switch,
-                        drive_steering_gain_cntrl_switch,
-                        drive_steering_FF_cntrl_switch);
+                        this->feedbackCmd.vehicle_inputs.driver_traction_aim_switch,
+                        this->feedbackCmd.vehicle_inputs.driver_traction_range_switch,
+                        this->feedbackCmd.vehicle_inputs.drive_steering_gain_cntrl_switch,
+                        this->feedbackCmd.vehicle_inputs.drive_steering_FF_cntrl_switch);
           }
           break;
         }
