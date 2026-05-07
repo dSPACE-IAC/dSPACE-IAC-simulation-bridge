@@ -181,6 +181,35 @@ void DbwNode::recvCAN(const can_msgs::msg::Frame::SharedPtr msg)
         out.mode_switch_state = sig_mode_switch_state->GetResult();
         out.battery_voltage = sig_battery_voltage->GetResult();
         pub_misc_do_->publish(out);
+        publishRcToCt(msg->header.stamp);
+        break;
+      }
+
+    case ID_MARELLI_REPORT_1:
+      {
+        auto * message = dbwDbc_.GetMessageById(ID_MARELLI_REPORT_1);
+        if (!message) {
+          RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "DBC message lookup failed for ID_MARELLI_REPORT_1 (0x%X)", ID_MARELLI_REPORT_1);
+          return;
+        }
+
+        if (msg->dlc < message->GetDlc()) {
+          RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "DLC too small for ID 0x%X: got %u expected >= %u", msg->id, msg->dlc, message->GetDlc());
+          return;
+        }
+
+        message->SetFrame(msg);
+        auto * sig_marelli_track_flag = message->GetSignal("marelli_track_flag");
+        auto * sig_marelli_vehicle_flag = message->GetSignal("marelli_vehicle_flag");
+
+        if (!sig_marelli_track_flag || !sig_marelli_vehicle_flag) {
+          RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Missing one or more signals in DBC for ID_MARELLI_REPORT_1");
+          return;
+        }
+
+        rc_to_ct_msg_.track_flag = sig_marelli_track_flag->GetResult();
+        rc_to_ct_msg_.veh_flag = sig_marelli_vehicle_flag->GetResult();
+        publishRcToCt(msg->header.stamp);
         break;
       }
 
@@ -198,27 +227,31 @@ void DbwNode::recvCAN(const can_msgs::msg::Frame::SharedPtr msg)
         }
 
         message->SetFrame(msg);
-        auto * sig_track_flag = message->GetSignal("track_flag");
-        auto * sig_veh_flag = message->GetSignal("veh_flag");
+        // auto * sig_track_flag = message->GetSignal("track_flag");
+        // auto * sig_veh_flag = message->GetSignal("veh_flag");
+        auto * sig_veh_rank = message->GetSignal("veh_rank");
         auto * sig_lap_count = message->GetSignal("lap_count");
         auto * sig_lap_distance = message->GetSignal("lap_distance");
         auto * sig_round_target_speed = message->GetSignal("round_target_speed");
         auto * sig_base_to_car_heartbeat = message->GetSignal("base_to_car_heartbeat");
 
-        if (!sig_track_flag || !sig_veh_flag || !sig_lap_count || !sig_lap_distance || !sig_round_target_speed || !sig_base_to_car_heartbeat) {
+        if (!sig_veh_rank || !sig_lap_count || !sig_lap_distance || !sig_round_target_speed || !sig_base_to_car_heartbeat) {
           RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Missing one or more signals in DBC for ID_RC_TO_CT");
           return;
         }
 
-        npc_controller_msgs::msg::RcToCt out;
-        out.stamp = msg->header.stamp;
-        out.track_flag = sig_track_flag->GetResult();
-        out.veh_flag = sig_veh_flag->GetResult();
-        out.lap_count = sig_lap_count->GetResult();
-        out.lap_distance = sig_lap_distance->GetResult();
-        out.target_speed = sig_round_target_speed->GetResult();
-        out.rolling_counter = sig_base_to_car_heartbeat->GetResult();
-        pub_rc_to_ct_->publish(out);
+        // if (!have_marelli_flags_) {
+        //   // Fall back to base_to_car_summary values until the first Marelli frame arrives.
+        //   rc_to_ct_msg_.track_flag = sig_track_flag->GetResult();
+        //   rc_to_ct_msg_.veh_flag = sig_veh_flag->GetResult();
+        // }
+        rc_to_ct_msg_.veh_rank = sig_veh_rank->GetResult();
+        rc_to_ct_msg_.lap_count = sig_lap_count->GetResult();
+        rc_to_ct_msg_.lap_distance = sig_lap_distance->GetResult();
+        rc_to_ct_msg_.target_speed = sig_round_target_speed->GetResult();
+        rc_to_ct_msg_.rolling_counter = sig_base_to_car_heartbeat->GetResult();
+
+        publishRcToCt(msg->header.stamp);
         break;
       }
 
@@ -256,6 +289,13 @@ void DbwNode::recvCAN(const can_msgs::msg::Frame::SharedPtr msg)
         break;
       }
   }
+}
+
+void DbwNode::publishRcToCt(const builtin_interfaces::msg::Time & stamp)
+{
+  rc_to_ct_msg_.stamp = stamp;
+
+  pub_rc_to_ct_->publish(rc_to_ct_msg_);
 }
 
 
@@ -302,16 +342,15 @@ void DbwNode::recvSteeringCmd(const raptor_dbw_msgs::msg::SteeringCmd::SharedPtr
 }
 
 void DbwNode::recvCtReport(const npc_controller_msgs::msg::CtReport::SharedPtr msg) {
+  NewEagle::DbcMessage* message = dbwDbc_.GetMessage("ct_report");
+  message->GetSignal("track_cond_ack")->SetResult(msg->track_flag_ack); 
+  message->GetSignal("veh_sig_ack")->SetResult(msg->veh_flag_ack);
+  message->GetSignal("ct_state")->SetResult(msg->ct_state);
+  message->GetSignal("ct_state_rolling_counter")->SetResult(msg->rolling_counter);
 
-NewEagle::DbcMessage* message = dbwDbc_.GetMessage("ct_report");
-message->GetSignal("track_cond_ack")->SetResult(msg->track_flag_ack); 
-message->GetSignal("veh_sig_ack")->SetResult(msg->veh_flag_ack);
-message->GetSignal("ct_state")->SetResult(msg->ct_state);
-message->GetSignal("ct_state_rolling_counter")->SetResult(msg->rolling_counter);
+  can_msgs::msg::Frame frame = message->GetFrame();
 
-can_msgs::msg::Frame frame = message->GetFrame();
-
-pub_can_->publish(frame);
+  pub_can_->publish(frame);
 }
 
 void DbwNode::recvGearShiftCmd(const std_msgs::msg::UInt8::SharedPtr msg) {

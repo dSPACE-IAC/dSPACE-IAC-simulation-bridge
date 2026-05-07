@@ -175,7 +175,7 @@ def generate_launch_description():
             socket_can_receiver_configure_event_handler,
             socket_can_receiver_activate_event_handler,
 
-            DeclareLaunchArgument('interface', default_value='can1'),
+            DeclareLaunchArgument('interface', default_value='can0'),
             DeclareLaunchArgument('timeout_sec', default_value='0.01'),
             DeclareLaunchArgument('auto_configure', default_value='true'),
             DeclareLaunchArgument('auto_activate', default_value='true'),

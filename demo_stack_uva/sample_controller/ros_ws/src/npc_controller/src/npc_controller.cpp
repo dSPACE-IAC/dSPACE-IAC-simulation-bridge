@@ -1291,6 +1291,7 @@ namespace controller
             npc_ct_report_msg_.veh_flag_ack = static_cast<int>(vehicle_flag_);
             npc_ct_report_msg_.target_speed = target_speed_;
             npc_ct_report_msg_.rolling_counter = ct_counter_;
+            npc_ct_report_msg_.veh_num = veh_num;
             npc_ct_report_pub_->publish(npc_ct_report_msg_);
         }
 
