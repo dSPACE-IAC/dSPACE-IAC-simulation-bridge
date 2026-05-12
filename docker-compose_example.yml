@@ -6,23 +6,8 @@ networks:
                 - subnet: 10.6.0.0/16
 
 services:
-  ctun:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-05-12
-    container_name: ctun
-    ports:
-        - 1723:1723/udp
-    cap_add:
-        - NET_ADMIN
-        - SYS_PTRACE
-    networks:
-        dspace_network:
-            ipv4_address: 10.6.0.8
-    depends_on:
-        veos:
-            condition: service_started
-
   veos:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:2026-05-12
     container_name: veos
     cap_add:
         - SYS_PTRACE
@@ -41,7 +26,7 @@ services:
             condition: service_started
 
   vesi:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-05-06
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-05-12
     container_name: vesi
     restart: always
     tty: true
@@ -78,8 +63,6 @@ services:
   dspace_restbus_bridge:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-05-12
     container_name: asm_socketcan_bridge
-    # image: dspace/iac_dspace_bridge_dev:2026-05-12
-    # container_name: dspace_bridge_dev
     restart: no
     volumes:
         - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
@@ -88,20 +71,6 @@ services:
         - SYS_PTRACE
     security_opt:
         - seccomp:unconfined
-    network_mode: "service:can-netns"
-    ipc: "container:can-netns"
-    depends_on:
-        veos:
-            condition: service_healthy
-        can-netns:
-            condition: service_started
-
-  raptor_dbw:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:2026-05-12
-    container_name: raptor_dbw
-    restart: no
-    cap_add:
-        - NET_ADMIN
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
     depends_on:
@@ -145,6 +114,35 @@ services:
         condition: service_healthy
       can-netns:
         condition: service_started
+
+#   raptor_dbw:
+#     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:2026-05-12
+#     container_name: raptor_dbw
+#     restart: no
+#     cap_add:
+#         - NET_ADMIN
+#     network_mode: "service:can-netns"
+#     ipc: "container:can-netns"
+#     depends_on:
+#         veos:
+#             condition: service_healthy
+#         can-netns:
+#             condition: service_started
+
+#   ctun:
+#     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-05-12
+#     container_name: ctun
+#     ports:
+#         - 1723:1723/udp
+#     cap_add:
+#         - NET_ADMIN
+#         - SYS_PTRACE
+#     networks:
+#         dspace_network:
+#             ipv4_address: 10.6.0.8
+#     depends_on:
+#         veos:
+#             condition: service_started
 
 # Example for adding a sensor bridge for sensor simulation with AURELION
     # dspace_sensor_bridge:
