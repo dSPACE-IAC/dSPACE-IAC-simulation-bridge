@@ -357,6 +357,7 @@ namespace controller
         // Declare Parameters
         declare_parameter("vehicle.wheelbase", 2.971);
         declare_parameter("vehicle.steering_ratio", 15.0);
+        declare_parameter("vehicle.steering_cmd_sign", 1.0);
         declare_parameter("vehicle.min_steer", -0.2793);
         declare_parameter("vehicle.max_steer", 0.2793);
         declare_parameter("vehicle.min_lookahead_dist", 15.0);
@@ -395,6 +396,7 @@ namespace controller
         // Load Parameters
         wheelbase_ = get_parameter("vehicle.wheelbase").as_double();
         steering_ratio_ = get_parameter("vehicle.steering_ratio").as_double();
+        steering_cmd_sign_ = get_parameter("vehicle.steering_cmd_sign").as_double();
         min_steer_ = get_parameter("vehicle.min_steer").as_double();
         max_steer_ = get_parameter("vehicle.max_steer").as_double();
         min_lookahead_dist_ = get_parameter("vehicle.min_lookahead_dist").as_double();
@@ -1063,6 +1065,8 @@ namespace controller
         // Calculate Desired Acceleration
         double desired_acceleration = calc_acceleration(desired_velocity_);
         desired_acceleration = std::max(min_acc_, std::min(desired_acceleration, max_acc_));
+        debug_msg_.desired_acceleration_clamped = desired_acceleration;
+        debug_msg_.non_brake_decel = non_brake_decel_;
         // double throttle = vehicle_state_.throttle;
         // bool is_accelerating = throttle > 0;
 
@@ -1139,8 +1143,8 @@ namespace controller
         debug_msg_.current_velocity = vehicle_state_.vx;
         debug_msg_.desired_acceleration = desired_acceleration;
         debug_msg_.current_acceleration = vehicle_state_.ax;
-        debug_msg_.output_throttle = vehicle_state_.throttle;
-        debug_msg_.output_brake = vehicle_state_.brake;
+        debug_msg_.output_throttle = throttle_cmd;
+        debug_msg_.output_brake = brake_cmd_front;
         debug_msg_.max_throttle = max_thr;
 
         debug_pub_->publish(debug_msg_);
@@ -1156,6 +1160,7 @@ namespace controller
         // Update Lateral Control Parameters
         wheelbase_ = get_parameter("vehicle.wheelbase").as_double();
         steering_ratio_ = get_parameter("vehicle.steering_ratio").as_double();
+        steering_cmd_sign_ = get_parameter("vehicle.steering_cmd_sign").as_double();
         min_steer_ = get_parameter("vehicle.min_steer").as_double();
         max_steer_ = get_parameter("vehicle.max_steer").as_double();
         min_lookahead_dist_ = get_parameter("vehicle.min_lookahead_dist").as_double();
@@ -1164,9 +1169,43 @@ namespace controller
 
         // Saturate and Translate Wheel Angle to Steering Wheel Angle
         double steering_angle = std::max(min_steer_, std::min(pure_pursuit_steering_angle, max_steer_));
-        double steering_cmd = steering_angle * (180.0 / M_PI) * steering_ratio_;
-        if(this->sys_state!=9){steering_cmd = 0;}
+        double steering_cmd_raw = steering_angle * (180.0 / M_PI) * steering_ratio_ * steering_cmd_sign_;
+        double steering_cmd = steering_cmd_raw;
+
+        // SIL can produce rapid sign flips; apply a steering slew-rate limiter in deg/s.
+        const double now_sec = this->simModeEnabled
+                                   ? (static_cast<double>(this->sec) + static_cast<double>(this->nsec) * 1e-9)
+                                   : this->now().seconds();
+        double dt = now_sec - prev_steer_time_;
+        if (!std::isfinite(dt) || dt <= 1e-4) {
+            dt = 0.01;
+        }
+        const double max_steer_rate_dps = 120.0;
+        const double max_delta_cmd = max_steer_rate_dps * dt;
+        if (prev_steer_time_ > 0.0) {
+            steering_cmd = std::clamp(
+                steering_cmd,
+                prev_steering_cmd_ - max_delta_cmd,
+                prev_steering_cmd_ + max_delta_cmd);
+        }
+
+        debug_msg_.steering_angle_clipped = steering_angle;
+        debug_msg_.steering_cmd_raw = steering_cmd_raw;
+        debug_msg_.steering_cmd_limited = steering_cmd;
+        debug_msg_.steering_dt = dt;
+        debug_msg_.steering_saturated = (pure_pursuit_steering_angle < min_steer_) || (pure_pursuit_steering_angle > max_steer_);
+        debug_msg_.steering_rate_limited = std::fabs(steering_cmd - steering_cmd_raw) > 1e-6;
+        const double alpha_dir_deadband = 0.02;
+        const double steering_dir_deadband = 1.0;
+        debug_msg_.steering_direction_mismatch =
+            (std::fabs(debug_msg_.pp_alpha) > alpha_dir_deadband) &&
+            (std::fabs(steering_cmd_raw) > steering_dir_deadband) &&
+            ((debug_msg_.pp_alpha * steering_cmd_raw) < 0.0);
+        prev_steering_cmd_ = steering_cmd;
+        prev_steer_time_ = now_sec;
+        // if (sys_state_ != SysState::SS9_DRIVING) {steering_cmd = 0;}
         vehicle_cmd_msg_.steering_cmd = steering_cmd;
+        debug_msg_.output_steering = steering_cmd;
         vehicle_cmd_msg_.steering_cmd_count = rolling_counter;
         rolling_counter++;
         if (rolling_counter >= 8)
@@ -1304,6 +1343,11 @@ namespace controller
         debug_msg_.lap_state = static_cast<int>(lap_state_inputs_.lap_state);
         debug_msg_.center_s = center_line_s_;
         debug_msg_.pit_s = pit_line_s_;
+        
+        // Lateral Control Prerequisites
+        debug_msg_.position_received = position_received;
+        debug_msg_.wheel_speed_received = wheel_speed_received;
+        debug_msg_.path_loaded = path_loaded;
     }
 
     // control logic
@@ -1334,10 +1378,20 @@ namespace controller
         double pursuit_vector_dy = target_position.y - current_position.y;
 
         double alpha = atan2(pursuit_vector_dy, pursuit_vector_dx) - vehicle_state_.yaw;
+        alpha = std::atan2(std::sin(alpha), std::cos(alpha));
         double delta = atan((2 * wheelbase_ * sin(alpha)) / lookahead);
 
         // Update the steering angle.
         pure_pursuit_steering_angle = delta;
+
+        debug_msg_.pp_current_x = current_position.x;
+        debug_msg_.pp_current_y = current_position.y;
+        debug_msg_.pp_current_yaw = current_position.yaw;
+        debug_msg_.pp_target_x = target_position.x;
+        debug_msg_.pp_target_y = target_position.y;
+        debug_msg_.pp_lookahead = lookahead;
+        debug_msg_.pp_alpha = alpha;
+        debug_msg_.pp_delta = delta;
 
         // Visualize the pure pursuit base and target points
         base_point_msg_.header.stamp = this->now();
@@ -1388,11 +1442,18 @@ namespace controller
 
         double vel_error = set_point - vehicle_state_.vx;
         double dt;
+        double vel_dt = 0.01;
+        double acc_dt = 0.01;
         if(this->simModeEnabled)
             dt = double(this->sec) + double(this->nsec) * 1e-9 - prev_vel_time_;
         else
             dt = this->now().seconds() + this->now().nanoseconds() * 1e-9 - prev_vel_time_;
+        if (!std::isfinite(dt) || dt <= 1e-4)
+            dt = 0.01;
+        vel_dt = dt;
         double vel_derivative_error_ = (vel_error - prev_vel_error_) / dt;
+        if (!std::isfinite(vel_derivative_error_))
+            vel_derivative_error_ = 0.0;
 
         double des_accel = (vel_kp_ * vel_error + vel_ki_ * vel_integral_error_ + vel_kd_ * vel_derivative_error_);
         prev_vel_error_ = vel_error;
@@ -1417,7 +1478,17 @@ namespace controller
         else
             dt = this->now().seconds() + this->now().nanoseconds() * 1e-9 - prev_acc_time_;
 
+        if (!std::isfinite(dt) || dt <= 1e-4)
+            dt = 0.01;
+        acc_dt = dt;
         acc_derivative_error_ = (acc_error_ - prev_acc_error_) / dt;
+        if (!std::isfinite(acc_derivative_error_))
+            acc_derivative_error_ = 0.0;
+
+        debug_msg_.vel_pid_dt = vel_dt;
+        debug_msg_.acc_pid_dt = acc_dt;
+        debug_msg_.vel_derivative_error = vel_derivative_error_;
+        debug_msg_.acc_derivative_error = acc_derivative_error_;
 
         prev_acc_error_ = acc_error_;
 
@@ -1453,10 +1524,15 @@ namespace controller
         else if (desired_acceleration > db || (desired_acceleration > 0.1 && vehicle_state_.vx < 5.0))
         {
             double delta_throttle = (throttle_kp_ * acc_error_ + throttle_ki_ * acc_integral_error_ + throttle_kd_ * acc_derivative_error_);
+            if (!std::isfinite(delta_throttle))
+                delta_throttle = 0.0;
+            debug_msg_.throttle_delta_cmd = delta_throttle;
             vehicle_state_.throttle += delta_throttle;
+            vehicle_state_.throttle = std::clamp(vehicle_state_.throttle, min_throttle_, max_throttle_);
         }
         else
         {
+            debug_msg_.throttle_delta_cmd = 0.0;
             vehicle_state_.throttle = 0.0;
         }
     }

@@ -246,6 +246,7 @@ namespace controller
         // Vehicle Parameters
         double wheelbase_;
         double steering_ratio_;
+        double steering_cmd_sign_;
         // Input Constraints
         double max_throttle_;
         double max_brake_;
@@ -289,6 +290,8 @@ namespace controller
         // Pure Pursuit
         // Made a global variable so it can be accessed directly from the control() timer callback.
         double pure_pursuit_steering_angle = -10000.0;
+        double prev_steering_cmd_ = 0.0;
+        double prev_steer_time_ = 0.0;
 
         // Path
         bool path_loaded = false;

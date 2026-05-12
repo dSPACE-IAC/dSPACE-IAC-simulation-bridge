@@ -21,72 +21,72 @@ asm_socketcan_bridge_node:
 
     connection.max_retries: 1
     publish_intervals.publish_map2d_ego_position_ms: 10
-    publish_intervals.publish_map2d_fellow1_position_ms: 10
-    publish_intervals.publish_map2d_fellow2_position_ms: 10
-    publish_intervals.publish_map2d_fellow3_position_ms: 10
-    publish_intervals.publish_base_to_car_summary_ms: 10
-    publish_intervals.publish_marelli_report_1_ms: 10
-    publish_intervals.publish_marelli_report_2_ms: 10
-    publish_intervals.publish_base_to_car_timing_ms: 10
-    publish_intervals.publish_rest_of_field_ms: 20
+    publish_intervals.publish_map2d_fellow1_position_ms: 100
+    publish_intervals.publish_map2d_fellow2_position_ms: 100
+    publish_intervals.publish_map2d_fellow3_position_ms: 100
+    publish_intervals.publish_base_to_car_summary_ms: 500
+    publish_intervals.publish_marelli_report_1_ms: 500
+    publish_intervals.publish_marelli_report_2_ms: 500
+    publish_intervals.publish_base_to_car_timing_ms: 100
+    publish_intervals.publish_rest_of_field_ms: 100
     publish_intervals.publish_pt_report_1_ms: 10
     publish_intervals.publish_pt_report_2_ms: 10
     publish_intervals.publish_pt_report_3_ms: 10
     publish_intervals.publish_steering_report_ms: 10
-    publish_intervals.publish_steering_report_extd_ms: 10
-    publish_intervals.publish_steering_report_extd_2_ms: 10
-    publish_intervals.publish_steering_report_extd_3_ms: 10
+    publish_intervals.publish_steering_report_extd_ms: 100
+    publish_intervals.publish_steering_report_extd_2_ms: 100
+    publish_intervals.publish_steering_report_extd_3_ms: 100
     publish_intervals.publish_brake_pressure_report_ms: 10
-    publish_intervals.publish_brake_report_extd_ms: 10
-    publish_intervals.publish_brake_report_extd_2_ms: 10
+    publish_intervals.publish_brake_report_extd_ms: 100
+    publish_intervals.publish_brake_report_extd_2_ms: 100
     publish_intervals.publish_accelerator_report_ms: 10
-    publish_intervals.publish_Tire_Temp_RR_1_ms: 10
-    publish_intervals.publish_Tire_Temp_RR_2_ms: 10
-    publish_intervals.publish_Tire_Temp_RR_3_ms: 10
-    publish_intervals.publish_Tire_Temp_RR_4_ms: 10
-    publish_intervals.publish_Tire_Temp_RL_1_ms: 10
-    publish_intervals.publish_Tire_Temp_RL_2_ms: 10
-    publish_intervals.publish_Tire_Temp_RL_3_ms: 10
-    publish_intervals.publish_Tire_Temp_RL_4_ms: 10
-    publish_intervals.publish_Tire_Temp_FR_1_ms: 10
-    publish_intervals.publish_Tire_Temp_FR_2_ms: 10
-    publish_intervals.publish_Tire_Temp_FR_3_ms: 10
-    publish_intervals.publish_Tire_Temp_FR_4_ms: 10
-    publish_intervals.publish_Tire_Temp_FL_1_ms: 10
-    publish_intervals.publish_Tire_Temp_FL_2_ms: 10
-    publish_intervals.publish_Tire_Temp_FL_3_ms: 10
-    publish_intervals.publish_Tire_Temp_FL_4_ms: 10
-    publish_intervals.publish_Tire_Pressure_RR_ms: 10
-    publish_intervals.publish_Tire_Pressure_RL_ms: 10
-    publish_intervals.publish_Tire_Pressure_FR_ms: 10
-    publish_intervals.publish_Tire_Pressure_FL_ms: 10
-    publish_intervals.publish_wheel_strain_gauge_ms: 10
-    publish_intervals.publish_wheel_potentiometer_data_ms: 10
-    publish_intervals.publish_wheel_speed_report_ms: 10
-    publish_intervals.publish_misc_report_ms: 10
-    publish_intervals.publish_diagnostic_report_ms: 10
+    publish_intervals.publish_Tire_Temp_RR_1_ms: 1000
+    publish_intervals.publish_Tire_Temp_RR_2_ms: 1000
+    publish_intervals.publish_Tire_Temp_RR_3_ms: 1000
+    publish_intervals.publish_Tire_Temp_RR_4_ms: 1000
+    publish_intervals.publish_Tire_Temp_RL_1_ms: 1000
+    publish_intervals.publish_Tire_Temp_RL_2_ms: 1000
+    publish_intervals.publish_Tire_Temp_RL_3_ms: 1000
+    publish_intervals.publish_Tire_Temp_RL_4_ms: 1000
+    publish_intervals.publish_Tire_Temp_FR_1_ms: 1000
+    publish_intervals.publish_Tire_Temp_FR_2_ms: 1000
+    publish_intervals.publish_Tire_Temp_FR_3_ms: 1000
+    publish_intervals.publish_Tire_Temp_FR_4_ms: 1000
+    publish_intervals.publish_Tire_Temp_FL_1_ms: 1000
+    publish_intervals.publish_Tire_Temp_FL_2_ms: 1000
+    publish_intervals.publish_Tire_Temp_FL_3_ms: 1000
+    publish_intervals.publish_Tire_Temp_FL_4_ms: 1000
+    publish_intervals.publish_Tire_Pressure_RR_ms: 100
+    publish_intervals.publish_Tire_Pressure_RL_ms: 100
+    publish_intervals.publish_Tire_Pressure_FR_ms: 100
+    publish_intervals.publish_Tire_Pressure_FL_ms: 100
+    publish_intervals.publish_wheel_strain_gauge_ms: 100
+    publish_intervals.publish_wheel_potentiometer_data_ms: 100
+    publish_intervals.publish_wheel_speed_report_ms: 5
+    publish_intervals.publish_misc_report_ms: 500
+    publish_intervals.publish_diagnostic_report_ms: 100
     publish_intervals.publish_novatel_report_ms: 10
     publish_intervals.publish_novatel_bestpos1_ms: 10
     publish_intervals.publish_novatel_bestpos2_ms: 10
     publish_intervals.publish_novatel_bestgnsspos1_ms: 10
-    publish_intervals.publish_novatel_bestgnsspos2_ms: 10
-    publish_intervals.publish_novatel_bestvel1_ms: 10
-    publish_intervals.publish_novatel_bestvel2_ms: 10
-    publish_intervals.publish_novatel_bestgnssvel1_ms: 10
-    publish_intervals.publish_novatel_bestgnssvel2_ms: 10
-    publish_intervals.publish_novatel_inspva1_ms: 10
-    publish_intervals.publish_novatel_inspva2_ms: 10
-    publish_intervals.publish_novatel_heading21_ms: 10
-    publish_intervals.publish_novatel_heading22_ms: 10
-    publish_intervals.publish_novatel_rawimu1_ms: 10
-    publish_intervals.publish_novatel_rawimu2_ms: 10
-    publish_intervals.publish_novatel_rawimux1_ms: 10
-    publish_intervals.publish_novatel_rawimux2_ms: 10
-    publish_intervals.publish_vectornav_attitude_group_ms: 10
-    publish_intervals.publish_vectornav_common_group_ms: 10
-    publish_intervals.publish_vectornav_imu_group_ms: 10
+    publish_intervals.publish_novatel_bestgnsspos2_ms: 100
+    publish_intervals.publish_novatel_bestvel1_ms: 100
+    publish_intervals.publish_novatel_bestvel2_ms: 100
+    publish_intervals.publish_novatel_bestgnssvel1_ms: 100
+    publish_intervals.publish_novatel_bestgnssvel2_ms: 100
+    publish_intervals.publish_novatel_inspva1_ms: 100
+    publish_intervals.publish_novatel_inspva2_ms: 100
+    publish_intervals.publish_novatel_heading21_ms: 100
+    publish_intervals.publish_novatel_heading22_ms: 100
+    publish_intervals.publish_novatel_rawimu1_ms: 1
+    publish_intervals.publish_novatel_rawimu2_ms: 1
+    publish_intervals.publish_novatel_rawimux1_ms: 100
+    publish_intervals.publish_novatel_rawimux2_ms: 100
+    publish_intervals.publish_vectornav_attitude_group_ms: 100
+    publish_intervals.publish_vectornav_common_group_ms: 100
+    publish_intervals.publish_vectornav_imu_group_ms: 1
     publish_intervals.publish_vectornav_gps_group_left_ms: 10
     publish_intervals.publish_vectornav_gps_group_right_ms: 10
-    publish_intervals.publish_vectornav_ins_group_ms: 10
-    publish_intervals.publish_vectornav_time_group_ms: 10
+    publish_intervals.publish_vectornav_ins_group_ms: 100
+    publish_intervals.publish_vectornav_time_group_ms: 100
     publish_intervals.publishGroundTruthArray_ms: 10

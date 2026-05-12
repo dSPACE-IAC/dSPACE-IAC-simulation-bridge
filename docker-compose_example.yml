@@ -115,19 +115,19 @@ services:
       can-netns:
         condition: service_started
 
-#   raptor_dbw:
-#     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:2026-05-12
-#     container_name: raptor_dbw
-#     restart: no
-#     cap_add:
-#         - NET_ADMIN
-#     network_mode: "service:can-netns"
-#     ipc: "container:can-netns"
-#     depends_on:
-#         veos:
-#             condition: service_healthy
-#         can-netns:
-#             condition: service_started
+  raptor_dbw:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:2026-05-12
+    container_name: raptor_dbw
+    restart: no
+    cap_add:
+        - NET_ADMIN
+    network_mode: "service:can-netns"
+    ipc: "container:can-netns"
+    depends_on:
+        veos:
+            condition: service_healthy
+        can-netns:
+            condition: service_started
 
 #   ctun:
 #     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-05-12

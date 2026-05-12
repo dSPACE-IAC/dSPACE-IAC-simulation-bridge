@@ -227,8 +227,6 @@ void DbwNode::recvCAN(const can_msgs::msg::Frame::SharedPtr msg)
         }
 
         message->SetFrame(msg);
-        // auto * sig_track_flag = message->GetSignal("track_flag");
-        // auto * sig_veh_flag = message->GetSignal("veh_flag");
         auto * sig_veh_rank = message->GetSignal("veh_rank");
         auto * sig_lap_count = message->GetSignal("lap_count");
         auto * sig_lap_distance = message->GetSignal("lap_distance");
@@ -239,12 +237,6 @@ void DbwNode::recvCAN(const can_msgs::msg::Frame::SharedPtr msg)
           RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000, "Missing one or more signals in DBC for ID_RC_TO_CT");
           return;
         }
-
-        // if (!have_marelli_flags_) {
-        //   // Fall back to base_to_car_summary values until the first Marelli frame arrives.
-        //   rc_to_ct_msg_.track_flag = sig_track_flag->GetResult();
-        //   rc_to_ct_msg_.veh_flag = sig_veh_flag->GetResult();
-        // }
         rc_to_ct_msg_.veh_rank = sig_veh_rank->GetResult();
         rc_to_ct_msg_.lap_count = sig_lap_count->GetResult();
         rc_to_ct_msg_.lap_distance = sig_lap_distance->GetResult();
@@ -347,6 +339,7 @@ void DbwNode::recvCtReport(const npc_controller_msgs::msg::CtReport::SharedPtr m
   message->GetSignal("veh_sig_ack")->SetResult(msg->veh_flag_ack);
   message->GetSignal("ct_state")->SetResult(msg->ct_state);
   message->GetSignal("ct_state_rolling_counter")->SetResult(msg->rolling_counter);
+  message->GetSignal("veh_num")->SetResult(msg->veh_num);
 
   can_msgs::msg::Frame frame = message->GetFrame();
 

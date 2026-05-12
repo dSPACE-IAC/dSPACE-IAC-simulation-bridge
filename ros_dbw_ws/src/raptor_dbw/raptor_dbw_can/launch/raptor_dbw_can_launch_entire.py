@@ -130,6 +130,7 @@ def generate_launch_description():
             'interface': LaunchConfiguration('interface'),
             'timeout_sec':
             LaunchConfiguration('timeout_sec'),
+            'enable_frame_loopback': True,
         }],
         output='screen')
 
