@@ -51,7 +51,7 @@ x-demo_stack: &demo_stack
         - docker-env.stack
 
 x-race_orchestration: &race_orchestration
-    image:  722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-05-12
+    image:  722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:2026-05-12
     cap_add:
         - SYS_PTRACE
     env_file:
