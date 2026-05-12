@@ -1,8 +1,10 @@
-#ifndef RTW_HEADER_ASMBus_h_
-#define RTW_HEADER_ASMBus_h_
+#ifndef ASMBUS_H
+#define ASMBUS_H
+
 #include "rtwtypes.h"
 #include "multiword_types.h"
 
+#pragma pack(push, 1)
 typedef struct 
 {
   real32_T fl_tire_temperature;
@@ -672,5 +674,6 @@ typedef struct
   nova_tel_pwr_pak nova_tel_pwr_pak1_var;
   nova_tel_pwr_pak nova_tel_pwr_pak2_var;
 } ASMBus;
+#pragma pack(pop)
 
-#endif                                 /* RTW_HEADER_ASMBus_h_ */
+#endif /* ASMBUS_H */

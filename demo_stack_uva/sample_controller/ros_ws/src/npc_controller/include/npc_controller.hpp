@@ -116,7 +116,7 @@ namespace controller
         bool disableStateMachine = false;
 
         // Main control callback
-        int rolling_counter = 0;
+        uint8_t rolling_counter = 0;
         int shifting_counter_ = 0;
         int last_gear_ = 0;
         bool shift_up_ = false;

@@ -654,16 +654,16 @@ namespace controller
                         return extractSignalScaled(in_frame.can_id, name, in_frame.data);
                     };
                     if (const auto value = get_scaled("wheel_speed_RL")) {
-                        this->ws_rear_left =static_cast<float>(std::floor(*value));
+                        this->ws_rear_left =static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("wheel_speed_FR")) {
-                        this->ws_front_right =static_cast<float>(std::floor(*value));
+                        this->ws_front_right =static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("wheel_speed_FL")) {
-                        this->ws_front_left =static_cast<float>(std::floor(*value));
+                        this->ws_front_left =static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("wheel_speed_RR")) {
-                        this->ws_rear_right =static_cast<float>(std::floor(*value));
+                        this->ws_rear_right =static_cast<float>(*value);
                     }
                     if (this->receivedDecodedMessagePrinting) {
                         RCLCPP_INFO(this->get_logger(),
@@ -689,7 +689,7 @@ namespace controller
                     };
                     if (const auto value = get_scaled("throttle_position")) {
                         this->throttle_position =
-                        static_cast<float>(std::floor(*value));
+                        static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("current_gear")) {
                         this->current_gear =
@@ -1078,8 +1078,8 @@ namespace controller
         double brake_cmd_front = 0.5 * std::max(min_brake_, std::min(vehicle_state_.brake, max_brake_));
         double brake_cmd_rear = 0.5 * std::max(min_brake_, std::min(vehicle_state_.brake, max_brake_));
 
-        vehicle_cmd_msg_.brake_cmd_front = brake_cmd_front;
-        vehicle_cmd_msg_.brake_cmd_rear = brake_cmd_rear;
+        vehicle_cmd_msg_.brake_cmd_front = static_cast<uint16_t>(std::round(brake_cmd_front));
+        vehicle_cmd_msg_.brake_cmd_rear = static_cast<uint16_t>(std::round(brake_cmd_rear));
         vehicle_cmd_msg_.brake_cmd_count = rolling_counter;
 
         uint8_t gear_cmd = get_gear_shift_cmd();

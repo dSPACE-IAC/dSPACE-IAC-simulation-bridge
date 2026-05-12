@@ -14,8 +14,8 @@ typedef struct
     uint8_t enable_throttle_cmd;
 
     // Brake pressure command (kPa)
-    int16_t brake_cmd_front;
-    int16_t brake_cmd_rear;
+    uint16_t brake_cmd_front;
+    uint16_t brake_cmd_rear;
     uint8_t brake_bias_switch;
     uint8_t brake_cmd_count;
     uint8_t enable_brake_cmd;
