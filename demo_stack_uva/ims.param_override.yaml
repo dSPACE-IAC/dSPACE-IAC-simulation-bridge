@@ -6,7 +6,7 @@
     can.can1_dbc_path: "config/CAN1-INDY-V26.dbc"
     can.interface: "can0"
     connection.max_retries: 1
-    connection.useRaptorDbwNode: true
+    connection.useRaptorDbwNode: false
 
     publish_intervals.pure_pursuit_timer: 10
     publish_intervals.long_control_timer: 10
