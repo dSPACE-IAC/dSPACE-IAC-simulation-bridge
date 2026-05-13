@@ -7,7 +7,7 @@ networks:
 
 services:
   veos:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:sim_pack_v4.0
     container_name: veos
     network_mode: host # need network_mode: host to get communication working
     cap_add:
@@ -27,7 +27,7 @@ services:
             condition: service_started
 
   vesi:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:sim_pack_v4.0
     container_name: vesi
     restart: always
     ports:
@@ -42,7 +42,7 @@ services:
             condition: service_started
 
   can-netns:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     container_name: can-netns
     ipc: "shareable"
     shm_size: "512m"
@@ -65,7 +65,7 @@ services:
             ipv4_address: 10.6.0.4
 
   dspace_restbus_bridge:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     container_name: asm_socketcan_bridge
     restart: no
     environment:
@@ -86,7 +86,7 @@ services:
             condition: service_started
 
   dspace_foxglove_bridge:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:sim_pack_v4.0
     container_name: foxglove_bridge
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
@@ -106,7 +106,7 @@ services:
         ipv4_address: 10.6.0.9
 
   demo_stack_uva:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
     container_name: demo_stack_uva
     environment:
         - SIM_CLOCK_MODE=false

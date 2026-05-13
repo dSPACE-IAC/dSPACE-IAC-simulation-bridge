@@ -2,7 +2,7 @@
 # Definitions of a single race car with stack and all requried containers
 #--------------------------------------------
 x-race_car: &race_car
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:sim_pack_v4.0
     cap_add:
         - SYS_PTRACE
     shm_size: 256m
@@ -10,12 +10,12 @@ x-race_car: &race_car
         - docker-env.race_car
 
 x-vesi: &vesi
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:sim_pack_v4.0
     restart: always
     tty: true
 
 x-dspace_bridge: &dspace_bridge
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     restart: no
     cap_add:
         - NET_ADMIN
@@ -25,7 +25,7 @@ x-dspace_bridge: &dspace_bridge
         - docker-env.bridge
 
 x-can-netns: &can-netns
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     cap_add:
         - NET_ADMIN
     ipc: "shareable"
@@ -42,16 +42,16 @@ x-can-netns: &can-netns
             tail -f /dev/null
 
 x-dspace_foxglove_bridge: &dspace_foxglove_bridge
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:sim_pack_v4.0
 
 
 x-demo_stack: &demo_stack
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
     env_file:
         - docker-env.stack
 
 x-race_orchestration: &race_orchestration
-    image:  722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:2026-05-12
+    image:  722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:sim_pack_v4.0
     cap_add:
         - SYS_PTRACE
     env_file:
@@ -62,7 +62,7 @@ x-race_orchestration: &race_orchestration
             ipv4_address: 10.6.1.1
 
 x-ctun: &ctun
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-05-12
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:sim_pack_v4.0
     cap_add:
         - NET_ADMIN
         - SYS_PTRACE
