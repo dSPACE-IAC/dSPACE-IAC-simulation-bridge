@@ -5,8 +5,8 @@ float32 throttle_cmd
 uint8 throttle_cmd_count
 
 # Brake pressure command (kPa)
-float32 brake_cmd_front
-float32 brake_cmd_rear
+uint16 brake_cmd_front
+uint16 brake_cmd_rear
 uint8 brake_bias_switch
 uint8 brake_cmd_count
 

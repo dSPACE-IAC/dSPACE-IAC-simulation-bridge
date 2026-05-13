@@ -222,39 +222,61 @@ namespace controller
             veh_num = 42;
         }
 
-    this->verbosePrinting = this->declare_parameter<bool>(
-      "logging.verbose",
-      false);
-    this->receivedMessagePrinting = this->declare_parameter<bool>(
-      "logging.received_can_frames",
-      false);
-    this->receivedDecodedMessagePrinting = this->declare_parameter<bool>(
-      "logging.received_decoded_frames",
-      false);
-    this->sentMessagePrinting = this->declare_parameter<bool>(
-      "logging.sent_can_frames",
-      false);
+        this->verbosePrinting = this->declare_parameter<bool>(
+        "logging.verbose",
+        false);
+        this->receivedMessagePrinting = this->declare_parameter<bool>(
+        "logging.received_can_frames",
+        false);
+        this->receivedDecodedMessagePrinting = this->declare_parameter<bool>(
+        "logging.received_decoded_frames",
+        false);
+        this->sentMessagePrinting = this->declare_parameter<bool>(
+        "logging.sent_can_frames",
+        false);
+        this->publish_ros_all = this->declare_parameter<bool>(
+        "logging.publish_ros_all",
+        false);
 
-    if (this->verbosePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Verbose printing enabled");
-    }
-    if (this->receivedMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Raw CAN frame logging enabled");
-    }
-    if (this->receivedDecodedMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Decoded CAN frame logging enabled");
-    }
-    if (this->sentMessagePrinting) {
-      RCLCPP_INFO(this->get_logger(), "Sent CAN frame logging enabled");
-    }
-        
+        if (this->verbosePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Verbose printing enabled");
+        }
+        if (this->receivedMessagePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Raw CAN frame logging enabled");
+        }
+        if (this->receivedDecodedMessagePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Decoded CAN frame logging enabled");
+        }
+        if (this->sentMessagePrinting) {
+        RCLCPP_INFO(this->get_logger(), "Sent CAN frame logging enabled");
+        }
+
+        this->useRaptorDbwNode = this->declare_parameter<bool>(
+            "connection.useRaptorDbwNode",
+            false);
+        if (this->useRaptorDbwNode) {
+            RCLCPP_INFO(this->get_logger(), "Raptor DBW node is used. Direct CAN communication is disabled");
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Direct CAN communication is enabled");
+        }
+        this->disableStateMachine = this->declare_parameter<bool>(
+            "disableStateMachine",
+            false);
+        if (this->disableStateMachine) {
+            RCLCPP_INFO(this->get_logger(), "Statemachine disabled. System will directly proceed to ct_state 8.");
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Statemachine enabled. System will wait for red flag to be initiated.");
+        }
+            
         // Initialize subscribers.
         // bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("/novatel_bottom/bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
         bestpos_sub_ = create_subscription<novatel_oem7_msgs::msg::BESTPOS>("bestpos", qos, std::bind(&ControllerNode::bestpos_callback, this, std::placeholders::_1));
-        wheel_speed_sub_ = create_subscription<raptor_dbw_msgs::msg::WheelSpeedReport>("wheel_speed_report", qos, std::bind(&ControllerNode::wheel_speed_callback_ros_msg, this, std::placeholders::_1));
-        pt_report_sub_ = create_subscription<npc_controller_msgs::msg::PtReport>("pt_report", qos, std::bind(&ControllerNode::receivePtReport_ros_msg, this, std::placeholders::_1));
-        sys_state_sub_ = this->create_subscription<npc_controller_msgs::msg::MiscReport>("raptor_dbw_interface/misc_report_do", 1, std::bind(&ControllerNode::receiveSysState_ros_msg, this, std::placeholders::_1));
-        flags_sub_ = this->create_subscription<npc_controller_msgs::msg::RcToCt>("raptor_dbw_interface/rc_to_ct", 1, std::bind(&ControllerNode::receiveFlags_ros_msg, this, std::placeholders::_1));
+        if (this->useRaptorDbwNode) {
+            wheel_speed_sub_ = create_subscription<raptor_dbw_msgs::msg::WheelSpeedReport>("wheel_speed_report", qos, std::bind(&ControllerNode::wheel_speed_callback_ros_msg, this, std::placeholders::_1));
+            pt_report_sub_ = create_subscription<npc_controller_msgs::msg::PtReport>("pt_report", qos, std::bind(&ControllerNode::receivePtReport_ros_msg, this, std::placeholders::_1));
+            sys_state_sub_ = this->create_subscription<npc_controller_msgs::msg::MiscReport>("raptor_dbw_interface/misc_report_do", 1, std::bind(&ControllerNode::receiveSysState_ros_msg, this, std::placeholders::_1));
+            flags_sub_ = this->create_subscription<npc_controller_msgs::msg::RcToCt>("raptor_dbw_interface/rc_to_ct", 1, std::bind(&ControllerNode::receiveFlags_ros_msg, this, std::placeholders::_1));
+        }
         ct_input_sub_ = this->create_subscription<std_msgs::msg::Int32>("ct_input", qos, std::bind(&ControllerNode::receiveCtInput, this, std::placeholders::_1));
 
         if(this->simModeEnabled)
@@ -335,6 +357,7 @@ namespace controller
         // Declare Parameters
         declare_parameter("vehicle.wheelbase", 2.971);
         declare_parameter("vehicle.steering_ratio", 15.0);
+        declare_parameter("vehicle.steering_cmd_sign", 1.0);
         declare_parameter("vehicle.min_steer", -0.2793);
         declare_parameter("vehicle.max_steer", 0.2793);
         declare_parameter("vehicle.min_lookahead_dist", 15.0);
@@ -373,6 +396,7 @@ namespace controller
         // Load Parameters
         wheelbase_ = get_parameter("vehicle.wheelbase").as_double();
         steering_ratio_ = get_parameter("vehicle.steering_ratio").as_double();
+        steering_cmd_sign_ = get_parameter("vehicle.steering_cmd_sign").as_double();
         min_steer_ = get_parameter("vehicle.min_steer").as_double();
         max_steer_ = get_parameter("vehicle.max_steer").as_double();
         min_lookahead_dist_ = get_parameter("vehicle.min_lookahead_dist").as_double();
@@ -414,60 +438,62 @@ namespace controller
         lap_state_inputs_.speeds = speeds;
         lap_state_inputs_.locs = locs;
 
-        const int16_t default_max_retries = 1;
-        const int64_t raw_max_retries = this->declare_parameter<int64_t>("connection.max_retries", static_cast<int64_t>(default_max_retries));
-        max_retries = sanitize_retry_value(raw_max_retries, default_max_retries, this->get_logger(), "Maximum connection retries");
-        RCLCPP_INFO(this->get_logger(), "Maximum connection retries: %d", static_cast<int>(max_retries));
+        if (!this->useRaptorDbwNode) {
+            const int16_t default_max_retries = 1;
+            const int64_t raw_max_retries = this->declare_parameter<int64_t>("connection.max_retries", static_cast<int64_t>(default_max_retries));
+            max_retries = sanitize_retry_value(raw_max_retries, default_max_retries, this->get_logger(), "Maximum connection retries");
+            RCLCPP_INFO(this->get_logger(), "Maximum connection retries: %d", static_cast<int>(max_retries));
 
-        auto pkg_share = ament_index_cpp::get_package_share_directory("npc_controller");
-        can1_dbc_path = this->declare_parameter<std::string>("can.can1_dbc_path", pkg_share + "/config/CAN1-INDY-V23.dbc");
-        auto dbc_path = std::filesystem::path(can1_dbc_path);
-        if (!dbc_path.is_absolute()) {
-        dbc_path = std::filesystem::path(pkg_share) / dbc_path;
-        can1_dbc_path = dbc_path.lexically_normal().string();
-        RCLCPP_INFO(this->get_logger(),
-                    "CAN1 DBC path resolved relative to package share: %s",
-                    can1_dbc_path.c_str());
-        } else {
-        RCLCPP_INFO(this->get_logger(), "CAN1 DBC path: %s", can1_dbc_path.c_str());
-        }
-        can_iface = this->declare_parameter<std::string>(
-            "can.interface",
-            "vcan0");
-        RCLCPP_INFO(this->get_logger(), "CAN interface: %s", can_iface.c_str());
-        const int16_t dbc_attempts = max_retries > 0 ? max_retries : static_cast<int16_t>(1);
-        for (int16_t attempt = 1; attempt <= dbc_attempts; ++attempt) {
-        if (access(can1_dbc_path.c_str(), F_OK) == 0) {
-            RCLCPP_INFO(get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
-            break;
-        }
+            auto pkg_share = ament_index_cpp::get_package_share_directory("npc_controller");
+            can1_dbc_path = this->declare_parameter<std::string>("can.can1_dbc_path", pkg_share + "/config/CAN1-INDY-V26.dbc");
+            auto dbc_path = std::filesystem::path(can1_dbc_path);
+            if (!dbc_path.is_absolute()) {
+            dbc_path = std::filesystem::path(pkg_share) / dbc_path;
+            can1_dbc_path = dbc_path.lexically_normal().string();
+            RCLCPP_INFO(this->get_logger(),
+                        "CAN1 DBC path resolved relative to package share: %s",
+                        can1_dbc_path.c_str());
+            } else {
+            RCLCPP_INFO(this->get_logger(), "CAN1 DBC path: %s", can1_dbc_path.c_str());
+            }
+            can_iface = this->declare_parameter<std::string>(
+                "can.interface",
+                "vcan0");
+            RCLCPP_INFO(this->get_logger(), "CAN interface: %s", can_iface.c_str());
+            const int16_t dbc_attempts = max_retries > 0 ? max_retries : static_cast<int16_t>(1);
+            for (int16_t attempt = 1; attempt <= dbc_attempts; ++attempt) {
+            if (access(can1_dbc_path.c_str(), F_OK) == 0) {
+                RCLCPP_INFO(get_logger(), "Found CAN1 DBC at %s", can1_dbc_path.c_str());
+                break;
+            }
 
-        if (attempt == dbc_attempts)
-        {
-            RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
-            rclcpp::shutdown();
-            return;
-        }
-
-        RCLCPP_WARN(get_logger(),
-                    "CAN1 DBC not found (%s), attempt %d/%d; retrying in 1 s",
-                    can1_dbc_path.c_str(), attempt, dbc_attempts);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-
-        this->can_socket = open_socket(can_iface);
-        if (this->can_socket < 0) {
-            RCLCPP_FATAL(get_logger(), "Could not open one or more CAN interfaces; shutting down.");
-            if (this->can_socket >= 0) close(this->can_socket);
+            if (attempt == dbc_attempts)
+            {
+                RCLCPP_FATAL(get_logger(), "Failed to often to find CAN1 DBC; exiting.");
                 rclcpp::shutdown();
-            return;
+                return;
+            }
+
+            RCLCPP_WARN(get_logger(),
+                        "CAN1 DBC not found (%s), attempt %d/%d; retrying in 1 s",
+                        can1_dbc_path.c_str(), attempt, dbc_attempts);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+
+            this->can_socket = open_socket(can_iface);
+            if (this->can_socket < 0) {
+                RCLCPP_FATAL(get_logger(), "Could not open one or more CAN interfaces; shutting down.");
+                if (this->can_socket >= 0) close(this->can_socket);
+                    rclcpp::shutdown();
+                return;
+            }
+            can_message_info = initialize_messages();
+            buildMessageLookup();
+            RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
+            reader_thread1 = std::thread([this]() {
+                can_reader_loop(this->can_socket, "CAN1");
+            });
         }
-        can_message_info = initialize_messages();
-        buildMessageLookup();
-        RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
-        reader_thread1 = std::thread([this]() {
-            can_reader_loop(this->can_socket, "CAN1");
-        });
     }
 
     // general utilities
@@ -630,16 +656,16 @@ namespace controller
                         return extractSignalScaled(in_frame.can_id, name, in_frame.data);
                     };
                     if (const auto value = get_scaled("wheel_speed_RL")) {
-                        this->ws_rear_left =static_cast<float>(std::floor(*value));
+                        this->ws_rear_left =static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("wheel_speed_FR")) {
-                        this->ws_front_right =static_cast<float>(std::floor(*value));
+                        this->ws_front_right =static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("wheel_speed_FL")) {
-                        this->ws_front_left =static_cast<float>(std::floor(*value));
+                        this->ws_front_left =static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("wheel_speed_RR")) {
-                        this->ws_rear_right =static_cast<float>(std::floor(*value));
+                        this->ws_rear_right =static_cast<float>(*value);
                     }
                     if (this->receivedDecodedMessagePrinting) {
                         RCLCPP_INFO(this->get_logger(),
@@ -665,7 +691,7 @@ namespace controller
                     };
                     if (const auto value = get_scaled("throttle_position")) {
                         this->throttle_position =
-                        static_cast<float>(std::floor(*value));
+                        static_cast<float>(*value);
                     }
                     if (const auto value = get_scaled("current_gear")) {
                         this->current_gear =
@@ -781,10 +807,6 @@ namespace controller
     // Callbacks
     void ControllerNode::simClockTimeCallback(const rosgraph_msgs::msg::Clock &msg)
     {
-        // std::cout << "check controller now time second"<< this->now().seconds() << std::endl;
-        // std::cout << "ccheck controller now time nanosecond"<< this->now().nanoseconds() << std::endl;
-        // std::cout << "check controller message time second" << msg.clock.sec << std::endl;
-        // std::cout << "check controller message time nanosecond" << msg.clock.nanosec << std::endl;
         this->sec = msg.clock.sec;
         this->nsec = msg.clock.nanosec;
         if (msg.clock.sec != 0 && msg.clock.nanosec != 0)
@@ -842,7 +864,6 @@ namespace controller
 
     void ControllerNode::wheel_speed_callback()
     {
-        // void ControllerNode::wheel_speed_callback(const raptor_dbw_msgs::msg::WheelSpeedReport::SharedPtr msg){
         double fl = this->ws_front_left;
         double fr = this->ws_front_right;
         double rl = this->ws_rear_left;
@@ -1044,6 +1065,8 @@ namespace controller
         // Calculate Desired Acceleration
         double desired_acceleration = calc_acceleration(desired_velocity_);
         desired_acceleration = std::max(min_acc_, std::min(desired_acceleration, max_acc_));
+        debug_msg_.desired_acceleration_clamped = desired_acceleration;
+        debug_msg_.non_brake_decel = non_brake_decel_;
         // double throttle = vehicle_state_.throttle;
         // bool is_accelerating = throttle > 0;
 
@@ -1059,8 +1082,8 @@ namespace controller
         double brake_cmd_front = 0.5 * std::max(min_brake_, std::min(vehicle_state_.brake, max_brake_));
         double brake_cmd_rear = 0.5 * std::max(min_brake_, std::min(vehicle_state_.brake, max_brake_));
 
-        vehicle_cmd_msg_.brake_cmd_front = brake_cmd_front;
-        vehicle_cmd_msg_.brake_cmd_rear = brake_cmd_rear;
+        vehicle_cmd_msg_.brake_cmd_front = static_cast<uint16_t>(std::round(brake_cmd_front));
+        vehicle_cmd_msg_.brake_cmd_rear = static_cast<uint16_t>(std::round(brake_cmd_rear));
         vehicle_cmd_msg_.brake_cmd_count = rolling_counter;
 
         uint8_t gear_cmd = get_gear_shift_cmd();
@@ -1069,56 +1092,59 @@ namespace controller
         vehicle_cmd_msg_.header.stamp = this->now();
         vehicle_cmd_pub_->publish(vehicle_cmd_msg_);
 
-        publishCanMessage("gear_shift_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("desired_gear", gear_cmd);
-        });
-        publishCanMessage("accelerator_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("acc_pedal_cmd_counter", rolling_counter);
-            assign("acc_pedal_cmd", throttle_cmd);
-        });
-        publishCanMessage("brake_pressure_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("brk_pressure_cmd_counter", rolling_counter);
-            assign("F_brake_pressure_cmd", brake_cmd_front);
-            assign("R_brake_pressure_cmd", brake_cmd_rear);
-        });
-        raptor_dbw_msgs::msg::AcceleratorPedalCmd ros_accel_cmd;                                    
-        ros_accel_cmd.pedal_cmd = throttle_cmd;
-        ros_accel_cmd.enable  = true;
-        ros_accel_cmd.rolling_counter = rolling_counter;
-        throttle_cmd_pub_->publish(ros_accel_cmd);
+        if (!this->useRaptorDbwNode) {
+            publishCanMessage("gear_shift_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("desired_gear", gear_cmd);
+            });
+            publishCanMessage("accelerator_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("acc_pedal_cmd_counter", rolling_counter);
+                assign("acc_pedal_cmd", throttle_cmd);
+            });
+            publishCanMessage("brake_pressure_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("brk_pressure_cmd_counter", rolling_counter);
+                assign("F_brake_pressure_cmd", brake_cmd_front);
+                assign("R_brake_pressure_cmd", brake_cmd_rear);
+            });
+        } else if (this->useRaptorDbwNode || this->publish_ros_all) {
+            raptor_dbw_msgs::msg::AcceleratorPedalCmd ros_accel_cmd;                                    
+            ros_accel_cmd.pedal_cmd = throttle_cmd;
+            ros_accel_cmd.enable  = true;
+            ros_accel_cmd.rolling_counter = rolling_counter;
+            throttle_cmd_pub_->publish(ros_accel_cmd);
 
-        raptor_dbw_msgs::msg::BrakeCmd ros_brake_cmd;
-        ros_brake_cmd.pedal_cmd = 2 * brake_cmd_front;
-        ros_brake_cmd.enable  = true;
-        ros_brake_cmd.rolling_counter = rolling_counter;
-        brake_cmd_pub_->publish(ros_brake_cmd);
+            raptor_dbw_msgs::msg::BrakeCmd ros_brake_cmd;
+            ros_brake_cmd.pedal_cmd = 2 * brake_cmd_front;
+            ros_brake_cmd.enable  = true;
+            ros_brake_cmd.rolling_counter = rolling_counter;
+            brake_cmd_pub_->publish(ros_brake_cmd);
 
-        std_msgs::msg::UInt8 ros_gear_cmd;
-        ros_gear_cmd.data = gear_cmd;
-        gear_cmd_pub_->publish(ros_gear_cmd);
+            std_msgs::msg::UInt8 ros_gear_cmd;
+            ros_gear_cmd.data = gear_cmd;
+            gear_cmd_pub_->publish(ros_gear_cmd);
+        }
 
         // Debug Publisher
         debug_msg_.desired_velocity = desired_velocity_;
         debug_msg_.current_velocity = vehicle_state_.vx;
         debug_msg_.desired_acceleration = desired_acceleration;
         debug_msg_.current_acceleration = vehicle_state_.ax;
-        debug_msg_.output_throttle = vehicle_state_.throttle;
-        debug_msg_.output_brake = vehicle_state_.brake;
+        debug_msg_.output_throttle = throttle_cmd;
+        debug_msg_.output_brake = brake_cmd_front;
         debug_msg_.max_throttle = max_thr;
 
         debug_pub_->publish(debug_msg_);
@@ -1134,6 +1160,7 @@ namespace controller
         // Update Lateral Control Parameters
         wheelbase_ = get_parameter("vehicle.wheelbase").as_double();
         steering_ratio_ = get_parameter("vehicle.steering_ratio").as_double();
+        steering_cmd_sign_ = get_parameter("vehicle.steering_cmd_sign").as_double();
         min_steer_ = get_parameter("vehicle.min_steer").as_double();
         max_steer_ = get_parameter("vehicle.max_steer").as_double();
         min_lookahead_dist_ = get_parameter("vehicle.min_lookahead_dist").as_double();
@@ -1142,9 +1169,43 @@ namespace controller
 
         // Saturate and Translate Wheel Angle to Steering Wheel Angle
         double steering_angle = std::max(min_steer_, std::min(pure_pursuit_steering_angle, max_steer_));
-        double steering_cmd = steering_angle * (180.0 / M_PI) * steering_ratio_;
-        if(this->sys_state!=9){steering_cmd = 0;}
+        double steering_cmd_raw = steering_angle * (180.0 / M_PI) * steering_ratio_ * steering_cmd_sign_;
+        double steering_cmd = steering_cmd_raw;
+
+        // SIL can produce rapid sign flips; apply a steering slew-rate limiter in deg/s.
+        const double now_sec = this->simModeEnabled
+                                   ? (static_cast<double>(this->sec) + static_cast<double>(this->nsec) * 1e-9)
+                                   : this->now().seconds();
+        double dt = now_sec - prev_steer_time_;
+        if (!std::isfinite(dt) || dt <= 1e-4) {
+            dt = 0.01;
+        }
+        const double max_steer_rate_dps = 120.0;
+        const double max_delta_cmd = max_steer_rate_dps * dt;
+        if (prev_steer_time_ > 0.0) {
+            steering_cmd = std::clamp(
+                steering_cmd,
+                prev_steering_cmd_ - max_delta_cmd,
+                prev_steering_cmd_ + max_delta_cmd);
+        }
+
+        debug_msg_.steering_angle_clipped = steering_angle;
+        debug_msg_.steering_cmd_raw = steering_cmd_raw;
+        debug_msg_.steering_cmd_limited = steering_cmd;
+        debug_msg_.steering_dt = dt;
+        debug_msg_.steering_saturated = (pure_pursuit_steering_angle < min_steer_) || (pure_pursuit_steering_angle > max_steer_);
+        debug_msg_.steering_rate_limited = std::fabs(steering_cmd - steering_cmd_raw) > 1e-6;
+        const double alpha_dir_deadband = 0.02;
+        const double steering_dir_deadband = 1.0;
+        debug_msg_.steering_direction_mismatch =
+            (std::fabs(debug_msg_.pp_alpha) > alpha_dir_deadband) &&
+            (std::fabs(steering_cmd_raw) > steering_dir_deadband) &&
+            ((debug_msg_.pp_alpha * steering_cmd_raw) < 0.0);
+        prev_steering_cmd_ = steering_cmd;
+        prev_steer_time_ = now_sec;
+        // if (sys_state_ != SysState::SS9_DRIVING) {steering_cmd = 0;}
         vehicle_cmd_msg_.steering_cmd = steering_cmd;
+        debug_msg_.output_steering = steering_cmd;
         vehicle_cmd_msg_.steering_cmd_count = rolling_counter;
         rolling_counter++;
         if (rolling_counter >= 8)
@@ -1152,25 +1213,28 @@ namespace controller
             rolling_counter = 0;
         }
 
-        publishCanMessage("steering_cmd", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("steering_motor_cmd_counter", rolling_counter);
-            assign("steering_motor_ang_cmd", steering_cmd);
-            assign("driver_steering_P_cmd", 0);
-            assign("driver_steering_I_cmd", 0);
-            assign("driver_steering_D_cmd", 0);
-        });
+        if (!this->useRaptorDbwNode) {
+            publishCanMessage("steering_cmd", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("steering_motor_cmd_counter", rolling_counter);
+                assign("steering_motor_ang_cmd", steering_cmd);
+                assign("driver_steering_FF_cmd", 0);
+                assign("driver_steering_P_cmd", 0);
+                assign("driver_steering_I_cmd", 0);
+                assign("driver_steering_D_cmd", 0);
+            });
+        } else if (this->useRaptorDbwNode || this->publish_ros_all) {
+            raptor_dbw_msgs::msg::SteeringCmd ros_steering_cmd;
+            ros_steering_cmd.angle_cmd = steering_cmd; 
+            ros_steering_cmd.enable = true; 
+            ros_steering_cmd.rolling_counter = rolling_counter;
 
-        raptor_dbw_msgs::msg::SteeringCmd ros_steering_cmd;
-        ros_steering_cmd.angle_cmd = steering_cmd; 
-        ros_steering_cmd.enable = true; 
-        ros_steering_cmd.rolling_counter = rolling_counter;
-
-        steering_cmd_pub_->publish(ros_steering_cmd);
+            steering_cmd_pub_->publish(ros_steering_cmd);
+        }
     }
 
     void ControllerNode::state_machine()
@@ -1197,7 +1261,7 @@ namespace controller
         pit_line_s_ = pit_line_.points[pit_bp].s;
 
         // Process Drive by Wire State Machine
-        ct_state_ = dbw_state_machine(ct_state_, track_flag_, vehicle_flag_, sys_state_, estop_, ct_input_, vehicle_state_.vx);
+        ct_state_ = dbw_state_machine(ct_state_, track_flag_, vehicle_flag_, sys_state_, estop_, ct_input_, vehicle_state_.vx, disableStateMachine);
 
         // Process Lap State Machine
         lap_state_inputs_.ct_state = ct_state_;
@@ -1246,26 +1310,29 @@ namespace controller
         ct_report_pub_->publish(ct_report_msg_);
         ct_counter_ = (ct_counter_ + 1) % 8;
 
-        publishCanMessage("ct_report", [&](PreparedCanMessage &message) {
-            auto assign = [&](std::string_view signal_name, auto value) {
-                if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
-                    insertBits(message.frame.data, *signal, value);
-                }
-            };
-            assign("track_cond_ack", static_cast<int>(track_flag_));
-            assign("veh_sig_ack", static_cast<int>(vehicle_flag_));
-            assign("ct_state", static_cast<int>(ct_state_));
-            assign("ct_state_rolling_counter", ct_counter_);
-            assign("veh_num", veh_num);
-        });
-
-        // Publish CT Report
-        npc_ct_report_msg_.ct_state = static_cast<int>(ct_state_);
-        npc_ct_report_msg_.track_flag_ack = static_cast<int>(track_flag_);
-        npc_ct_report_msg_.veh_flag_ack = static_cast<int>(vehicle_flag_);
-        npc_ct_report_msg_.target_speed = target_speed_;
-        npc_ct_report_msg_.rolling_counter = ct_counter_;
-        npc_ct_report_pub_->publish(npc_ct_report_msg_);
+        if (!this->useRaptorDbwNode) {
+            publishCanMessage("ct_report", [&](PreparedCanMessage &message) {
+                auto assign = [&](std::string_view signal_name, auto value) {
+                    if (const auto *signal = findSignal(message.metadata->id, signal_name)) {
+                        insertBits(message.frame.data, *signal, value);
+                    }
+                };
+                assign("track_cond_ack", static_cast<int>(track_flag_));
+                assign("veh_sig_ack", static_cast<int>(vehicle_flag_));
+                assign("ct_state", static_cast<int>(ct_state_));
+                assign("ct_state_rolling_counter", ct_counter_);
+                assign("veh_num", veh_num);
+            });
+        } else if (this->useRaptorDbwNode || this->publish_ros_all) {
+            // Publish CT Report
+            npc_ct_report_msg_.ct_state = static_cast<int>(ct_state_);
+            npc_ct_report_msg_.track_flag_ack = static_cast<int>(track_flag_);
+            npc_ct_report_msg_.veh_flag_ack = static_cast<int>(vehicle_flag_);
+            npc_ct_report_msg_.target_speed = target_speed_;
+            npc_ct_report_msg_.rolling_counter = ct_counter_;
+            npc_ct_report_msg_.veh_num = veh_num;
+            npc_ct_report_pub_->publish(npc_ct_report_msg_);
+        }
 
         // Populate Debug Message
         debug_msg_.ct_state = static_cast<int>(ct_state_);
@@ -1276,6 +1343,11 @@ namespace controller
         debug_msg_.lap_state = static_cast<int>(lap_state_inputs_.lap_state);
         debug_msg_.center_s = center_line_s_;
         debug_msg_.pit_s = pit_line_s_;
+        
+        // Lateral Control Prerequisites
+        debug_msg_.position_received = position_received;
+        debug_msg_.wheel_speed_received = wheel_speed_received;
+        debug_msg_.path_loaded = path_loaded;
     }
 
     // control logic
@@ -1306,10 +1378,20 @@ namespace controller
         double pursuit_vector_dy = target_position.y - current_position.y;
 
         double alpha = atan2(pursuit_vector_dy, pursuit_vector_dx) - vehicle_state_.yaw;
+        alpha = std::atan2(std::sin(alpha), std::cos(alpha));
         double delta = atan((2 * wheelbase_ * sin(alpha)) / lookahead);
 
         // Update the steering angle.
         pure_pursuit_steering_angle = delta;
+
+        debug_msg_.pp_current_x = current_position.x;
+        debug_msg_.pp_current_y = current_position.y;
+        debug_msg_.pp_current_yaw = current_position.yaw;
+        debug_msg_.pp_target_x = target_position.x;
+        debug_msg_.pp_target_y = target_position.y;
+        debug_msg_.pp_lookahead = lookahead;
+        debug_msg_.pp_alpha = alpha;
+        debug_msg_.pp_delta = delta;
 
         // Visualize the pure pursuit base and target points
         base_point_msg_.header.stamp = this->now();
@@ -1360,11 +1442,18 @@ namespace controller
 
         double vel_error = set_point - vehicle_state_.vx;
         double dt;
+        double vel_dt = 0.01;
+        double acc_dt = 0.01;
         if(this->simModeEnabled)
             dt = double(this->sec) + double(this->nsec) * 1e-9 - prev_vel_time_;
         else
             dt = this->now().seconds() + this->now().nanoseconds() * 1e-9 - prev_vel_time_;
+        if (!std::isfinite(dt) || dt <= 1e-4)
+            dt = 0.01;
+        vel_dt = dt;
         double vel_derivative_error_ = (vel_error - prev_vel_error_) / dt;
+        if (!std::isfinite(vel_derivative_error_))
+            vel_derivative_error_ = 0.0;
 
         double des_accel = (vel_kp_ * vel_error + vel_ki_ * vel_integral_error_ + vel_kd_ * vel_derivative_error_);
         prev_vel_error_ = vel_error;
@@ -1389,7 +1478,17 @@ namespace controller
         else
             dt = this->now().seconds() + this->now().nanoseconds() * 1e-9 - prev_acc_time_;
 
+        if (!std::isfinite(dt) || dt <= 1e-4)
+            dt = 0.01;
+        acc_dt = dt;
         acc_derivative_error_ = (acc_error_ - prev_acc_error_) / dt;
+        if (!std::isfinite(acc_derivative_error_))
+            acc_derivative_error_ = 0.0;
+
+        debug_msg_.vel_pid_dt = vel_dt;
+        debug_msg_.acc_pid_dt = acc_dt;
+        debug_msg_.vel_derivative_error = vel_derivative_error_;
+        debug_msg_.acc_derivative_error = acc_derivative_error_;
 
         prev_acc_error_ = acc_error_;
 
@@ -1425,10 +1524,15 @@ namespace controller
         else if (desired_acceleration > db || (desired_acceleration > 0.1 && vehicle_state_.vx < 5.0))
         {
             double delta_throttle = (throttle_kp_ * acc_error_ + throttle_ki_ * acc_integral_error_ + throttle_kd_ * acc_derivative_error_);
+            if (!std::isfinite(delta_throttle))
+                delta_throttle = 0.0;
+            debug_msg_.throttle_delta_cmd = delta_throttle;
             vehicle_state_.throttle += delta_throttle;
+            vehicle_state_.throttle = std::clamp(vehicle_state_.throttle, min_throttle_, max_throttle_);
         }
         else
         {
+            debug_msg_.throttle_delta_cmd = 0.0;
             vehicle_state_.throttle = 0.0;
         }
     }

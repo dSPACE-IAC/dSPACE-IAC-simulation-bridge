@@ -59,6 +59,7 @@ enum
   ID_STEERING_REPORT_EXTD       = 0x0520,
   ID_RC_TO_CT                   = 0x04B0,
   ID_BASE_TO_CAR_TIMING         = 0x04B8,
+  ID_MARELLI_REPORT_1           = 0x04E2,
   ID_TIRE_TEMP_FL_1             = 0x052C,
   ID_TIRE_TEMP_FL_2             = 0x052D,
   ID_TIRE_TEMP_FL_3             = 0x052E,

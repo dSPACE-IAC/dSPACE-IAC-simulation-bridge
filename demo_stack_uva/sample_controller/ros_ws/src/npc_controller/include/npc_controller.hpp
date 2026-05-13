@@ -111,9 +111,12 @@ namespace controller
         bool receivedMessagePrinting = false;
         bool receivedDecodedMessagePrinting = false;
         bool sentMessagePrinting = false;
+        bool publish_ros_all = false;
+        bool useRaptorDbwNode = false;
+        bool disableStateMachine = false;
 
         // Main control callback
-        int rolling_counter = 0;
+        uint8_t rolling_counter = 0;
         int shifting_counter_ = 0;
         int last_gear_ = 0;
         bool shift_up_ = false;
@@ -235,11 +238,6 @@ namespace controller
         double wgs84_a = 6378137.0;
         double wgs84_f = 1.0 / 298.257223563;
 
-        // This origin is for Autoverse TMS (Testing purposes only)
-        // double lat0 = 33.03644607463397;
-        // double lon0 = -97.28266786858255;
-        // double hgt0 = 191.2938295872882;
-
         // This origin is for IMS
         double lat0 = 39.7947350319205384;
         double lon0 = -86.2352425671970906;
@@ -248,6 +246,7 @@ namespace controller
         // Vehicle Parameters
         double wheelbase_;
         double steering_ratio_;
+        double steering_cmd_sign_;
         // Input Constraints
         double max_throttle_;
         double max_brake_;
@@ -291,6 +290,8 @@ namespace controller
         // Pure Pursuit
         // Made a global variable so it can be accessed directly from the control() timer callback.
         double pure_pursuit_steering_angle = -10000.0;
+        double prev_steering_cmd_ = 0.0;
+        double prev_steer_time_ = 0.0;
 
         // Path
         bool path_loaded = false;

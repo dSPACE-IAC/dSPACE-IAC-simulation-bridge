@@ -1,5 +1,5 @@
 DS_CMU_SERVER=
-DS_VEOS_LOAD_OSA=/home/dspace/VEOS/Orchestrator.osa
+DS_VEOS_LOAD_OSA=/home/dspace/VEOS_Orchestrater/Orchestrator.osa
 DS_START_COMMAND=orchparam
 DS_VEOS_REMOTE_CAPABLE=1
 DS_IS_ORCHESTRATOR=true

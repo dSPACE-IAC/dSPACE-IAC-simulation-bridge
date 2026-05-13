@@ -6,30 +6,15 @@ networks:
                 - subnet: 10.6.0.0/16
 
 services:
-  ctun:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:2026-03-19
-    container_name: ctun
-    ports:
-        - 1723:1723/udp
-    cap_add:
-        - NET_ADMIN
-        - SYS_PTRACE
-    networks:
-        dspace_network:
-            ipv4_address: 10.6.0.8
-    depends_on:
-        veos:
-            condition: service_started
-
   veos:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/veos_asm_executor_race:2026-03-19
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_veos_asm_executor:sim_pack_v4.0
     container_name: veos
     cap_add:
         - SYS_PTRACE
     environment:
         - DS_CMU_SERVER=xxx
         - DS_VEOS_LOAD_OSA=/home/dspace/VEOS/ASM_Traffic.osa
-        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: LVMS, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
+        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Putnam Park, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
         - DS_START_COMMAND=deactivatepush2pass-start
         - DS_VEOS_REMOTE_CAPABLE=1
     shm_size: 256m
@@ -41,7 +26,7 @@ services:
             condition: service_started
 
   vesi:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:2026-03-19
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_vesi:sim_pack_v4.0
     container_name: vesi
     restart: always
     tty: true
@@ -53,7 +38,7 @@ services:
             condition: service_started
 
   can-netns:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     container_name: can-netns
     ipc: "shareable"
     shm_size: "512m"
@@ -76,29 +61,16 @@ services:
             ipv4_address: 10.6.0.4
 
   dspace_restbus_bridge:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:2026-03-19
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     container_name: asm_socketcan_bridge
-    # image: dspace/iac_dspace_bridge_dev:2026-03-19
-    # container_name: dspace_bridge_dev
     restart: no
     volumes:
         - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
     cap_add:
         - NET_ADMIN
-    network_mode: "service:can-netns"
-    ipc: "container:can-netns"
-    depends_on:
-        veos:
-            condition: service_healthy
-        can-netns:
-            condition: service_started
-
-  raptor_dbw:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:2026-03-19
-    container_name: raptor_dbw
-    restart: no
-    cap_add:
-        - NET_ADMIN
+        - SYS_PTRACE
+    security_opt:
+        - seccomp:unconfined
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
     depends_on:
@@ -108,7 +80,7 @@ services:
             condition: service_started
 
   dspace_foxglove_bridge:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:2026-03-19
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ros2_foxglove_bridge:sim_pack_v4.0
     container_name: foxglove_bridge
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
@@ -128,7 +100,7 @@ services:
         ipv4_address: 10.6.0.9
 
   demo_stack_uva:
-    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:2026-03-19
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
     container_name: demo_stack_uva
     environment:
         - SIM_CLOCK_MODE=false
@@ -143,9 +115,38 @@ services:
       can-netns:
         condition: service_started
 
+  raptor_dbw:
+    image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_socketcan_dbw_bridge:sim_pack_v4.0
+    container_name: raptor_dbw
+    restart: no
+    cap_add:
+        - NET_ADMIN
+    network_mode: "service:can-netns"
+    ipc: "container:can-netns"
+    depends_on:
+        veos:
+            condition: service_healthy
+        can-netns:
+            condition: service_started
+
+#   ctun:
+#     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:sim_pack_v4.0
+#     container_name: ctun
+#     ports:
+#         - 1723:1723/udp
+#     cap_add:
+#         - NET_ADMIN
+#         - SYS_PTRACE
+#     networks:
+#         dspace_network:
+#             ipv4_address: 10.6.0.8
+#     depends_on:
+#         veos:
+#             condition: service_started
+
 # Example for adding a sensor bridge for sensor simulation with AURELION
     # dspace_sensor_bridge:
-    #     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:2026-03-19
+    #     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:2026-05-06
     #     container_name: aurelion_ros2_bridge
     #     restart: always
     #     environment:

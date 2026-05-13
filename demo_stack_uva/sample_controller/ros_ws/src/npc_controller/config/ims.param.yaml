@@ -1,10 +1,12 @@
 /**:
   ros__parameters:
     use_sim_time: false
+    disableStateMachine: false
     
-    can.can1_dbc_path: "config/CAN1-INDY-V23.dbc"
+    can.can1_dbc_path: "config/CAN1-INDY-V26.dbc"
     can.interface: "can0"
     connection.max_retries: 1
+    connection.useRaptorDbwNode: true
 
     publish_intervals.pure_pursuit_timer: 10
     publish_intervals.long_control_timer: 10
@@ -15,6 +17,7 @@
     logging.received_can_frames: false
     logging.received_decoded_frames: false
     logging.sent_can_frames: false
+    logging.publish_ros_all: false
 
     track_name: "ims"
     vehicle:

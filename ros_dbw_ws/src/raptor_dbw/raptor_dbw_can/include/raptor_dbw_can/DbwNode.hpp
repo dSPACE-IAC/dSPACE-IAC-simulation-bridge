@@ -33,6 +33,7 @@
 
 // ROS messages
 #include <can_msgs/msg/frame.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 
 #include <raptor_dbw_msgs/msg/accelerator_pedal_cmd.hpp>
@@ -102,6 +103,7 @@ private:
   void recvSteeringCmd(const raptor_dbw_msgs::msg::SteeringCmd::SharedPtr msg);
   void recvGearShiftCmd(const std_msgs::msg::UInt8::SharedPtr msg);
   void recvCtReport(const npc_controller_msgs::msg::CtReport::SharedPtr msg);
+  void publishRcToCt(const builtin_interfaces::msg::Time & stamp);
 
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::TimerBase::SharedPtr timer_tire_report_;
@@ -171,6 +173,9 @@ private:
   rclcpp::Publisher<npc_controller_msgs::msg::RcToCt>::SharedPtr pub_rc_to_ct_;
   rclcpp::Publisher<npc_controller_msgs::msg::TireReport>::SharedPtr pub_tire_report_;
   rclcpp::Publisher<npc_controller_msgs::msg::PtReport>::SharedPtr pub_pt_report_;
+
+  npc_controller_msgs::msg::RcToCt rc_to_ct_msg_;
+  bool have_marelli_flags_ = false;
 
   NewEagle::Dbc dbwDbc_;
   std::string dbcFile_;
