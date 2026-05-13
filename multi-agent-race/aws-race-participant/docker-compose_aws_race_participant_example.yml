@@ -15,7 +15,7 @@ services:
     environment:
         - DS_CMU_SERVER=
         - DS_VEOS_LOAD_OSA=/home/dspace/VEOS/ASM_Traffic.osa
-        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: LVMS, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
+        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Putnam Park, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
         - DS_START_COMMAND=raceparam-start
         - DS_VEOS_REMOTE_CAPABLE=1
         - DS_ORCHESTRATOR_IP=<IP of orchestrator Windows VM>
