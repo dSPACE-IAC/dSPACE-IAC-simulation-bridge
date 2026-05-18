@@ -344,7 +344,20 @@ if __name__ == "__main__":
                         print("The part after 'vehicleflag_' is not a valid integer.")
                 else:
                     print("The vehicleflag command does not contain an underscore followed by a value.")
-                
+                    
+            elif "sysstate" in command:
+                command_parts = command.split("_")
+                if len(command_parts) > 1:
+                    try:
+                        sysstate_value = int(command_parts[1])
+                        
+                        MAPort.Write('ASM_Traffic/Model Root/RaceControl/race_control_Extern/Subsystem1/sysstate_overwrite_switch/Value', MyValueFactory.CreateFloatValue(1.0))
+                        MAPort.Write('ASM_Traffic/Model Root/RaceControl/race_control_Extern/Subsystem1/sysstate_overwrite/Value', MyValueFactory.CreateFloatValue(sysstate_value))
+                        print(f"System state set to: {sysstate_value}")
+                    except ValueError:
+                        print("The part after 'sysstate_' is not a valid integer.")
+                else:
+                    print("The sysstate command does not contain an underscore followed by a value.")
 
     except TestbenchPortException as ex:
         #-----------------------------------------------------------------------
