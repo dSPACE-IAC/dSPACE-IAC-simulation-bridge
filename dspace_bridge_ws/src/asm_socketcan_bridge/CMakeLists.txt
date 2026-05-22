@@ -22,6 +22,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(autonoma_msgs REQUIRED)
 find_package(vectornav_msgs REQUIRED)
 find_package(novatel_oem7_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 set(MSG_DEPS std_msgs)
 set(MSG_DEPS rosgraph_msgs)
@@ -50,6 +51,7 @@ set(
   autonoma_msgs
   vectornav_msgs
   novatel_oem7_msgs
+  ament_index_cpp
 )
 
 install(
