@@ -59,7 +59,7 @@ def parameterizeOrchestrator(maPort, number_of_clients):
 if __name__ == "__main__":
 
     MAPort = None
-    valid_commands = ["start", "stop", "reset", "status", "healthcheck", "noclif", "raceparam", "loadonly", "manualflag", "trackflag", "vehicleflag", "deactivatepush2pass", "synchrace", "orchparam"]
+    valid_commands = ["start", "stop", "reset", "status", "healthcheck", "noclif", "raceparam", "loadonly", "manualflag", "trackflag", "vehicleflag", "sysstate", "deactivatepush2pass", "synchrace", "orchparam"]
 
     env_command = os.environ.get("DS_START_COMMAND", None)
     if len(sys.argv) < 2:
