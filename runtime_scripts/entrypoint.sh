@@ -4,7 +4,7 @@ echo "[INFO] Sourcing ROS environments..."
 source /opt/ros/humble/local_setup.sh
 source /root/ros_ws_aux/install/local_setup.sh
 
-if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
+if [ "$BRIDGE_TYPE" = "ASM_CAN" ]; then
     echo "[INFO] Running CAN interface setup..."
 
     source /root/dspace_bridge_ws/install/local_setup.sh
@@ -40,18 +40,19 @@ if [ $BRIDGE_TYPE = "ASM_CAN" ]; then
     echo "[INFO] Starting AsmSocketCanBridgeNode via launch file..."
     exec ros2 launch asm_socketcan_bridge asm_socketcan_bridge.launch.py params_file:="$PARAMS_FILE"
 
-elif  [ $BRIDGE_TYPE = "AURELION_ROS2" ]; then
+elif  [ "$BRIDGE_TYPE" = "AURELION_ROS2" ]; then
     echo "[INFO] Starting AurelionRos2BridgeNode..."
     source /root/dspace_bridge_ws/install/local_setup.sh
-    exec ros2 run aurelion_ros2_bridge AurelionRos2BridgeNode --ros-args -p use_sim_time:=$SIM_CLOCK_MODE
+    SIM_CLOCK_MODE="${SIM_CLOCK_MODE:-false}"
+    exec ros2 run aurelion_ros2_bridge AurelionRos2BridgeNode --ros-args -p use_sim_time:="$SIM_CLOCK_MODE"
 
-elif  [ $BRIDGE_TYPE = "CAN_DBW" ]; then
+elif  [ "$BRIDGE_TYPE" = "CAN_DBW" ]; then
     source /opt/ros/humble/local_setup.bash
     source /root/ros_dbw_ws/install/local_setup.sh
     cd /root/ros_dbw_ws/
     ros2 launch raptor_dbw_can raptor_dbw_can_launch_entire.py
 
-elif  [ $BRIDGE_TYPE = "FOXGLOVE" ]; then
+elif  [ "$BRIDGE_TYPE" = "FOXGLOVE" ]; then
     echo "[INFO] Starting Foxglove bridge..."
     exec ros2 launch foxglove_bridge foxglove_bridge_launch.xml
 else

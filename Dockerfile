@@ -21,7 +21,9 @@ RUN source /opt/ros/humble/local_setup.bash && \
 FROM dspace_ros_base AS dspace_bridge_base
 # Add V-ESI API to enable message transfer
 RUN mkdir -p /opt/VESI/lib 
+RUN mkdir -p /opt/VESI/include
 COPY dSPACE-IAC-simulation-bridge/V-ESI-API/linux/libVESIAPI.so /opt/VESI/lib/
+COPY dSPACE-IAC-simulation-bridge/V-ESI-API/include /opt/VESI/include/
 
 FROM dspace_bridge_base AS dspace_bridge_dev
 # Prepares image to mount and build source code into the container during runtime (development usecase)

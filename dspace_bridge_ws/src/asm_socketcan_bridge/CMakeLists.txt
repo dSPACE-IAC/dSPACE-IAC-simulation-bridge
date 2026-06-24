@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(asm_socketcan_bridge)
 
-set (VESIAPI_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include/V-ESI-API/include)
+set (VESIAPI_INCLUDE_DIR /opt/VESI/include)
 set (VESIAPI_LIB_DIR /opt/VESI/lib/)
 set(exe_name AsmSocketCanBridgeNode)
 
