@@ -148,7 +148,7 @@ services:
 
 # Example for adding a sensor bridge for sensor simulation with AURELION
 # dspace_sensor_bridge:
-#   image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:2026-05-06
+#   image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:sim_pack_v4.0
 #   container_name: aurelion_ros2_bridge
 #   restart: always
 #   environment:
