@@ -131,36 +131,36 @@ services:
         can-netns:
             condition: service_started
 
-#   ctun:
-#     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:sim_pack_v4.0
-#     container_name: ctun
-#     ports:
-#         - 1723:1723/udp
-#     cap_add:
-#         - NET_ADMIN
-#         - SYS_PTRACE
-#     networks:
-#         dspace_network:
-#             ipv4_address: 10.6.0.8
-#     depends_on:
-#         veos:
-#             condition: service_started
+# ctun:
+#   image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_ctun:sim_pack_v4.0
+#   container_name: ctun
+#   ports:
+#       - 1723:1723/udp
+#   cap_add:
+#       - NET_ADMIN
+#     - SYS_PTRACE
+#   networks:
+#        dspace_network:
+#           ipv4_address: 10.6.0.8
+#   depends_on:
+#       veos:
+#           condition: service_started
 
 # Example for adding a sensor bridge for sensor simulation with AURELION
-    # dspace_sensor_bridge:
-    #     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:2026-05-06
-    #     container_name: aurelion_ros2_bridge
-    #     restart: always
-    #     environment:
-    #         - VESI_SENSOR_IP=
-    #         - VESI_SENSOR_PORT=12345
-    #         - SENSOR_TYPE=Lidar
-    #         - SENSOR_ID=1
-    #         - ROS_TOPIC=lidar_front
-    #     cap_add:
-    #         - SYS_ADMIN
-    #         - DAC_READ_SEARCH
-    #         - SYS_PTRACE
-    #     networks:
-    #         mynetwork:
-    #             ipv4_address: 10.6.0.10
+# dspace_sensor_bridge:
+#   image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_aurelion_ros2_bridge:2026-05-06
+#   container_name: aurelion_ros2_bridge
+#   restart: always
+#   environment:
+#       - VESI_SENSOR_IP=
+#       - VESI_SENSOR_PORT=12345
+#       - SENSOR_TYPE=Lidar
+#       - SENSOR_ID=1
+#       - ROS_TOPIC=lidar_front
+#   cap_add:
+#       - SYS_ADMIN
+#       - DAC_READ_SEARCH
+#       - SYS_PTRACE
+#   networks:
+#       dspace_network:
+#           ipv4_address: 10.6.0.10
