@@ -31,12 +31,57 @@ namespace controller
     double pit_stop;
   };
 
+  struct SpeedProfileWaypoint
+  {
+    double s;      // arc length along track
+    double speed;  // target speed at this point (MPH)
+  };
+
+  struct SpeedProfile
+  {
+    std::vector<SpeedProfileWaypoint> waypoints;
+
+    // Interpolate speed at given arc length s
+    double interpolate(double s) const
+    {
+      if (waypoints.empty()) {
+        return 0.0;
+      }
+      if (waypoints.size() == 1) {
+        return waypoints[0].speed;
+      }
+      
+      // Find bracketing waypoints
+      for (size_t i = 0; i < waypoints.size() - 1; ++i) {
+        if (s >= waypoints[i].s && s <= waypoints[i + 1].s) {
+          // Linear interpolation
+          double s0 = waypoints[i].s;
+          double s1 = waypoints[i + 1].s;
+          double v0 = waypoints[i].speed;
+          double v1 = waypoints[i + 1].speed;
+          double t = (s - s0) / (s1 - s0);
+          return v0 + t * (v1 - v0);
+        }
+      }
+      
+      // If past end, return last speed
+      if (s > waypoints.back().s) {
+        return waypoints.back().speed;
+      }
+      
+      // If before start, return first speed
+      return waypoints[0].speed;
+    }
+  };
+
   struct LapStateOutputs
   {
     double des_vel;
     std::string path;
     bool attacker;
     bool overtake;
+    int lap_state;
+    bool driveable;
   };
 
   struct LapStateInputs
@@ -52,6 +97,7 @@ namespace controller
     double center_line_s;
     LapStateSpeeds speeds;
     LapStateLocs locs;
+    SpeedProfile speed_profile;
   };
 
   class LapStateMachine
@@ -152,7 +198,12 @@ namespace controller
         inputs.lap_state = LapState::LS3_ON_RACELINE;
         if (inputs.ct_state == CTState::CT9_NOM_RACE)
         {
-          outputs.des_vel = inputs.speeds.green_flag;
+          // Use speed profile if available, otherwise use fixed green flag speed
+          if (!inputs.speed_profile.waypoints.empty()) {
+            outputs.des_vel = inputs.speed_profile.interpolate(inputs.center_line_s);
+          } else {
+            outputs.des_vel = inputs.speeds.green_flag;
+          }
         }
         else if (inputs.ct_state == CTState::CT8_CAUTION)
         {
@@ -206,7 +257,12 @@ namespace controller
         }
         else if (inputs.lap_state == LapState::LS3_ON_RACELINE)
         { // In Pits or On Raceline
-          outputs.des_vel = inputs.speeds.green_flag;
+          // Use speed profile if available, otherwise use fixed green flag speed
+          if (!inputs.speed_profile.waypoints.empty()) {
+            outputs.des_vel = inputs.speed_profile.interpolate(inputs.center_line_s);
+          } else {
+            outputs.des_vel = inputs.speeds.green_flag;
+          }
         }
         else if (inputs.lap_state == LapState::LS4_BLACK_SLOWDOWN)
         {

@@ -283,17 +283,63 @@ namespace controller
             simClockTime_ = this->create_subscription<rosgraph_msgs::msg::Clock>("clock", sim_qos, std::bind(&ControllerNode::simClockTimeCallback, this, std::placeholders::_1));
 
         // Load Track Paths
-        std::string track_name = declare_parameter("track_name", "");
+        std::string track_name = declare_parameter("track_name", "ims");
+
+        // Configure geodetic origin for global GPS -> local XY conversion.
+        const double gps_origin_lat = this->declare_parameter<double>(
+            "gps_origin.lat", 39.7947350319205384);
+        const double gps_origin_lon = this->declare_parameter<double>(
+            "gps_origin.lon", -86.2352425671970906);
+        const double gps_origin_hgt = this->declare_parameter<double>(
+            "gps_origin.hgt", 224.1435846661534015);
+        gps_map_.Reset(gps_origin_lat, gps_origin_lon, gps_origin_hgt);
+        RCLCPP_INFO(this->get_logger(),
+                    "GPS local origin set to lat=%.10f lon=%.10f hgt=%.3f",
+                    gps_origin_lat,
+                    gps_origin_lon,
+                    gps_origin_hgt);
+
         std::filesystem::path share_dir = std::filesystem::path(ament_index_cpp::get_package_share_directory("npc_controller"));
         std::filesystem::path map_dir = share_dir /
                                         std::filesystem::path("maps") /
                                         std::filesystem::path(track_name);
-        std::filesystem::path pit_line_dir =
-            map_dir / map_dir / std::filesystem::path("pit_lane.csv");
-        pit_line_ = load_path(pit_line_dir.string());
-        std::filesystem::path center_line_dir =
-            map_dir / map_dir / std::filesystem::path("center_line.csv");
+        std::filesystem::path center_line_dir = map_dir / std::filesystem::path("center_line.csv");
+        std::filesystem::path pit_line_dir = map_dir / std::filesystem::path("pit_lane.csv");
+        const std::filesystem::path optimal_line_dir = map_dir / std::filesystem::path("optimal_line.csv");
+
+        if (!std::filesystem::exists(center_line_dir) && std::filesystem::exists(optimal_line_dir)) {
+            RCLCPP_WARN(this->get_logger(),
+                        "center_line.csv missing for track '%s'; falling back to optimal_line.csv",
+                        track_name.c_str());
+            center_line_dir = optimal_line_dir;
+        }
+
+        RCLCPP_INFO(this->get_logger(),
+                    "Loading track '%s' from map dir: %s",
+                    track_name.c_str(),
+                    map_dir.string().c_str());
+        RCLCPP_INFO(this->get_logger(), "Center line file: %s", center_line_dir.string().c_str());
         center_line_ = load_path(center_line_dir.string());
+
+        if (std::filesystem::exists(optimal_line_dir)) {
+            RCLCPP_INFO(this->get_logger(), "Optimal line file: %s", optimal_line_dir.string().c_str());
+            optimal_line_ = load_path(optimal_line_dir.string());
+        } else {
+            RCLCPP_WARN(this->get_logger(),
+                        "optimal_line.csv missing for track '%s'; reusing center line for optimal-line diagnostics",
+                        track_name.c_str());
+            optimal_line_ = center_line_;
+        }
+
+        if (!std::filesystem::exists(pit_line_dir)) {
+            RCLCPP_WARN(this->get_logger(),
+                        "pit_lane.csv missing for track '%s'; reusing center line as pit line",
+                        track_name.c_str());
+            pit_line_ = center_line_;
+        } else {
+            RCLCPP_INFO(this->get_logger(), "Pit lane file: %s", pit_line_dir.string().c_str());
+            pit_line_ = load_path(pit_line_dir.string());
+        }
         path_loaded = true;
 
         current_path_ = &pit_line_;
@@ -437,6 +483,47 @@ namespace controller
 
         lap_state_inputs_.speeds = speeds;
         lap_state_inputs_.locs = locs;
+        
+        // Load speed profile if available (optional parameter)
+        speed_profile_.waypoints.clear();
+        try {
+            // Try to load speed profile waypoints from nested YAML structure
+            std::vector<double> profile_s_values;
+            std::vector<double> profile_speeds;
+            
+            int waypoint_idx = 0;
+            while (true) {
+                std::string s_param = "lap_state_machine.speed_profile.waypoints." + std::to_string(waypoint_idx) + ".s";
+                std::string v_param = "lap_state_machine.speed_profile.waypoints." + std::to_string(waypoint_idx) + ".speed";
+                
+                if (!this->has_parameter(s_param) || !this->has_parameter(v_param)) {
+                    break;
+                }
+                
+                try {
+                    double s_val = this->declare_parameter<double>(s_param, 0.0);
+                    double v_val = this->declare_parameter<double>(v_param, 0.0);
+                    
+                    SpeedProfileWaypoint wp;
+                    wp.s = s_val;
+                    wp.speed = v_val;
+                    speed_profile_.waypoints.push_back(wp);
+                    
+                    waypoint_idx++;
+                } catch (...) {
+                    break;
+                }
+            }
+            
+            if (!speed_profile_.waypoints.empty()) {
+                RCLCPP_INFO(this->get_logger(), "Loaded speed profile with %zu waypoints", speed_profile_.waypoints.size());
+            } else {
+                RCLCPP_DEBUG(this->get_logger(), "No speed profile waypoints specified");
+            }
+        } catch (...) {
+            RCLCPP_DEBUG(this->get_logger(), "No speed profile configuration found");
+        }
+        lap_state_inputs_.speed_profile = speed_profile_;
 
         if (!this->useRaptorDbwNode) {
             const int16_t default_max_retries = 1;
@@ -1259,6 +1346,17 @@ namespace controller
         center_line_s_ = center_line_.points[center_bp].s;
         int pit_bp = calculate_base_projections(pit_line_, current_position);
         pit_line_s_ = pit_line_.points[pit_bp].s;
+        int optimal_bp = calculate_base_projections(optimal_line_, current_position);
+        optimal_line_s_ = optimal_line_.points[optimal_bp].s;
+        const double dx_opt = optimal_line_.points[optimal_bp].x - current_position.x;
+        const double dy_opt = optimal_line_.points[optimal_bp].y - current_position.y;
+        optimal_line_distance_ = std::sqrt(dx_opt * dx_opt + dy_opt * dy_opt);
+        // Signed cross-track error: positive = right of line, negative = left of line
+        // Using cross product of (vehicle - line_point) with line tangent
+        const double optimal_yaw = optimal_line_.points[optimal_bp].yaw;
+        const double tangent_x = std::cos(optimal_yaw);
+        const double tangent_y = std::sin(optimal_yaw);
+        optimal_line_signed_error_ = dx_opt * tangent_y - dy_opt * tangent_x;
 
         // Process Drive by Wire State Machine
         ct_state_ = dbw_state_machine(ct_state_, track_flag_, vehicle_flag_, sys_state_, estop_, ct_input_, vehicle_state_.vx, disableStateMachine);
@@ -1271,10 +1369,42 @@ namespace controller
         lap_state_inputs_.current_speed = vehicle_state_.vx;
         lap_state_inputs_.center_line_s = center_line_s_;
         lap_state_inputs_.pit_lane_s = pit_line_s_;
+        lap_state_inputs_.speed_profile = speed_profile_;
 
         lap_state_machine_.transition(lap_state_inputs_, lap_state_outputs_);
 
-        desired_velocity_ = lap_state_outputs_.des_vel / 2.23694; // Convert to from MPH to m/s
+        // Log speed profile / state machine output
+        static int sm_log_counter = 0;
+        sm_log_counter++;
+
+        if (sm_log_counter % 10 == 0) {
+
+            RCLCPP_DEBUG(
+                this->get_logger(),
+                "[STATE_MACHINE] lap_state=%d des_vel=%.1f mph center_s=%.1f pit_s=%.1f | opt_line_dist=%.2f m opt_err=%.3f",
+                static_cast<int>(lap_state_outputs_.lap_state),
+                lap_state_outputs_.des_vel,
+                center_line_s_,
+                pit_line_s_,
+                optimal_line_distance_,
+                optimal_line_signed_error_);
+
+            // Special logging for corkscrew section (center_line_s between 5200–6800 m)
+            if (center_line_s_ > 5200 && center_line_s_ < 6800) {
+
+                RCLCPP_DEBUG(
+                    this->get_logger(),
+                    "[CORKSCREW_SM] s=%.0f des_v=%.1f mph lap_state=%d opt_dist=%.2f m opt_err=%.3f drivable=%d",
+                    center_line_s_,
+                    lap_state_outputs_.des_vel,
+                    static_cast<int>(lap_state_outputs_.lap_state),
+                    optimal_line_distance_,
+                    optimal_line_signed_error_,
+                    lap_state_outputs_.driveable);
+            }
+        }
+
+        desired_velocity_ = lap_state_outputs_.des_vel / 2.23694; // Convert MPH to m/s
         if (lap_state_outputs_.path == "pits")
         {
             current_path_ = &pit_line_;
@@ -1343,6 +1473,19 @@ namespace controller
         debug_msg_.lap_state = static_cast<int>(lap_state_inputs_.lap_state);
         debug_msg_.center_s = center_line_s_;
         debug_msg_.pit_s = pit_line_s_;
+        debug_msg_.optimal_s = optimal_line_s_;
+        debug_msg_.optimal_line_distance = optimal_line_distance_;
+        debug_msg_.optimal_line_signed_error = optimal_line_signed_error_;
+        
+        // Log state machine info, especially around corkscrew (s ~ 5600-6400)
+        if (center_line_s_ > 5200 && center_line_s_ < 6800) {
+            double desired_speed_ms = desired_velocity_ / 2.237;  // Convert MPH to m/s
+            double actual_speed_ms = vehicle_state_.vx;
+            RCLCPP_DEBUG(this->get_logger(),
+                "[CORKSCREW] s=%.1f | des_v=%.1f mph (%.2f m/s) act_v=%.1f mph (%.2f m/s) | steering=%.3f rad | dist=%.2f m",
+                center_line_s_, desired_velocity_, desired_speed_ms, actual_speed_ms * 2.237, actual_speed_ms,
+                pure_pursuit_steering_angle, optimal_line_distance_);
+        }
         
         // Lateral Control Prerequisites
         debug_msg_.position_received = position_received;
@@ -1392,6 +1535,33 @@ namespace controller
         debug_msg_.pp_lookahead = lookahead;
         debug_msg_.pp_alpha = alpha;
         debug_msg_.pp_delta = delta;
+
+        // Enhanced logging for deviations and crashes
+        static int log_counter = 0;
+        log_counter++;
+        
+        // Log critical data every 10 cycles (~1Hz at 10Hz control loop)
+        if (log_counter % 10 == 0) {
+            RCLCPP_INFO(this->get_logger(),
+                "[CONTROL] s=%.1f opt_s=%.1f dist=%.3fm err=%.3fm | v=%.1f mph delta=%.3f rad lookahead=%.1f | state=%d",
+                center_line_s_, optimal_line_s_, optimal_line_distance_, optimal_line_signed_error_,
+                current_velocity * 2.237, delta, lookahead, static_cast<int>(lap_state_inputs_.lap_state));
+        }
+        
+        // Alert if deviation is excessive (> 1.5 meters from optimal line)
+        if (optimal_line_distance_ > 1.5) {
+            RCLCPP_WARN(this->get_logger(),
+                "[DEVIATION WARNING] Large deviation from optimal line: %.2f m at s=%.1f | signed_err=%.3f | pos=(%.2f, %.2f) | target=(%.2f, %.2f)",
+                optimal_line_distance_, optimal_line_s_, optimal_line_signed_error_,
+                current_position.x, current_position.y, target_position.x, target_position.y);
+        }
+        
+        // Alert if steering angle exceeds safe threshold (> 0.3 radians = ~17 degrees)
+        if (std::abs(delta) > 0.3) {
+            RCLCPP_WARN(this->get_logger(),
+                "[STEERING ALERT] High steering angle: %.3f rad (%.1f deg) | alpha=%.3f | dist=%.2f m | lookahead=%.1f m",
+                delta, delta * 57.2958, alpha, optimal_line_distance_, lookahead);
+        }
 
         // Visualize the pure pursuit base and target points
         base_point_msg_.header.stamp = this->now();

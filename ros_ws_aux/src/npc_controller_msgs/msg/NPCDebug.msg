@@ -37,6 +37,9 @@ uint8 lap_state
 uint8 track_loc
 float64 center_s
 float64 pit_s
+float64 optimal_s
+float64 optimal_line_distance
+float64 optimal_line_signed_error
 
 # Drive by Wire State Machine
 uint8 sys_state

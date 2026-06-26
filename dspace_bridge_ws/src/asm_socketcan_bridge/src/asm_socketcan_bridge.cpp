@@ -84,15 +84,12 @@ namespace asm_socketcan_bridge {
       this->api.setASMHost(asm_host);
     }
 
-    const int64_t sim_manager_port_param =
-      this->declare_parameter<int64_t>("sim_manager.port", 12345);
-    const int sim_manager_port =
-      sanitize_port_value(sim_manager_port_param, 12345, this->get_logger(), "SimManager port");
+    const int64_t sim_manager_port_param = this->declare_parameter<int64_t>("sim_manager.port", 12345);
+    const int sim_manager_port = sanitize_port_value(sim_manager_port_param, 12345, this->get_logger(), "SimManager port");
     RCLCPP_INFO(this->get_logger(), "SimManager Port: %d", sim_manager_port);
     this->api.setSimManagerPort(sim_manager_port);
 
-    const int64_t warning_throttle_intervall =
-      this->declare_parameter<int64_t>("warn.throttle_interval", 478000);
+    this->warning_throttle_intervall = this->declare_parameter<int64_t>("warn.throttle_interval", 478000);
 
     RCLCPP_INFO(this->get_logger(), "Configuring publisher timers (milliseconds)");
     publisher_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -1235,10 +1232,7 @@ namespace asm_socketcan_bridge {
           RCLCPP_WARN(get_logger(),
                       "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
         } else {
-          RCLCPP_WARN_THROTTLE(get_logger(),
-                               *this->get_clock(),
-                               this->warning_throttle_intervall,
-                               "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
+          RCLCPP_WARN_THROTTLE(get_logger(), *this->get_clock(), this->warning_throttle_intervall, "Did not receive to_raptor message. This might lead to unexpected behavior of the RaceControl e.g. setting of flags and P2P is not available. Check that your stack is alive.");
         }
         raptor_connection_announced = false;
       } else if (!raptor_connection_announced) {

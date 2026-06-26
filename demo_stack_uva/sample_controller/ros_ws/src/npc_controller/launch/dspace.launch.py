@@ -40,6 +40,20 @@ def get_share_file(package_name, file_name):
     return os.path.join(get_package_share_directory(package_name), file_name)
 
 
+def read_track_name_from_params(param_file, default_track='ims'):
+    try:
+        with open(param_file, 'r', encoding='utf-8') as yaml_file:
+            for line in yaml_file:
+                stripped = line.strip()
+                if stripped.startswith('track_name:'):
+                    value = stripped.split(':', 1)[1].strip().strip('"').strip("'")
+                    if value:
+                        return value
+    except OSError:
+        pass
+    return default_track
+
+
 def generate_launch_description():
     """Launch all packages for the vehicle in IAC."""
 
@@ -51,7 +65,6 @@ def generate_launch_description():
     bs_ip = 'x.x.x.x' # Define sim host IP here or with ip:=x.x.x.x argument when launching
     bs_port = 'xxxx' # Define sim host port here or with port:=xxxx argument when launching
     namespace = ''
-    track_name = ''
     for arg in sys.argv:
         if arg.startswith("car_ip:="):
             socket_ip = str(arg.split(":=")[1])
@@ -60,18 +73,54 @@ def generate_launch_description():
         elif arg.startswith("ns:="):
             namespace = str(arg.split(":=")[1])
 
-    npc_controller_param_file = get_share_file(
-        package_name='npc_controller', file_name='config/ims.param.yaml'
+    src_base_param_file = '/root/ros_ws/src/npc_controller/config/base.param.yaml'
+    share_base_param_file = get_share_file(
+        package_name='npc_controller', file_name='config/base.param.yaml'
     )
+    npc_controller_param_file = os.environ.get('NPC_CONTROLLER_PARAMS_FILE', src_base_param_file)
+    if not os.path.exists(npc_controller_param_file):
+        npc_controller_param_file = share_base_param_file
+
+    configured_track_name = read_track_name_from_params(npc_controller_param_file)
+    track_name_variants = [configured_track_name]
+    if '_' in configured_track_name:
+        track_name_variants.append(configured_track_name.replace('_', '-'))
+    if '-' in configured_track_name:
+        track_name_variants.append(configured_track_name.replace('-', '_'))
+
+    src_track_param_file = ''
+    share_track_param_file = ''
+    for track_name in track_name_variants:
+        src_candidate = f'/root/ros_ws/src/npc_controller/config/{track_name}.param.yaml'
+        if os.path.exists(src_candidate):
+            src_track_param_file = src_candidate
+            break
+
+    if not src_track_param_file:
+        for track_name in track_name_variants:
+            share_candidate = get_share_file(
+                package_name='npc_controller', file_name=f'config/{track_name}.param.yaml'
+            )
+            if os.path.exists(share_candidate):
+                share_track_param_file = share_candidate
+                break
+    npc_controller_track_param_file = os.environ.get('NPC_CONTROLLER_TRACK_PARAMS_FILE', '')
+    if not npc_controller_track_param_file:
+        if os.path.exists(src_track_param_file):
+            npc_controller_track_param_file = src_track_param_file
+        elif share_track_param_file:
+            npc_controller_track_param_file = share_track_param_file
 
     npc_controller_param = DeclareLaunchArgument(
         'npc_controller_param_file',
         default_value=npc_controller_param_file,
-        description='Path to param file for lap state machine'
+        description='Path to param file for npc controller (can be overridden via container mounts)'
     )
 
-    # TODO: For the time being, these are the relevant raptor topics for the NPC controller.
-    #       For every team's system, the full set of topics should be output.
+    parameter_files = [LaunchConfiguration('npc_controller_param_file')]
+    if npc_controller_track_param_file and npc_controller_track_param_file != npc_controller_param_file:
+        parameter_files.append(npc_controller_track_param_file)
+
     npc_controller_node = Node(
         package='npc_controller',
         executable='controller_exec',
@@ -85,101 +134,11 @@ def generate_launch_description():
             ('brake_cmd', 'raptor_dbw_interface/brake_cmd'),
             ('gear_cmd', 'raptor_dbw_interface/gear_cmd'),
         ],
-        parameters=[LaunchConfiguration('npc_controller_param_file')]
+        parameters=parameter_files
     )
 
     include_arguments.append(npc_controller_param)
     node_arguments.append(npc_controller_node)
-
-
-    # AUTONOMA SIMULATOR BRIDGE
-    # TODO: If not using CAN Frame outputs, remove these nodes and make sure all relevant raptor/novatel/vectornav topics are published directly
-
-    # RAPTOR DRIVER
-    # raptor_dbc = get_share_file(
-    #     package_name='raptor_dbw_can', file_name='launch/CAN1-INDY-V12.dbc'
-    # )
-
-    # if namespace == '':
-    #     raptor_ns = 'raptor_dbw_interface'
-    # else:
-    #     raptor_ns = namespace + '/raptor_dbw_interface'
-
-    # raptor_node = Node(
-    #     package='raptor_dbw_can',
-    #     executable='raptor_dbw_can_node',
-    #     output='screen',
-    #     namespace= raptor_ns,
-    #     parameters=[
-    #         {'dbw_dbc_file': raptor_dbc}
-    #     ],
-    #     remappings=[('can_rx', 'from_can_bus'),
-    #                 ('can_tx', 'to_can_bus')]
-    # )
-
-    # node_arguments.append(raptor_node)
-
-
-    # TODO: This node is specific to Autoverse Simulator and should be removed and replaced with another relevant bridge.
-    # autoverse_ros2_bridge_node = Node(
-    #     package='autoverse_ros2_bridge',
-    #     executable='autoverse_ros2_bridge_node',
-    #     namespace=namespace,
-    #     output='screen',
-    #     arguments=['--ip', socket_ip, '--port', socket_port, '--ros-args', '--log-level', 'info'],
-    #     remappings=[
-    #         ('/novatel_top/bestpos','novatel_top/bestpos'),
-    #         ('/novatel_bottom/bestpos','novatel_bottom/bestpos'),
-    #         ('/novatel_top/bestvel','novatel_top/bestvel'),
-    #         ('/novatel_bottom/bestvel','novatel_bottom/bestvel'),
-    #         ('/novatel_top/rawimu','novatel_top/rawimu'),
-    #         ('/novatel_bottom/rawimu','novatel_bottom/rawimu'),
-    #         ('/novatel_top/bestgnsspos','novatel_top/bestgnsspos'),
-    #         ('/novatel_bottom/bestgnsspos','novatel_bottom/bestgnsspos'),
-    #         ('/novatel_top/bestgnssvel','novatel_top/bestgnssvel'),
-    #         ('/novatel_bottom/bestgnssvel','novatel_bottom/bestgnssvel'),
-    #         ('/novatel_top/heading2','novatel_top/heading2'),
-    #         ('/novatel_bottom/heading2','novatel_bottom/heading2'),
-    #         ('/novatel_top/inspva','novatel_top/inspva'),
-    #         ('/novatel_bottom/inspva','novatel_bottom/inspva'),
-    #         ('/novatel_top/rawimux','novatel_top/rawimux'),
-    #         ('/novatel_bottom/rawimux','novatel_bottom/rawimux'),
-    #         ('/vectornav/raw/common','vectornav/raw/common')
-    #     ],
-    #     parameters=[
-    #         {"lon_stdev": 0.01},
-    #         {"lat_stdev": 0.01},
-    #         {"hgt_stdev": 0.01},
-    #         {"heading_stdev": 2.13},
-    #         {"linear_acceleration_covariance": 0.0009},
-    #         {"angular_velocity_covariance": 0.00035}
-    #     ]
-    # )
-
-    # node_arguments.append(autoverse_ros2_bridge_node)
-
-    # dbc_file_path = get_share_file(
-    #     package_name='can_parser', file_name='dbc/CAN1-INDY-V12.dbc'
-    # )
-
-    # can_parser_node = Node(
-    #     package='can_parser',
-    #     executable='can_parser_node',
-    #     namespace=namespace,
-    #     output='screen',
-    #     parameters=[
-    #         {'dbc_file': dbc_file_path}
-    #     ],
-    #     remappings=[
-    #         ('powertrain_data', 'autoverse/powertrain_data'),
-    #         ('race_control', 'autoverse/race_control'),
-    #         ('vehicle_data', 'autoverse/vehicle_data'),
-    #         ('vehicle_inputs', 'autoverse/vehicle_inputs'),
-    #         ('ct_state', 'autoverse/ct_state'),
-    #         ('can_tx', 'raptor_dbw_interface/from_can_bus'),
-    #         ('can_rx', 'raptor_dbw_interface/to_can_bus'),
-    #     ],
-    # )
     
     # node_arguments.append(can_parser_node)
     clock_setting='false'

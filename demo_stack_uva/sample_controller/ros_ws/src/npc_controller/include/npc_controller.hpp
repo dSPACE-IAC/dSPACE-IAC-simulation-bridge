@@ -116,7 +116,7 @@ namespace controller
         bool disableStateMachine = false;
 
         // Main control callback
-        uint8_t rolling_counter = 0;
+        int rolling_counter = 0;
         int shifting_counter_ = 0;
         int last_gear_ = 0;
         bool shift_up_ = false;
@@ -297,6 +297,7 @@ namespace controller
         bool path_loaded = false;
         Path pit_line_;
         Path center_line_;
+        Path optimal_line_;
         Path *current_path_;
 
         // Velocity Controller
@@ -330,6 +331,7 @@ namespace controller
         LapStateMachine lap_state_machine_;
         LapStateInputs lap_state_inputs_;
         LapStateOutputs lap_state_outputs_;
+        SpeedProfile speed_profile_;
 
         autonoma_msgs::msg::ToRaptor ct_report_msg_;
         npc_controller_msgs::msg::CtReport npc_ct_report_msg_;
@@ -346,6 +348,9 @@ namespace controller
         int ct_counter_ = 0;
         double center_line_s_ = 0.0;
         double pit_line_s_ = 0.0;
+        double optimal_line_s_ = 0.0;
+        double optimal_line_distance_ = 0.0;
+        double optimal_line_signed_error_ = 0.0;
         double desired_velocity_ = 0.0;
         int veh_num = 1;
         bool current_push2pass_request = true;

@@ -1,35 +1,18 @@
 /**:
   ros__parameters:
-    use_sim_time: false
-    disableStateMachine: false
-    
-    can.can1_dbc_path: "config/CAN1-INDY-V26.dbc"
-    can.interface: "can0"
-    connection.max_retries: 1
-    connection.useRaptorDbwNode: true
-
-    publish_intervals.pure_pursuit_timer: 10
-    publish_intervals.long_control_timer: 10
-    publish_intervals.control_timer: 10
-    publish_intervals.state_machine_timer: 500
-
-    logging.verbose: false
-    logging.received_can_frames: false
-    logging.received_decoded_frames: false
-    logging.sent_can_frames: false
-    logging.publish_ros_all: false
-
     track_name: "ims"
+        # Vehicle parameters
+    gps_origin:
+      lat: 39.7947350319205384
+      lon: -86.2352425671970906
+      hgt: 224.1435846661534015
     vehicle:
       wheelbase: 2.971
       steering_ratio: 15.0
-      # min_steer: -0.2793
-      min_steer: -0.05
-      # max_steer: 0.2793
-      max_steer: 0.05
       min_lookahead_dist: 15.0
       max_lookahead_dist: 45.0
-      # lookahead_gain: 0.8
+      min_steer: -0.05
+      max_steer: 0.05
       lookahead_gain: 0.2
       min_throttle: 0.0
       max_throttle: 100.0
@@ -46,6 +29,7 @@
       braking_kp: 0.002
       braking_ki: 0.0001
       braking_kd: 0.0001
+
     lap_state_machine:
       yellow_flag_box_exit: 18.0
       yellow_flag_pit_row: 30.0
