@@ -60,6 +60,7 @@ install(
 add_executable(
   ${exe_name}
   src/asm_socketcan_bridge.cpp
+  src/asm_socketcan_bridge_comm.cpp
   src/signal_codec.cpp
   src/dbc_structure_init.cpp
   include/signal_codec.h
