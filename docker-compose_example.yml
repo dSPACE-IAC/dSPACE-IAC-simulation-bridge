@@ -14,7 +14,7 @@ services:
     environment:
         - DS_CMU_SERVER=xxx
         - DS_VEOS_LOAD_OSA=/home/dspace/VEOS/ASM_Traffic.osa
-        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Putnam Park, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
+        - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Putnam Park, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (no pit), ID 6: Laguna Seca (with pit)
         - DS_START_COMMAND=deactivatepush2pass-start
         - DS_VEOS_REMOTE_CAPABLE=1
         - DS_ROUTE_ID=2 # 1: start on track, 2: start in pit lane
