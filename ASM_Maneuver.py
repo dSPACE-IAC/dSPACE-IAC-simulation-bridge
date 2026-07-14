@@ -59,7 +59,7 @@ def parameterizeOrchestrator(maPort, number_of_clients):
 if __name__ == "__main__":
 
     MAPort = None
-    valid_commands = ["start", "stop", "reset", "status", "healthcheck", "noclif", "raceparam", "loadonly", "manualflag", "trackflag", "vehicleflag", "sysstate", "deactivatepush2pass", "synchrace", "orchparam"]
+    valid_commands = ["start", "stop", "reset", "status", "healthcheck", "noclif", "raceparam", "loadonly", "manualflag", "trackflag", "vehicleflag", "sysstate", "deactivatepush2pass", "synchrace", "orchparam", "multicarflag"]
 
     env_command = os.environ.get("DS_START_COMMAND", None)
     if len(sys.argv) < 2:
@@ -318,6 +318,29 @@ if __name__ == "__main__":
             elif command == "synchrace":
                 MAPort.Write('ASM_Traffic/Model Root/RaceInterface/UserInterface/PAR_Plant/Sw_BlockingSimulation[0|1]/Value', MyValueFactory.CreateBooleanValue(True))
                 print("Blocking race synchronisation activated.")
+
+            elif "multicarflag" in command:
+                command_parts = command.split("_")
+                MAPort.Write('ASM_Traffic/Model Root/RaceControl/Sw_RaceControl[0Intern|1Extern|2Orchestrator]/Value', MyValueFactory.CreateFloatValue(0))
+                if len(command_parts) > 1:
+                    flag_command = command_parts[1]
+                    flag_type = flag_command[:1]
+                    try:
+                        flag_value = int(flag_command[1:])
+
+                        if flag_type == "t":
+                            MAPort.Write('ASM_Traffic/Model Root/RaceControl/race_control/Const_track_flag/Value', MyValueFactory.CreateUintValue(flag_value))
+                            print(f"Track flag set to: {flag_value}")
+                        elif flag_type == "v":
+                            MAPort.Write('ASM_Traffic/Model Root/RaceControl/race_control/Const_veh_flag/Value', MyValueFactory.CreateUintValue(flag_value))
+                            print(f"Vehicle flag set to: {flag_value}")
+                        else:
+                            print("Use 'multicarflag_tX' for a track flag or 'multicarflag_vX' for a vehicle flag.")
+                    except ValueError:
+                        print("The part after 'multicarflag_t' or 'multicarflag_v' is not a valid integer.")
+                else:
+                    print("The multicarflag command does not contain an underscore followed by a flag type and value.")
+
 
             elif "trackflag" in command:
                 command_parts = command.split("_")
