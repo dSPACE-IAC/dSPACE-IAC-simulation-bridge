@@ -363,10 +363,15 @@ namespace controller
                 publisher_callback_group_);
             publisher_timers_.push_back(timer);
         };
-        register_timer("pure_pursuit_timer", [this]() { this->pure_pursuit(); });
-        register_timer("long_control_timer", [this]() { this->long_control(); });
-        register_timer("control_timer", [this]() { this->lateral_control(); });
-        register_timer("state_machine_timer", [this]() { this->state_machine(); });
+        // In deterministic sim mode the control functions are invoked once per /clock tick
+        // from simClockTimeCallback, so periodic timers must NOT be created here (they would
+        // double-invoke the control loop). Wall mode keeps the periodic timers unchanged.
+        if (!this->simModeEnabled) {
+            register_timer("pure_pursuit_timer", [this]() { this->pure_pursuit(); });
+            register_timer("long_control_timer", [this]() { this->long_control(); });
+            register_timer("control_timer", [this]() { this->lateral_control(); });
+            register_timer("state_machine_timer", [this]() { this->state_machine(); });
+        }
 
         // Set time increase step to 10 ms
         sim_time_increase_msg_.data = 10;
@@ -896,7 +901,9 @@ namespace controller
     {
         this->sec = msg.clock.sec;
         this->nsec = msg.clock.nanosec;
-        if (msg.clock.sec != 0 && msg.clock.nanosec != 0)
+        // Run one control step whenever sim time has advanced past zero. (Previously "&&",
+        // which skipped control for the entire first sim-second and on every whole-second tick.)
+        if (msg.clock.sec != 0 || msg.clock.nanosec != 0)
         {
             pure_pursuit();
             long_control();

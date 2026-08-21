@@ -474,11 +474,6 @@ namespace asm_socketcan_bridge {
       this->useCustomRaceControlSource_ = this->create_subscription<std_msgs::msg::Bool>("use_custom_race_control", qos, std::bind(&AsmSocketCanBridgeNode::switchRaceControlSourceCallback, this, _1));
       initializeFeedback();
 
-      const auto acquisition_period = this->simModeEnabled ? 1ms : 10ms;
-      this->vesiAcquisitionTimer_ = this->create_wall_timer(
-        acquisition_period,
-        std::bind(&AsmSocketCanBridgeNode::vesiCallback, this));
-
       if(this->simModeEnabled)
       {
         RCLCPP_INFO(get_logger(), "Use Simulated Clock.");
@@ -491,6 +486,11 @@ namespace asm_socketcan_bridge {
       else
       {
         RCLCPP_INFO(get_logger(), "Use Wall Clock (system clock).");
+        // Wall-clock mode: free-running acquisition timer drives the ASM exchange as fast
+        // as the period allows (unchanged behavior).
+        this->vesiAcquisitionTimer_ = this->create_wall_timer(
+          10ms,
+          std::bind(&AsmSocketCanBridgeNode::vesiCallback, this));
         vesiCallback();
       }
     }
@@ -2783,24 +2783,37 @@ int main(int argc, char * argv[])
     rclcpp::init(argc, argv);
 
     AsmSocketCanBridgeNodePtr = std::make_shared<asm_socketcan_bridge::AsmSocketCanBridgeNode>();
-    const auto hardware_threads = std::thread::hardware_concurrency();
-    size_t executor_threads = 4;
-    if (hardware_threads == 0) {
-      executor_threads = 4;
+
+    // Deterministic sim mode: serialize every callback on one thread so stepping and
+    // publishing order is reproducible. Wall mode keeps the multi-threaded executor for
+    // maximum throughput (unchanged behavior).
+    const bool sim_mode = AsmSocketCanBridgeNodePtr->get_parameter("use_sim_time").as_bool();
+    if (sim_mode) {
+      RCLCPP_INFO(AsmSocketCanBridgeNodePtr->get_logger(),
+                  "Spinning with single-threaded executor (deterministic sim mode).");
+      rclcpp::executors::SingleThreadedExecutor executor;
+      executor.add_node(AsmSocketCanBridgeNodePtr);
+      executor.spin();
     } else {
-      size_t half = hardware_threads / 2;
-      if (half == 0) {
-        executor_threads = 1;
+      const auto hardware_threads = std::thread::hardware_concurrency();
+      size_t executor_threads = 4;
+      if (hardware_threads == 0) {
+        executor_threads = 4;
       } else {
-        executor_threads = std::min<size_t>(8, half);
-        if (half >= 4 && executor_threads < 4) {
-          executor_threads = 4;
+        size_t half = hardware_threads / 2;
+        if (half == 0) {
+          executor_threads = 1;
+        } else {
+          executor_threads = std::min<size_t>(8, half);
+          if (half >= 4 && executor_threads < 4) {
+            executor_threads = 4;
+          }
         }
       }
+      rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), executor_threads);
+      executor.add_node(AsmSocketCanBridgeNodePtr);
+      executor.spin();
     }
-    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), executor_threads);
-    executor.add_node(AsmSocketCanBridgeNodePtr);
-    executor.spin();
     rclcpp::shutdown();
     return 0;
   }

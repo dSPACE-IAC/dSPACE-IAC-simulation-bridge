@@ -131,11 +131,12 @@ namespace asm_socketcan_bridge {
                    << std::to_string(interval_ms) << "\n";
       this->myfile.close();
     }
-    if (this->simModeEnabled && this->simClockTimePublisher_) {
-      std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
-      simClockTime.clock = rclcpp::Time(this->sec, this->nsec);
-      this->simClockTimePublisher_->publish(simClockTime);
-    }
+    // NOTE (deterministic sim mode): /clock is published exactly once per sim_time_increase
+    // handshake, from simClockTimeCallback() after all sub-steps complete -- NOT on every
+    // vesiCallback. Publishing per sub-step made the controller run its control loop at the
+    // sub-step (~1 ms) rate and amplified handshake traffic, which (with KeepLast(10) queues)
+    // caused timing-dependent sample drops. One /clock per handshake keeps a clean 1:1 step
+    // and a fixed control cadence.
   }
 
   void AsmSocketCanBridgeNode::sendVehicleFeedbackToSimulation()
