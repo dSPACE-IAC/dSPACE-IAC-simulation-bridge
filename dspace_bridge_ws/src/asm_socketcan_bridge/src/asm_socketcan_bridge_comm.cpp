@@ -184,10 +184,10 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::simTimeIncreaseCallback(const std_msgs::msg::UInt16 & msg)
   {
-    for (uint16_t timeIncreaseStep = 0; timeIncreaseStep < msg.data; ++timeIncreaseStep) {
-      vesiCallback();
-    }
-    simClockTimeCallback();
+    runSimTimeHandshake(
+      msg.data,
+      [this]() { this->vesiCallback(); },
+      [this]() { this->simClockTimeCallback(); });
   }
 
 } // namespace asm_socketcan_bridge

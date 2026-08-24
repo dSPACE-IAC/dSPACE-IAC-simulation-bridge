@@ -5,6 +5,18 @@
 
 namespace asm_socketcan_bridge
 {
+template <typename StepFunction, typename ClockPublisher>
+void runSimTimeHandshake(
+  std::uint16_t step_count,
+  StepFunction step,
+  ClockPublisher publish_clock)
+{
+  for (std::uint16_t step_index = 0; step_index < step_count; ++step_index) {
+    step();
+  }
+  publish_clock();
+}
+
 class SimTime
 {
 public:
