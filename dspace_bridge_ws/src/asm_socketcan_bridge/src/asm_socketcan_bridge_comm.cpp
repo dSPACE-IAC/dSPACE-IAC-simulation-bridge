@@ -177,17 +177,64 @@ namespace asm_socketcan_bridge {
   // ros
   void AsmSocketCanBridgeNode::simClockTimeCallback()
   {
+    if (!this->simModeEnabled) {
+      return;
+    }
+
     std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
     simClockTime.clock = rclcpp::Time(this->simTime_.seconds(), this->simTime_.nanoseconds());
+    const auto publication_count = sim_clock_publications_.fetch_add(1) + 1;
     this->simClockTimePublisher_->publish(simClockTime);
+    RCLCPP_INFO_THROTTLE(
+      get_logger(),
+      *this->get_clock(),
+      1000,
+      "SIM_OBS bridge clock_published=%llu handshakes_received=%llu sim_time_sec=%llu "
+      "sim_time_nanosec=%llu sim_time_ms=%llu",
+      static_cast<unsigned long long>(publication_count),
+      static_cast<unsigned long long>(sim_handshakes_received_.load()),
+      static_cast<unsigned long long>(simTime_.seconds()),
+      static_cast<unsigned long long>(simTime_.nanoseconds()),
+      static_cast<unsigned long long>(simTime_.totalMilliseconds()));
   }
 
   void AsmSocketCanBridgeNode::simTimeIncreaseCallback(const std_msgs::msg::UInt16 & msg)
   {
+    if (!this->simModeEnabled) {
+      return;
+    }
+
+    const auto handshake_count = sim_handshakes_received_.fetch_add(1) + 1;
+    const auto requested_substeps = static_cast<std::uint64_t>(msg.data);
+    sim_requested_substeps_.fetch_add(requested_substeps);
+    if (msg.data != 10) {
+      sim_non_ten_handshakes_.fetch_add(1);
+    }
+
+    const auto substeps_before = sim_substeps_completed_.load();
     runSimTimeHandshake(
       msg.data,
-      [this]() { this->vesiCallback(); },
+      [this]() {
+        this->vesiCallback();
+        sim_substeps_completed_.fetch_add(1);
+      },
       [this]() { this->simClockTimeCallback(); });
+
+    const auto completed_substeps = sim_substeps_completed_.load() - substeps_before;
+    if (completed_substeps != requested_substeps) {
+      sim_substep_mismatches_.fetch_add(1);
+    }
+    RCLCPP_INFO_THROTTLE(
+      get_logger(),
+      *this->get_clock(),
+      1000,
+      "SIM_OBS bridge handshake_received=%llu requested_substeps=%llu "
+      "cumulative_requested_substeps=%llu cumulative_substeps=%llu substep_mismatches=%llu",
+      static_cast<unsigned long long>(handshake_count),
+      static_cast<unsigned long long>(requested_substeps),
+      static_cast<unsigned long long>(sim_requested_substeps_.load()),
+      static_cast<unsigned long long>(sim_substeps_completed_.load()),
+      static_cast<unsigned long long>(sim_substep_mismatches_.load()));
   }
 
 } // namespace asm_socketcan_bridge

@@ -24,6 +24,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(autonoma_msgs REQUIRED)
 find_package(vectornav_msgs REQUIRED)
 find_package(novatel_oem7_msgs REQUIRED)
+find_package(iac_sim_time REQUIRED)
 
 set(MSG_DEPS std_msgs)
 set(MSG_DEPS rosgraph_msgs)
@@ -52,6 +53,7 @@ set(
   autonoma_msgs
   vectornav_msgs
   novatel_oem7_msgs
+  iac_sim_time
 )
 
 install(

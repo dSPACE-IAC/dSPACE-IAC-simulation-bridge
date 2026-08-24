@@ -83,7 +83,7 @@ enum class TrackLocation
   LOC_DEFAULT = 255
 }; // enum class TrackLocation
 
-CTState int2ct(int ct_state)
+inline CTState int2ct(int ct_state)
 {
   switch (ct_state)
   {
@@ -117,7 +117,7 @@ CTState int2ct(int ct_state)
   }
 }
 
-SysState int2sys(int sys_state)
+inline SysState int2sys(int sys_state)
 {
   switch (sys_state)
   {
@@ -153,7 +153,7 @@ SysState int2sys(int sys_state)
   }
 }
 
-Rc2TrackFlags int2tf(int track_flag)
+inline Rc2TrackFlags int2tf(int track_flag)
 {
   switch (track_flag)
   {
@@ -175,7 +175,7 @@ Rc2TrackFlags int2tf(int track_flag)
   }
 }
 
-Rc2VehFlags int2vf(int veh_flag)
+inline Rc2VehFlags int2vf(int veh_flag)
 {
   switch (veh_flag)
   {
@@ -205,7 +205,7 @@ Rc2VehFlags int2vf(int veh_flag)
   }
 }
 
-LapState int2lap(int lap_state)
+inline LapState int2lap(int lap_state)
 {
   switch (lap_state)
   {
@@ -231,7 +231,7 @@ LapState int2lap(int lap_state)
   }
 }
 
-TrackLocation int2loc(int lap_location)
+inline TrackLocation int2loc(int lap_location)
 {
   switch (lap_location)
   {

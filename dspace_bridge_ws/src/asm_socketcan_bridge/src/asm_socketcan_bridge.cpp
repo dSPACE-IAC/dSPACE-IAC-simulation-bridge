@@ -22,6 +22,20 @@ namespace asm_socketcan_bridge {
 
   AsmSocketCanBridgeNode::~AsmSocketCanBridgeNode()
   {
+    if (simModeEnabled) {
+      RCLCPP_INFO(
+        get_logger(),
+        "SIM_OBS bridge summary=1 handshakes_received=%llu requested_substeps=%llu "
+        "cumulative_substeps=%llu clock_published=%llu non_ten_handshakes=%llu "
+        "substep_mismatches=%llu sim_time_ms=%llu",
+        static_cast<unsigned long long>(sim_handshakes_received_.load()),
+        static_cast<unsigned long long>(sim_requested_substeps_.load()),
+        static_cast<unsigned long long>(sim_substeps_completed_.load()),
+        static_cast<unsigned long long>(sim_clock_publications_.load()),
+        static_cast<unsigned long long>(sim_non_ten_handshakes_.load()),
+        static_cast<unsigned long long>(sim_substep_mismatches_.load()),
+        static_cast<unsigned long long>(simTime_.totalMilliseconds()));
+    }
     stop_reader_.store(true);
     if (can_socket >= 0) {
       close(can_socket);

@@ -39,6 +39,7 @@
       black_flag_on_track: 50.0
       pit_transition_out: 2514.432821833612
       pit_transition_in: 3466.9929036148405
+        connection.useRaptorDbwNode: false
       pit_entry_dec: 2966.99398809754
       pit_inc_speed: 980.3156320337134
       pit_dec_speed: 180.98267063665767

@@ -10,8 +10,8 @@
 
 namespace controller {
     // Return vector of vectors for a specified number of columns of a csv file
-    std::vector<std::vector<double>> read_csv(std::string filename, int columns,
-                                              std::string delimiter) {
+    inline std::vector<std::vector<double>> read_csv(std::string filename, int columns,
+                             std::string delimiter) {
       /**
        * Read a csv file into a vector of vectors
        * @param filename: name of the csv file

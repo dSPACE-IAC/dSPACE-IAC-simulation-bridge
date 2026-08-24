@@ -11,6 +11,8 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <rclcpp/create_timer.hpp>
 
+#include "iac_sim_time/sim_clock_mode.hpp"
+
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -70,22 +72,6 @@ namespace {
   constexpr std::size_t kNovatelBottomIndex = 1;
   constexpr std::size_t kVectorNavGpsLeftIndex = 0;
   constexpr std::size_t kVectorNavGpsRightIndex = 1;
-
-  std::optional<bool> parse_sim_clock_mode(const char *value)
-  {
-    std::string normalized;
-    for (const char character : std::string(value)) {
-      normalized += static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-    }
-
-    if (normalized == "true" || normalized == "1" || normalized == "yes" || normalized == "on") {
-      return true;
-    }
-    if (normalized == "false" || normalized == "0" || normalized == "no" || normalized == "off") {
-      return false;
-    }
-    return std::nullopt;
-  }
 
 }  // namespace
 
@@ -342,7 +328,7 @@ namespace asm_socketcan_bridge {
     }
 
     if (const char *sim_clock_mode = std::getenv("SIM_CLOCK_MODE")) {
-      const auto environment_setting = parse_sim_clock_mode(sim_clock_mode);
+      const auto environment_setting = iac_sim_time::parse_sim_clock_mode(sim_clock_mode);
       if (environment_setting.has_value()) {
         use_sim_time = environment_setting.value();
         this->set_parameter(rclcpp::Parameter("use_sim_time", use_sim_time));

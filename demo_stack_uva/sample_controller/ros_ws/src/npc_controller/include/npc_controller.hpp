@@ -2,6 +2,14 @@
 #define NPC_CONTROLLER__NPC_CONTROLLER_HPP_
 
 #include <cmath>
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <utility>
 #include <vector>
 #include <iostream>
 #include <mutex>
@@ -48,6 +56,7 @@
 #include "lap_state_machine.hpp"
 #include "iac_qos.h"
 #include "sim_clock_control.h"
+#include "signal_codec.h"
 
 #include "npc_controller_msgs/msg/npc_debug.hpp"
 #include "npc_controller_msgs/msg/misc_report.hpp"
@@ -100,7 +109,7 @@ namespace controller
 
     public:
         explicit ControllerNode(const rclcpp::NodeOptions &options);
-        ~ControllerNode() = default;
+        ~ControllerNode() override;
 
     private:
         rclcpp::TimerBase::SharedPtr pure_pursuit_timer_;
@@ -171,6 +180,10 @@ namespace controller
         rclcpp::CallbackGroup::SharedPtr publisher_callback_group_;
         std::vector<rclcpp::TimerBase::SharedPtr> publisher_timers_;
 
+        std::atomic<std::uint64_t> sim_clock_messages_received_{0};
+        std::atomic<std::uint64_t> sim_control_invocations_{0};
+        std::atomic<std::uint64_t> sim_zero_clock_messages_{0};
+        std::atomic<std::uint64_t> sim_handshakes_sent_{0};
         // Debug Messages
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr target_point_pub_;
@@ -411,6 +424,50 @@ namespace controller
         std::mutex can_socket_mutex_;
         std::atomic<bool> stop_reader_{false};
     };
+
+    template <typename T>
+    void ControllerNode::insertBits(uint8_t* data, Signal signal_information, T physical_value)
+    {
+        if (signal_information.length == 0) {
+        return;
+        }
+
+        const auto length = signal_information.length;
+        const auto mask = length >= 64 ? std::numeric_limits<uint64_t>::max()
+                                    : ((1ULL << length) - 1ULL);
+        const long double scaled_value =
+        (static_cast<long double>(physical_value) - static_cast<long double>(signal_information.offset)) /
+        static_cast<long double>(signal_information.factor);
+
+        uint64_t raw_value = 0;
+
+        if (signal_information.is_signed) {
+        int64_t min_value;
+        int64_t max_value;
+        if (length >= 64) {
+            min_value = std::numeric_limits<int64_t>::min();
+            max_value = std::numeric_limits<int64_t>::max();
+        } else {
+            const int64_t magnitude = static_cast<int64_t>(1ULL << (length - 1));
+            min_value = -magnitude;
+            max_value = magnitude - 1;
+        }
+        const long double rounded = std::round(scaled_value);
+        const long double clamped =
+            std::clamp<long double>(rounded,
+                                    static_cast<long double>(min_value),
+                                    static_cast<long double>(max_value));
+        const auto quantized = static_cast<int64_t>(clamped);
+        raw_value = static_cast<uint64_t>(quantized) & mask;
+        } else {
+        const long double rounded = std::round(scaled_value);
+        const long double clamped =
+            std::clamp<long double>(rounded, 0.0L, static_cast<long double>(mask));
+        raw_value = static_cast<uint64_t>(clamped);
+        }
+
+        pack_signal_bits(data, signal_information, raw_value);
+    }
 
 } // namespace
 

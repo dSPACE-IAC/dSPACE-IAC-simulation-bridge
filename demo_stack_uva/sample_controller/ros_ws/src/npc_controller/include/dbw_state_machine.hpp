@@ -4,7 +4,7 @@
 #include "rc_states.hpp"
 namespace controller
 {
-    CTState dbw_state_machine(CTState &ct_state, Rc2TrackFlags &track_flag, Rc2VehFlags &vehicle_flag_, SysState &sys_state, bool estop_, int &ct_input, double &velocity, bool disableStateMachine)
+    inline CTState dbw_state_machine(CTState &ct_state, Rc2TrackFlags &track_flag, Rc2VehFlags &vehicle_flag_, SysState &sys_state, bool estop_, int &ct_input, double &velocity, bool disableStateMachine)
     {
         switch (ct_state)
         {

@@ -22,6 +22,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(autonoma_msgs REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
+find_package(iac_sim_time REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(GEOGRAPHICLIB REQUIRED)
@@ -31,8 +32,18 @@ include_directories(include)
 
 add_library(controller SHARED
   src/npc_controller.cpp
+  src/npc_controller_callbacks.cpp
+  src/npc_controller_can_codec.cpp
+  src/npc_controller_can_reader.cpp
+  src/npc_controller_can_transport.cpp
+  src/npc_controller_control.cpp
+  src/npc_controller_path.cpp
+  src/npc_controller_pid.cpp
+  src/npc_controller_state_machine.cpp
+  src/signal_codec.cpp
   src/dbc_structure_init.cpp
   include/npc_controller.hpp
+  include/signal_codec.h
 )
 
 set(MSG_DEPS autonoma_msgs)
@@ -51,6 +62,7 @@ ament_target_dependencies(controller
   npc_controller_msgs
   autonoma_msgs
   rosgraph_msgs
+  iac_sim_time
 )
 
 target_link_libraries(controller ${GeographicLib_LIBRARIES} ${ALGLIB_LIBRARIES})

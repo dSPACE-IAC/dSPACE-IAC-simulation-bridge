@@ -145,6 +145,12 @@ namespace asm_socketcan_bridge
         bool simModeEnabled = false;
         bool numberWarningSent = false;
         bool stackFeedbackConnectionWarningSent = false;
+        std::atomic<std::uint64_t> sim_handshakes_received_{0};
+        std::atomic<std::uint64_t> sim_requested_substeps_{0};
+        std::atomic<std::uint64_t> sim_substeps_completed_{0};
+        std::atomic<std::uint64_t> sim_clock_publications_{0};
+        std::atomic<std::uint64_t> sim_non_ten_handshakes_{0};
+        std::atomic<std::uint64_t> sim_substep_mismatches_{0};
         uint8_t prestart_rolling_counter;
         uint8_t raptor_rolling_counter = 0;
         uint8_t brk_pressure_fdbk_counter = 0;

@@ -26,6 +26,7 @@
   <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>autonoma_msgs</depend>
+  <depend>iac_sim_time</depend>
   <depend>rosgraph_msgs</depend>
 
   <export>
