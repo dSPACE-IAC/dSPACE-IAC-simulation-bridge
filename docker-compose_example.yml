@@ -66,6 +66,8 @@ services:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     container_name: asm_socketcan_bridge
     restart: no
+    environment:
+        - "SIM_CLOCK_MODE=${SIM_CLOCK_MODE:-false}"
     volumes:
         - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
     cap_add:
@@ -105,7 +107,7 @@ services:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
     container_name: demo_stack_uva
     environment:
-        - SIM_CLOCK_MODE=false
+        - "SIM_CLOCK_MODE=${SIM_CLOCK_MODE:-false}"
         - CAR_NUM=78
     volumes:
         - ./demo_stack_uva/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml

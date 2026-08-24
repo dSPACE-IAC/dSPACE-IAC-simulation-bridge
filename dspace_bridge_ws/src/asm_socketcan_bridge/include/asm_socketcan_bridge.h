@@ -75,6 +75,7 @@
 #include "RaceControlInterface.h"
 #include "dbc_structure.h"
 #include "signal_codec.h"
+#include "sim_time.h"
 
 namespace asm_socketcan_bridge
 {
@@ -167,9 +168,7 @@ namespace asm_socketcan_bridge
         bool enableTimeRecord;
 
         // Simulated clock
-        uint32_t nsec = 0;
-        uint32_t sec = 0;
-        uint64_t simTotalMsec = 0;
+        SimTime simTime_;
         rosgraph_msgs::msg::Clock simClockTime;
         rclcpp::TimerBase::SharedPtr updateSimClock_;
 
@@ -178,6 +177,14 @@ namespace asm_socketcan_bridge
         ASMBus canBusStorage_{};
         ASMBus *canBus = nullptr;
         VESIResultData feedbackCmd;
+
+        void configureConnectionParameters();
+        void configurePublisherTimers();
+        void configureRuntimeParameters();
+        bool connectToSimulation();
+        bool initializeCanInterface();
+        void initializeRosInterfaces();
+        void initializeTimeRecording();
 
         void initializeFeedback();
 

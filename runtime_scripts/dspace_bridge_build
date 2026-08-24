@@ -2,4 +2,4 @@
 source /opt/ros/humble/local_setup.sh
 source /root/ros_ws_aux/install/local_setup.sh
 rosdep install -i --from-path /root/dspace_bridge_ws/src --rosdistro humble -y
-colcon build --symlink-install --cmake-clean-first --base-paths /root/dspace_bridge_ws/ --build-base /root/dspace_bridge_ws/build --install-base /root/dspace_bridge_ws/install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo 
+colcon build --symlink-install --cmake-clean-first --base-paths /root/dspace_bridge_ws/ --build-base /root/dspace_bridge_ws/build --install-base /root/dspace_bridge_ws/install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo

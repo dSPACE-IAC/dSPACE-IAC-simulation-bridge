@@ -93,18 +93,19 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 3. Copy `docker-compose_example.yml` and rename to `docker-compose.yml`.
 4. Adjust parameters in `docker-compose.yml` to match your registry tags and license server. Update the `dspace_bridge` service to point to the bridge variant you want to launch (socketcan, ros2, aurelion or dev).
 5. Provide your custom bridge parameters by editing `asm_socketcan_bridge_override.yaml` and removing the comment in the volume mount for the bridge. E.g. adjust the `publish_intervals.*` values whenever you want to slow down or speed up individual CAN and ROS2 message publishers.
-6. Open a terminal and execute `docker compose up`.
-7. Start Lichtblick
+6. Set `SIM_CLOCK_MODE=true` when deterministic simulation stepping is required. The Compose examples pass this value to both the bridge and demo controller; it overrides the bridge YAML `use_sim_time` value.
+7. Open a terminal and execute `docker compose up`.
+8. Start Lichtblick
     1. Open Lichtblick for visualisation either the local container `localhost:8080` or from the Lichtblick suite `https://lichtblick-suite.github.io/lichtblick/`
     2. Click on *Open connection* and connect to the default address *ws://localhost:8765*
     3. Load layout by clicking View->Import layout from file->Select json file (example layout can be found under `foxglove_bridge/iac-layout-basic.json`)
-8. Attach to the running bridge container if you want to iterate on the code:
+9. Attach to the running bridge container if you want to iterate on the code:
     1. Switch the image to `dspace/iac_dspace_bridge_dev` in the compose file and mount `./dspace_bridge_ws` into `/root/dspace_bridge_ws`
     2. `docker exec -it dspace_bridge_dev bash`
     3. `./dspace_bridge_build`
     4. `export BRIDGE_TYPE="ASM_CAN"`
     5. `./entrypoint.sh`
-9. To shut down the simulation, open another terminal and execute `docker compose down --remove-orphans`
+10. To shut down the simulation, open another terminal and execute `docker compose down --remove-orphans`
 
 ### Iterate
 To create an updated simulator image after touching the bridge sources, use `build_dspace_bridge.sh`.

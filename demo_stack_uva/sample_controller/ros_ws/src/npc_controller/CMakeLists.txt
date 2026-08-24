@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.8)
 project(npc_controller)
 
+include(CTest)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -52,6 +54,12 @@ ament_target_dependencies(controller
 )
 
 target_link_libraries(controller ${GeographicLib_LIBRARIES} ${ALGLIB_LIBRARIES})
+
+if(BUILD_TESTING)
+  add_executable(sim_clock_control_test test/sim_clock_control_test.cpp)
+  target_include_directories(sim_clock_control_test PRIVATE include)
+  add_test(NAME npc_controller_sim_clock_control COMMAND sim_clock_control_test)
+endif()
 
 target_include_directories(controller PUBLIC
   ${GeographicLib_INCLUDE_DIRS}

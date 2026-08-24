@@ -47,6 +47,7 @@
 #include "dbw_state_machine.hpp"
 #include "lap_state_machine.hpp"
 #include "iac_qos.h"
+#include "sim_clock_control.h"
 
 #include "npc_controller_msgs/msg/npc_debug.hpp"
 #include "npc_controller_msgs/msg/misc_report.hpp"

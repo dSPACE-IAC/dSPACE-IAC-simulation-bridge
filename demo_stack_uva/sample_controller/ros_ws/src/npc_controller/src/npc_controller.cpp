@@ -903,7 +903,7 @@ namespace controller
         this->nsec = msg.clock.nanosec;
         // Run one control step whenever sim time has advanced past zero. (Previously "&&",
         // which skipped control for the entire first sim-second and on every whole-second tick.)
-        if (msg.clock.sec != 0 || msg.clock.nanosec != 0)
+        if (shouldRunSimTimeControl(msg.clock.sec, msg.clock.nanosec))
         {
             pure_pursuit();
             long_control();

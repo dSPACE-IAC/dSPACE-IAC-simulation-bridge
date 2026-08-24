@@ -66,13 +66,7 @@ namespace asm_socketcan_bridge {
         constexpr auto required_canbus_size = sizeof(ASMBus);
         std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
         if (active_maneuver) {
-          if (this->simModeEnabled) {
-            this->simTotalMsec += 1;
-            this->sec = this->simTotalMsec / 1000;
-            this->nsec = (this->simTotalMsec % 1000) * 1000000;
-          } else {
-            this->simTotalMsec += 10;
-          }
+          this->simTime_.advanceMilliseconds(this->simModeEnabled ? 1 : 10);
         }
 
         if (canbus_raw_buffer_.size() >= required_canbus_size) {
@@ -184,7 +178,7 @@ namespace asm_socketcan_bridge {
   void AsmSocketCanBridgeNode::simClockTimeCallback()
   {
     std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
-    simClockTime.clock = rclcpp::Time(this->sec,this->nsec);
+    simClockTime.clock = rclcpp::Time(this->simTime_.seconds(), this->simTime_.nanoseconds());
     this->simClockTimePublisher_->publish(simClockTime);
   }
 

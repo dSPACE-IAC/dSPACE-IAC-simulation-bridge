@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # define general parameters
 TEAM="dspace"
@@ -18,6 +19,15 @@ echo "---------- build general dspace_bridge_dev ----------"
 docker build -t $REGISTRY$NAME_DEV --target=dspace_bridge_dev --platform=linux/amd64 -f Dockerfile ..
 echo "---------- build asm_socketcan_bridge ----------"
 docker build -t $REGISTRY$NAME_ASM_SOCKETCAN --target=asm_socketcan_bridge --platform=linux/amd64 -f Dockerfile ..
+echo "---------- test asm_socketcan_bridge ----------"
+docker run --rm --platform=linux/amd64 --entrypoint /bin/bash "$REGISTRY$NAME_ASM_SOCKETCAN" -lc '
+	source /opt/ros/humble/local_setup.bash
+	source /root/ros_ws_aux/install/local_setup.bash
+	source /root/dspace_bridge_ws/install/local_setup.bash
+	cd /root/dspace_bridge_ws
+	colcon test --packages-select asm_socketcan_bridge --event-handlers console_direct+
+	colcon test-result --verbose
+'
 echo "---------- build iac_aurelion_ros2_bridge ----------"
 docker build -t $REGISTRY$NAME_IAC_AURELION_ROS2 --target=aurelion_ros2_bridge --platform=linux/amd64 -f Dockerfile ..
 echo "---------- build iac_socketcan_dbw_bridge ----------"

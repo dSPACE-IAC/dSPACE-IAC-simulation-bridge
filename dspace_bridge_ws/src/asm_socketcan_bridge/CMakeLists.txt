@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(asm_socketcan_bridge)
 
+include(CTest)
+
 set (VESIAPI_INCLUDE_DIR /opt/VESI/include)
 set (VESIAPI_LIB_DIR /opt/VESI/lib/)
 set(exe_name AsmSocketCanBridgeNode)
@@ -60,7 +62,15 @@ install(
 add_executable(
   ${exe_name}
   src/asm_socketcan_bridge.cpp
+  src/asm_socketcan_bridge_main.cpp
   src/asm_socketcan_bridge_comm.cpp
+  src/asm_socketcan_bridge_can_codec.cpp
+  src/asm_socketcan_bridge_can_reader.cpp
+  src/asm_socketcan_bridge_can_transport.cpp
+  src/asm_socketcan_bridge_setup.cpp
+  src/asm_socketcan_bridge_sensor_converters.cpp
+  src/asm_socketcan_bridge_sensor_publishers.cpp
+  src/asm_socketcan_bridge_can_publishers.cpp
   src/signal_codec.cpp
   src/dbc_structure_init.cpp
   include/signal_codec.h
@@ -78,6 +88,12 @@ target_link_libraries(
   ${exe_name}
   ${VESIAPI_LIB_DIR}libVESIAPI.so
 )
+
+if(BUILD_TESTING)
+  add_executable(sim_time_test test/sim_time_test.cpp)
+  target_include_directories(sim_time_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_sim_time COMMAND sim_time_test)
+endif()
 
 target_include_directories(
   ${exe_name}

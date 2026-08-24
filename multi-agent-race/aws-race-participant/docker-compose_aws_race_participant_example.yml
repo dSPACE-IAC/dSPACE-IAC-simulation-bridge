@@ -70,7 +70,7 @@ services:
     restart: no
     environment:
         - SIMMANAGER_PORT=12345
-        - SIM_CLOCK_MODE=false
+        - "SIM_CLOCK_MODE=${SIM_CLOCK_MODE:-false}"
         - ASM_IP=<IP of team's Linux race participant VM>
         - VESI_IP=10.6.0.3
     volumes:
@@ -109,7 +109,7 @@ services:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
     container_name: demo_stack_uva
     environment:
-        - SIM_CLOCK_MODE=false
+        - "SIM_CLOCK_MODE=${SIM_CLOCK_MODE:-false}"
         - CAR_NUM=10 # Teams need to send correct veh_num message to get respective 3d asset in AURELION
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
