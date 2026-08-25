@@ -107,6 +107,22 @@ Example workflow for asm_socketcan_bridge including Foxglove:
     5. `./entrypoint.sh`
 10. To shut down the simulation, open another terminal and execute `docker compose down --remove-orphans`
 
+### Sim-time observability
+The bridge and controller emit sampled `SIM_OBS` counters in sim mode. Capture the relevant service logs and reduce one run with:
+
+```bash
+docker compose logs --no-color dspace_restbus_bridge demo_stack_uva > sim-run.log
+python3 scripts/sim_time_observability.py sim-run.log
+```
+
+Repeat the same scenario and compare both runs:
+
+```bash
+python3 scripts/sim_time_observability.py sim-run-a.log --compare sim-run-b.log
+```
+
+Set `logging.sent_can_frames: true` in `demo_stack_uva/ims.param_override.yaml` when CAN payloads should be included in the comparison. The override also exposes `connection.useRaptorDbwNode` so direct CAN and Raptor DBW runs can be selected without rebuilding the controller image.
+
 ### Iterate
 To create an updated simulator image after touching the bridge sources, use `build_dspace_bridge.sh`.
 The script can build the dev image as well as the asm_socketcan, aurelion and foxglove/Lichtblick variants.

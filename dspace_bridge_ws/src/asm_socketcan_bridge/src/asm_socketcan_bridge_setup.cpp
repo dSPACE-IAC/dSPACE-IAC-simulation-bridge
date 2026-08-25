@@ -526,6 +526,7 @@ namespace asm_socketcan_bridge {
         vesiCallback();
         this->simClockTime.clock = rclcpp::Time(
           this->simTime_.seconds(), this->simTime_.nanoseconds());
+        sim_clock_publications_.fetch_add(1);
         this->simClockTimePublisher_->publish(this->simClockTime);
       }
       else
