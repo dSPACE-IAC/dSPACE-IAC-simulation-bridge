@@ -3,6 +3,7 @@
 
 import argparse
 import difflib
+import math
 import re
 import sys
 from pathlib import Path
@@ -21,6 +22,9 @@ CLOCK_RECORD_RE = re.compile(
 HANDSHAKE_RE = re.compile(r"^data:\s*(\d+)\s*$", re.MULTILINE)
 DEBUG_STEERING_RE = re.compile(r"^output_steering:\s*(\S+)\s*$", re.MULTILINE)
 DEBUG_TIMING_RE = re.compile(r"^(vel_pid_dt|acc_pid_dt|steering_dt):\s*(\S+)\s*$", re.MULTILINE)
+DEBUG_VELOCITY_RE = re.compile(
+    r"^(desired_velocity|current_velocity|error_velocity):\s*(\S+)\s*$", re.MULTILINE)
+DEBUG_RECORD_SEPARATOR_RE = re.compile(r"(?m)^\s*---\s*$")
 
 Observation = Tuple[str, Dict[str, str]]
 COMPANION_SUFFIXES = {
@@ -48,6 +52,7 @@ class RunData:
         self.handshakes: List[int] = []
         self.debug_steering: List[str] = []
         self.debug_timing: List[str] = []
+        self.debug_velocity_records: List[Dict[str, str]] = []
 
         for line in text.splitlines():
             observation = OBSERVATION_RE.search(line)
@@ -74,8 +79,15 @@ class RunData:
         ]
         self.handshakes = [int(value) for value in HANDSHAKE_RE.findall(
             self.companion_text.get("handshake", ""))]
-        self.debug_steering = DEBUG_STEERING_RE.findall(self.companion_text.get("debug", ""))
-        self.debug_timing = DEBUG_TIMING_RE.findall(self.companion_text.get("debug", ""))
+        debug_text = self.companion_text.get("debug", "")
+        self.debug_steering = DEBUG_STEERING_RE.findall(debug_text)
+        self.debug_timing = DEBUG_TIMING_RE.findall(debug_text)
+        self.debug_velocity_records = [
+            fields for fields in (
+                dict(DEBUG_VELOCITY_RE.findall(record))
+                for record in DEBUG_RECORD_SEPARATOR_RE.split(debug_text)
+            ) if fields
+        ]
         self.can_capture_records = [
             match.group("frame").upper()
             for line in self.companion_text.get("can", "").splitlines()
@@ -121,6 +133,37 @@ def as_int(fields: Dict[str, str], key: str):
         return int(fields[key])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def check_debug_velocity_consistency(records: Sequence[Dict[str, str]]) -> Tuple[str, str]:
+    if not records:
+        return "FAIL", "debug capture is missing"
+
+    checked_records = 0
+    mismatches = 0
+    incomplete_records = 0
+    for fields in records:
+        try:
+            desired_velocity = float(fields["desired_velocity"])
+            current_velocity = float(fields["current_velocity"])
+            error_velocity = float(fields["error_velocity"])
+        except (KeyError, ValueError):
+            incomplete_records += 1
+            continue
+
+        checked_records += 1
+        if not math.isclose(
+            error_velocity,
+            desired_velocity - current_velocity,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            mismatches += 1
+
+    status = "PASS" if not mismatches and not incomplete_records else "FAIL"
+    details = "%d records checked; %d mismatches, %d incomplete" % (
+        checked_records, mismatches, incomplete_records)
+    return status, details
 
 
 def format_table(rows: Sequence[Tuple[str, str, str]]) -> None:
@@ -279,6 +322,10 @@ def reduce_run(data: RunData, expected_substeps: int, minimum_sim_ms: int) -> Li
                      "checked %d PID timing fields against 0.01 s" % len(timing_values)))
     else:
         rows.append(("controller debug timing", "FAIL", "debug capture is missing"))
+
+    velocity_status, velocity_details = check_debug_velocity_consistency(
+        data.debug_velocity_records)
+    rows.append(("debug velocity snapshot consistency", velocity_status, velocity_details))
 
     if data.controller_can_records:
         rows.append(("controller CAN output records captured", "PASS",

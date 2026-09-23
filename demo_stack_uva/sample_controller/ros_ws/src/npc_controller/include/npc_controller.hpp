@@ -266,6 +266,7 @@ namespace controller
 
         uint32_t nsec = 0;
         uint32_t sec = 0;
+        std::atomic<double> sim_time_snapshot_seconds_{0.0};
         bool simModeEnabled = false;
 
         // Parameters

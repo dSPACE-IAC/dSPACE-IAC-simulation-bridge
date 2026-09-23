@@ -12,8 +12,11 @@ namespace controller
         }
 
         const auto clock_count = sim_clock_messages_received_.fetch_add(1) + 1;
+    const double sim_time_seconds = static_cast<double>(msg.clock.sec) +
+                    static_cast<double>(msg.clock.nanosec) * 1e-9;
         this->sec = msg.clock.sec;
         this->nsec = msg.clock.nanosec;
+    sim_time_snapshot_seconds_.store(sim_time_seconds, std::memory_order_relaxed);
         SimControlInputs step_inputs;
         {
             std::lock_guard<std::mutex> lock(feedback_mutex_);
@@ -34,13 +37,14 @@ namespace controller
             step_inputs.ct_input = ct_input_;
             step_inputs.estop = estop_;
         }
-        step_inputs.sim_time = static_cast<double>(msg.clock.sec) +
-                               static_cast<double>(msg.clock.nanosec) * 1e-9;
+        step_inputs.sim_time = sim_time_seconds;
         const bool control_ran = runSimTimeControlStep(
             msg.clock.sec,
             msg.clock.nanosec,
             [this, &step_inputs]() {
                 sim_control_invocations_.fetch_add(1);
+                step_inputs.vehicle_state.ax = vel_filter_.processSample(
+                    static_cast<float>(step_inputs.vehicle_state.ax));
                 pure_pursuit(&step_inputs);
                 long_control(&step_inputs);
                 lateral_control(&step_inputs);
@@ -133,11 +137,15 @@ namespace controller
         double avg_ws = (fl + fr + rl + rr) / 4.0 / 3.6;
 
         double current_time;
-        if(this->simModeEnabled) {current_time = double(this->sec) + double(this->nsec) * 1e-9;}
+        if(this->simModeEnabled) {
+            current_time = sim_time_snapshot_seconds_.load(std::memory_order_relaxed);
+        }
         else {current_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;}
 
         double dt = current_time - prev_time_;
-        double accel = vel_filter_.processSample((avg_ws - previous_state_.vx) / dt);
+        double raw_acceleration = (avg_ws - previous_state_.vx) / dt;
+        double accel = this->simModeEnabled ? raw_acceleration :
+            vel_filter_.processSample(static_cast<float>(raw_acceleration));
         previous_state_ = vehicle_state_;
         prev_time_ = current_time;
         vehicle_state_.vx = avg_ws; // Convert to m/s
@@ -164,11 +172,15 @@ namespace controller
         double avg_ws = (fl + fr + rl + rr) / 4.0 / 3.6;
 
         double current_time;
-        if(this->simModeEnabled) {current_time = double(this->sec) + double(this->nsec) * 1e-9;}
+        if(this->simModeEnabled) {
+            current_time = sim_time_snapshot_seconds_.load(std::memory_order_relaxed);
+        }
         else {current_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;}
 
         double dt = current_time - prev_time_;
-        double accel = vel_filter_.processSample((avg_ws - previous_state_.vx) / dt);
+        double raw_acceleration = (avg_ws - previous_state_.vx) / dt;
+        double accel = this->simModeEnabled ? raw_acceleration :
+            vel_filter_.processSample(static_cast<float>(raw_acceleration));
         previous_state_ = vehicle_state_;
         prev_time_ = current_time;
         vehicle_state_.vx = avg_ws; // Convert to m/s
