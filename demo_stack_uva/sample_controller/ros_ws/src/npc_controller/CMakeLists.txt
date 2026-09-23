@@ -71,6 +71,10 @@ if(BUILD_TESTING)
   add_executable(sim_clock_control_test test/sim_clock_control_test.cpp)
   target_include_directories(sim_clock_control_test PRIVATE include)
   add_test(NAME npc_controller_sim_clock_control COMMAND sim_clock_control_test)
+
+  add_executable(signal_codec_test test/signal_codec_test.cpp src/signal_codec.cpp)
+  target_include_directories(signal_codec_test PRIVATE include)
+  add_test(NAME npc_controller_signal_codec COMMAND signal_codec_test)
 endif()
 
 target_include_directories(controller PUBLIC

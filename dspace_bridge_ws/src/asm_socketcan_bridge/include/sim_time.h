@@ -5,6 +5,11 @@
 
 namespace asm_socketcan_bridge
 {
+constexpr bool shouldCreateWallClockAcquisitionTimer(bool sim_mode) noexcept
+{
+  return !sim_mode;
+}
+
 template <typename StepFunction, typename ClockPublisher>
 void runSimTimeHandshake(
   std::uint16_t step_count,

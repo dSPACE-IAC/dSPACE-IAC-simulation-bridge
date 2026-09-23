@@ -104,6 +104,27 @@ namespace controller
         std::vector<PathPoint> points;
     };
 
+    struct SimControlInputs
+    {
+        VehicleState vehicle_state{};
+        VehicleState previous_state{};
+        double prev_time = 0.0;
+        double non_brake_decel = 0.0;
+        Rc2TrackFlags track_flag = Rc2TrackFlags::Rc2TrackFlag_Null;
+        Rc2VehFlags vehicle_flag = Rc2VehFlags::Rc2VehFlag_Null;
+        SysState sys_state = SysState::SS255_DEFAULT;
+        int round_target_speed = 0;
+        float throttle_position = 0.0F;
+        int8_t current_gear = 0;
+        float engine_rpm = 0.0F;
+        bool engine_running = false;
+        bool position_received = false;
+        bool wheel_speed_received = false;
+        int ct_input = 0;
+        bool estop = false;
+        double sim_time = 0.0;
+    };
+
     class ControllerNode : public rclcpp::Node
     {
 
@@ -228,19 +249,19 @@ namespace controller
         void receivePtReport();
         void receivePtReport_ros_msg(const npc_controller_msgs::msg::PtReport::SharedPtr msg);
         void receiveEstop(const std_msgs::msg::Bool::SharedPtr msg);
-        void long_control();
-        void lateral_control();
+        void long_control(SimControlInputs *inputs = nullptr);
+        void lateral_control(SimControlInputs *inputs = nullptr);
 
-        uint8_t get_gear_shift_cmd();
+        uint8_t get_gear_shift_cmd(SimControlInputs *inputs = nullptr);
 
         // Helper Functions
         Path load_path(std::string filename);
-        void pure_pursuit();
+        void pure_pursuit(SimControlInputs *inputs = nullptr);
         PathPoint pure_pursuit_target_point(const Path &path, int start_index, const PathPoint &position, double lookahead) const;
-        double calc_acceleration(double setpoint);
-        void calc_throttle(double desired_acceleration);
-        void calc_brake(double desired_acceleration);
-        void state_machine();
+        double calc_acceleration(double setpoint, SimControlInputs *inputs = nullptr);
+        void calc_throttle(double desired_acceleration, SimControlInputs *inputs = nullptr);
+        void calc_brake(double desired_acceleration, SimControlInputs *inputs = nullptr);
+        void state_machine(SimControlInputs *inputs = nullptr);
         int calculate_base_projections(const Path &path, const PathPoint &current_position);
 
         uint32_t nsec = 0;

@@ -59,5 +59,12 @@ int main()
     return 1;
   }
 
+  if (!expect(asm_socketcan_bridge::shouldCreateWallClockAcquisitionTimer(false),
+              "wall mode creates acquisition timer") ||
+      !expect(!asm_socketcan_bridge::shouldCreateWallClockAcquisitionTimer(true),
+              "sim mode skips acquisition timer")) {
+    return 1;
+  }
+
   return 0;
 }

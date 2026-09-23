@@ -518,7 +518,7 @@ namespace asm_socketcan_bridge {
       this->useCustomRaceControlSource_ = this->create_subscription<std_msgs::msg::Bool>("use_custom_race_control", qos, std::bind(&AsmSocketCanBridgeNode::switchRaceControlSourceCallback, this, _1));
       initializeFeedback();
 
-      if(this->simModeEnabled)
+      if(!shouldCreateWallClockAcquisitionTimer(this->simModeEnabled))
       {
         RCLCPP_INFO(get_logger(), "Use Simulated Clock.");
         this->simClockTimePublisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", sim_qos);

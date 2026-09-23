@@ -239,7 +239,7 @@ namespace controller
         // In deterministic sim mode the control functions are invoked once per /clock tick
         // from simClockTimeCallback, so periodic timers must NOT be created here (they would
         // double-invoke the control loop). Wall mode keeps the periodic timers unchanged.
-        if (!this->simModeEnabled) {
+        if (shouldCreatePeriodicControlTimers(this->simModeEnabled)) {
             register_timer("pure_pursuit_timer", [this]() { this->pure_pursuit(); });
             register_timer("long_control_timer", [this]() { this->long_control(); });
             register_timer("control_timer", [this]() { this->lateral_control(); });

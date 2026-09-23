@@ -6,8 +6,11 @@
 namespace controller
 {
 
-    void ControllerNode::long_control()
+    void ControllerNode::long_control(SimControlInputs *inputs)
     {
+        VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
+        const double control_non_brake_decel = inputs ? inputs->non_brake_decel : non_brake_decel_;
+
         // Update Long Control Parameters
         min_throttle_ = get_parameter("vehicle.min_throttle").as_double();
         max_throttle_ = get_parameter("vehicle.max_throttle").as_double();
@@ -26,30 +29,30 @@ namespace controller
         brake_kd_ = get_parameter("vehicle.braking_kd").as_double();
 
         // Calculate Desired Acceleration
-        double desired_acceleration = calc_acceleration(desired_velocity_);
+        double desired_acceleration = calc_acceleration(desired_velocity_, inputs);
         desired_acceleration = std::max(min_acc_, std::min(desired_acceleration, max_acc_));
         debug_msg_.desired_acceleration_clamped = desired_acceleration;
-        debug_msg_.non_brake_decel = non_brake_decel_;
+        debug_msg_.non_brake_decel = control_non_brake_decel;
         // double throttle = vehicle_state_.throttle;
         // bool is_accelerating = throttle > 0;
 
-        calc_throttle(desired_acceleration);
-        calc_brake(desired_acceleration);
+        calc_throttle(desired_acceleration, inputs);
+        calc_brake(desired_acceleration, inputs);
 
-        double max_thr = ((4.0 * 2.23694 * vehicle_state_.vx) / 8.0) + 25.0;
-        double throttle_cmd = std::max(min_throttle_, std::min(vehicle_state_.throttle, max_thr));
+        double max_thr = ((4.0 * 2.23694 * control_state.vx) / 8.0) + 25.0;
+        double throttle_cmd = std::max(min_throttle_, std::min(control_state.throttle, max_thr));
 
         vehicle_cmd_msg_.throttle_cmd = throttle_cmd;
         vehicle_cmd_msg_.throttle_cmd_count = rolling_counter;
 
-        double brake_cmd_front = 0.5 * std::max(min_brake_, std::min(vehicle_state_.brake, max_brake_));
-        double brake_cmd_rear = 0.5 * std::max(min_brake_, std::min(vehicle_state_.brake, max_brake_));
+        double brake_cmd_front = 0.5 * std::max(min_brake_, std::min(control_state.brake, max_brake_));
+        double brake_cmd_rear = 0.5 * std::max(min_brake_, std::min(control_state.brake, max_brake_));
 
         vehicle_cmd_msg_.brake_cmd_front = static_cast<uint16_t>(std::round(brake_cmd_front));
         vehicle_cmd_msg_.brake_cmd_rear = static_cast<uint16_t>(std::round(brake_cmd_rear));
         vehicle_cmd_msg_.brake_cmd_count = rolling_counter;
 
-        uint8_t gear_cmd = get_gear_shift_cmd();
+        uint8_t gear_cmd = get_gear_shift_cmd(inputs);
         vehicle_cmd_msg_.gear_cmd = gear_cmd;
 
         vehicle_cmd_msg_.header.stamp = this->now();
@@ -103,9 +106,9 @@ namespace controller
 
         // Debug Publisher
         debug_msg_.desired_velocity = desired_velocity_;
-        debug_msg_.current_velocity = vehicle_state_.vx;
+        debug_msg_.current_velocity = control_state.vx;
         debug_msg_.desired_acceleration = desired_acceleration;
-        debug_msg_.current_acceleration = vehicle_state_.ax;
+        debug_msg_.current_acceleration = control_state.ax;
         debug_msg_.output_throttle = throttle_cmd;
         debug_msg_.output_brake = brake_cmd_front;
         debug_msg_.max_throttle = max_thr;
@@ -113,12 +116,15 @@ namespace controller
         debug_pub_->publish(debug_msg_);
     }
 
-    void ControllerNode::lateral_control()
+    void ControllerNode::lateral_control(SimControlInputs *inputs)
     {
+        const bool control_position_received = inputs ? inputs->position_received : position_received;
+        const bool control_wheel_speed_received = inputs ? inputs->wheel_speed_received : wheel_speed_received;
+
         /**
          * @brief This function is called at a fixed rate to compute the steering angle
          */
-        if (!position_received || !wheel_speed_received || !path_loaded) {return;}
+        if (!control_position_received || !control_wheel_speed_received || !path_loaded) {return;}
 
         // Update Lateral Control Parameters
         wheelbase_ = get_parameter("vehicle.wheelbase").as_double();
@@ -137,7 +143,7 @@ namespace controller
 
         // SIL can produce rapid sign flips; apply a steering slew-rate limiter in deg/s.
         const double now_sec = this->simModeEnabled
-                                   ? (static_cast<double>(this->sec) + static_cast<double>(this->nsec) * 1e-9)
+                       ? (inputs ? inputs->sim_time : static_cast<double>(this->sec) + static_cast<double>(this->nsec) * 1e-9)
                                    : this->now().seconds();
         double dt = now_sec - prev_steer_time_;
         if (!std::isfinite(dt) || dt <= 1e-4) {
@@ -200,44 +206,49 @@ namespace controller
         }
     }
 
-    uint8_t ControllerNode::get_gear_shift_cmd()
+    uint8_t ControllerNode::get_gear_shift_cmd(SimControlInputs *inputs)
     {
+        const VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
+        const int8_t control_current_gear = inputs ? inputs->current_gear : current_gear_;
+        const float control_engine_speed = inputs ? inputs->engine_rpm : engine_speed_;
+        const bool control_engine_running = inputs ? inputs->engine_running : engine_running_;
+
         // Sets command to current gear if engine is not on or shift attempts denied over the limit
         int MS_PER_SHIFT_CALLBACK_CALL;
         if (this->simModeEnabled){MS_PER_SHIFT_CALLBACK_CALL = 100;}
         else {MS_PER_SHIFT_CALLBACK_CALL = 10;}
 
-        if (!engine_running_ || shifting_counter_ * MS_PER_SHIFT_CALLBACK_CALL >= shift_time_limit)
+        if (!control_engine_running || shifting_counter_ * MS_PER_SHIFT_CALLBACK_CALL >= shift_time_limit)
         {
             shifting_counter_ = 0;
-            return current_gear_;
+            return control_current_gear;
         }
 
         // Check our speed against the shift table, and see if we should go down a gear or up a gear.
-        float current_speed = 2.23694 * vehicle_state_.vx;
+        float current_speed = 2.23694 * control_state.vx;
 
-        if (current_gear_ > min_gear && engine_speed_ < downshift_rpm[current_gear_] && current_speed < downshift_speed[current_gear_])
+        if (control_current_gear > min_gear && control_engine_speed < downshift_rpm[control_current_gear] && current_speed < downshift_speed[control_current_gear])
         {
             shifting_counter_++;
-            return current_gear_ - 1;
+            return control_current_gear - 1;
         }
-        else if (current_gear_ < max_gear && engine_speed_ > upshift_rpm[current_gear_] && current_speed > upshift_speed[current_gear_])
+        else if (control_current_gear < max_gear && control_engine_speed > upshift_rpm[control_current_gear] && current_speed > upshift_speed[control_current_gear])
         {
             shifting_counter_++;
             shift_up_ = true;
-            last_gear_ = current_gear_;
-            return current_gear_ + 1;
+            last_gear_ = control_current_gear;
+            return control_current_gear + 1;
         }
-        else if (shift_up_ == true && current_gear_ == last_gear_)
+        else if (shift_up_ == true && control_current_gear == last_gear_)
         {
             shifting_counter_++;
-            return current_gear_ + 1;
+            return control_current_gear + 1;
         }
         else
         {
             shifting_counter_ = 0;
             shift_up_ = false;
-            return current_gear_;
+            return control_current_gear;
         }
     }
 

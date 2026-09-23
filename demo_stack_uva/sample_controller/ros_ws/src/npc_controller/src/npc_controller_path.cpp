@@ -6,25 +6,29 @@
 namespace controller
 {
 
-    void ControllerNode::pure_pursuit()
+    void ControllerNode::pure_pursuit(SimControlInputs *inputs)
     {
         /**
          * @brief This function computes the steering angle using the pure pursuit algorithm
          * @return The steering angle in radians
          */
 
+        const VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
+        const bool control_wheel_speed_received = inputs ? inputs->wheel_speed_received : wheel_speed_received;
+        const bool control_position_received = inputs ? inputs->position_received : position_received;
+
         // Check to see if we have enough localization data.
-        if (!wheel_speed_received || !position_received || !path_loaded) {return;}
+        if (!control_wheel_speed_received || !control_position_received || !path_loaded) {return;}
 
         PathPoint current_position;
-        current_position.x = vehicle_state_.x;
-        current_position.y = vehicle_state_.y;
-        current_position.z = vehicle_state_.z;
-        current_position.yaw = vehicle_state_.yaw;
+        current_position.x = control_state.x;
+        current_position.y = control_state.y;
+        current_position.z = control_state.z;
+        current_position.yaw = control_state.yaw;
 
         int start_index = calculate_base_projections(*current_path_, current_position);
 
-        double current_velocity = vehicle_state_.vx;
+        double current_velocity = control_state.vx;
         double lookahead = std::max(min_lookahead_dist_, std::min(lookahead_gain_ * current_velocity, max_lookahead_dist_));
 
         PathPoint target_position = pure_pursuit_target_point(*current_path_, start_index, current_position, lookahead);
@@ -32,7 +36,7 @@ namespace controller
         double pursuit_vector_dx = target_position.x - current_position.x;
         double pursuit_vector_dy = target_position.y - current_position.y;
 
-        double alpha = atan2(pursuit_vector_dy, pursuit_vector_dx) - vehicle_state_.yaw;
+        double alpha = atan2(pursuit_vector_dy, pursuit_vector_dx) - control_state.yaw;
         alpha = std::atan2(std::sin(alpha), std::cos(alpha));
         double delta = atan((2 * wheelbase_ * sin(alpha)) / lookahead);
 

@@ -5,9 +5,19 @@
 namespace controller
 {
 
-    void ControllerNode::state_machine()
+    void ControllerNode::state_machine(SimControlInputs *inputs)
     {
-        if (!position_received || !wheel_speed_received || !path_loaded)
+        VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
+        const bool control_position_received = inputs ? inputs->position_received : position_received;
+        const bool control_wheel_speed_received = inputs ? inputs->wheel_speed_received : wheel_speed_received;
+        Rc2TrackFlags &control_track_flag = inputs ? inputs->track_flag : track_flag_;
+        Rc2VehFlags &control_vehicle_flag = inputs ? inputs->vehicle_flag : vehicle_flag_;
+        SysState &control_sys_state = inputs ? inputs->sys_state : sys_state_;
+        int control_target_speed = inputs ? inputs->round_target_speed : target_speed_;
+        int &control_ct_input = inputs ? inputs->ct_input : ct_input_;
+        const bool control_estop = inputs ? inputs->estop : estop_;
+
+        if (!control_position_received || !control_wheel_speed_received || !path_loaded)
         {
             // RCLCPP_INFO(this->get_logger(),"position_received: %d  wheel_speed_received: %d  path_loaded: %d",
             //                                 position_received,
@@ -17,10 +27,10 @@ namespace controller
         }
         // Calculate Path Base Projections
         PathPoint current_position;
-        current_position.x = vehicle_state_.x;
-        current_position.y = vehicle_state_.y;
-        current_position.z = vehicle_state_.z;
-        current_position.yaw = vehicle_state_.yaw;
+        current_position.x = control_state.x;
+        current_position.y = control_state.y;
+        current_position.z = control_state.z;
+        current_position.yaw = control_state.yaw;
 
         // TODO: Adjust for multiple static lines
         int center_bp = calculate_base_projections(center_line_, current_position);
@@ -40,14 +50,14 @@ namespace controller
         optimal_line_signed_error_ = dx_opt * tangent_y - dy_opt * tangent_x;
 
         // Process Drive by Wire State Machine
-        ct_state_ = dbw_state_machine(ct_state_, track_flag_, vehicle_flag_, sys_state_, estop_, ct_input_, vehicle_state_.vx, disableStateMachine);
+        ct_state_ = dbw_state_machine(ct_state_, control_track_flag, control_vehicle_flag, control_sys_state, control_estop, control_ct_input, control_state.vx, disableStateMachine);
 
         // Process Lap State Machine
         lap_state_inputs_.ct_state = ct_state_;
-        lap_state_inputs_.vehicle_flag = vehicle_flag_;
-        lap_state_inputs_.track_flag = track_flag_;
-        lap_state_inputs_.target_speed = target_speed_;
-        lap_state_inputs_.current_speed = vehicle_state_.vx;
+        lap_state_inputs_.vehicle_flag = control_vehicle_flag;
+        lap_state_inputs_.track_flag = control_track_flag;
+        lap_state_inputs_.target_speed = control_target_speed;
+        lap_state_inputs_.current_speed = control_state.vx;
         lap_state_inputs_.center_line_s = center_line_s_;
         lap_state_inputs_.pit_lane_s = pit_line_s_;
         lap_state_inputs_.speed_profile = speed_profile_;
@@ -99,8 +109,8 @@ namespace controller
         ct_report_msg_.ct_state = static_cast<int>(ct_state_);
         ct_report_msg_.header.stamp = this->now();
 
-        ct_report_msg_.track_cond_ack = static_cast<int>(track_flag_);
-        ct_report_msg_.veh_sig_ack = static_cast<int>(vehicle_flag_);
+        ct_report_msg_.track_cond_ack = static_cast<int>(control_track_flag);
+        ct_report_msg_.veh_sig_ack = static_cast<int>(control_vehicle_flag);
         ct_report_msg_.rolling_counter = ct_counter_;
         ct_report_msg_.veh_num = veh_num;
         push2pass_counter = (push2pass_counter + 1) % 500;
@@ -128,8 +138,8 @@ namespace controller
                         insertBits(message.frame.data, *signal, value);
                     }
                 };
-                assign("track_cond_ack", static_cast<int>(track_flag_));
-                assign("veh_sig_ack", static_cast<int>(vehicle_flag_));
+                assign("track_cond_ack", static_cast<int>(control_track_flag));
+                assign("veh_sig_ack", static_cast<int>(control_vehicle_flag));
                 assign("ct_state", static_cast<int>(ct_state_));
                 assign("ct_state_rolling_counter", ct_counter_);
                 assign("veh_num", veh_num);
@@ -137,9 +147,9 @@ namespace controller
         } else if (this->useRaptorDbwNode || this->publish_ros_all) {
             // Publish CT Report
             npc_ct_report_msg_.ct_state = static_cast<int>(ct_state_);
-            npc_ct_report_msg_.track_flag_ack = static_cast<int>(track_flag_);
-            npc_ct_report_msg_.veh_flag_ack = static_cast<int>(vehicle_flag_);
-            npc_ct_report_msg_.target_speed = target_speed_;
+            npc_ct_report_msg_.track_flag_ack = static_cast<int>(control_track_flag);
+            npc_ct_report_msg_.veh_flag_ack = static_cast<int>(control_vehicle_flag);
+            npc_ct_report_msg_.target_speed = control_target_speed;
             npc_ct_report_msg_.rolling_counter = ct_counter_;
             npc_ct_report_msg_.veh_num = veh_num;
             npc_ct_report_pub_->publish(npc_ct_report_msg_);
@@ -147,9 +157,9 @@ namespace controller
 
         // Populate Debug Message
         debug_msg_.ct_state = static_cast<int>(ct_state_);
-        debug_msg_.track_flag = static_cast<int>(track_flag_);
-        debug_msg_.vehicle_flag = static_cast<int>(vehicle_flag_);
-        debug_msg_.sys_state = static_cast<int>(sys_state_);
+        debug_msg_.track_flag = static_cast<int>(control_track_flag);
+        debug_msg_.vehicle_flag = static_cast<int>(control_vehicle_flag);
+        debug_msg_.sys_state = static_cast<int>(control_sys_state);
         debug_msg_.track_loc = static_cast<int>(lap_state_inputs_.track_loc);
         debug_msg_.lap_state = static_cast<int>(lap_state_inputs_.lap_state);
         debug_msg_.center_s = center_line_s_;
@@ -161,7 +171,7 @@ namespace controller
         // Log state machine info, especially around corkscrew (s ~ 5600-6400)
         if (center_line_s_ > 5200 && center_line_s_ < 6800) {
             double desired_speed_ms = desired_velocity_ / 2.237;  // Convert MPH to m/s
-            double actual_speed_ms = vehicle_state_.vx;
+            double actual_speed_ms = control_state.vx;
             RCLCPP_DEBUG(this->get_logger(),
                 "[CORKSCREW] s=%.1f | des_v=%.1f mph (%.2f m/s) act_v=%.1f mph (%.2f m/s) | steering=%.3f rad | dist=%.2f m",
                 center_line_s_, desired_velocity_, desired_speed_ms, actual_speed_ms * 2.237, actual_speed_ms,
@@ -169,8 +179,8 @@ namespace controller
         }
 
         // Lateral Control Prerequisites
-        debug_msg_.position_received = position_received;
-        debug_msg_.wheel_speed_received = wheel_speed_received;
+        debug_msg_.position_received = control_position_received;
+        debug_msg_.wheel_speed_received = control_wheel_speed_received;
         debug_msg_.path_loaded = path_loaded;
     }
 

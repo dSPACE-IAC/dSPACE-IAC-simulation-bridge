@@ -95,6 +95,10 @@ if(BUILD_TESTING)
   add_executable(sim_time_test test/sim_time_test.cpp)
   target_include_directories(sim_time_test PRIVATE include)
   add_test(NAME asm_socketcan_bridge_sim_time COMMAND sim_time_test)
+
+  add_executable(signal_codec_test test/signal_codec_test.cpp src/signal_codec.cpp)
+  target_include_directories(signal_codec_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_signal_codec COMMAND signal_codec_test)
 endif()
 
 target_include_directories(
