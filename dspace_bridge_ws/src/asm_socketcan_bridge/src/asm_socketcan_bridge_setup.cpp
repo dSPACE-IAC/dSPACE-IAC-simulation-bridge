@@ -126,6 +126,15 @@ namespace asm_socketcan_bridge {
         publisher_callback_group_);
       publisher_timers_.push_back(timer);
     };
+    auto register_can_timer = [&](const std::string &suffix, auto &&callable) {
+      register_timer(
+        suffix,
+        [this, callback = std::forward<decltype(callable)>(callable)]() {
+          if (!this->simModeEnabled) {
+            callback();
+          }
+        });
+    };
     register_timer("publish_map2d_ego_position_ms",
                    [this]() { this->publish_map2d_ego_position(); });
     register_timer("publish_map2d_fellow1_position_ms",
@@ -134,91 +143,91 @@ namespace asm_socketcan_bridge {
                    [this]() { this->publish_map2d_fellow2_position(); });
     register_timer("publish_map2d_fellow3_position_ms",
                    [this]() { this->publish_map2d_fellow3_position(); });
-    register_timer("publish_base_to_car_summary_ms",
+    register_can_timer("publish_base_to_car_summary_ms",
                    [this]() { this->publish_base_to_car_summary(); });
-    register_timer("publish_marelli_report_1_ms",
+    register_can_timer("publish_marelli_report_1_ms",
                    [this]() { this->publish_marelli_report_1(); });
-    register_timer("publish_marelli_report_2_ms",
+    register_can_timer("publish_marelli_report_2_ms",
                    [this]() { this->publish_marelli_report_2(); });
-    register_timer("publish_base_to_car_timing_ms",
+    register_can_timer("publish_base_to_car_timing_ms",
                    [this]() { this->publish_base_to_car_timing(); });
-    register_timer("publish_rest_of_field_ms",
+    register_can_timer("publish_rest_of_field_ms",
                    [this]() { this->publish_rest_of_field(); });
-    register_timer("publish_pt_report_1_ms",
+    register_can_timer("publish_pt_report_1_ms",
                    [this]() { this->publish_pt_report_1(); });
-    register_timer("publish_pt_report_2_ms",
+    register_can_timer("publish_pt_report_2_ms",
                    [this]() { this->publish_pt_report_2(); });
-    register_timer("publish_pt_report_3_ms",
+    register_can_timer("publish_pt_report_3_ms",
                    [this]() { this->publish_pt_report_3(); });
-    register_timer("publish_pt_report_4_ms",
+    register_can_timer("publish_pt_report_4_ms",
                    [this]() { this->publish_pt_report_4(); });
-    register_timer("publish_steering_report_ms",
+    register_can_timer("publish_steering_report_ms",
                    [this]() { this->publish_steering_report(); });
-    register_timer("publish_steering_report_extd_ms",
+    register_can_timer("publish_steering_report_extd_ms",
                    [this]() { this->publish_steering_report_extd(); });
-    register_timer("publish_steering_report_extd_2_ms",
+    register_can_timer("publish_steering_report_extd_2_ms",
                    [this]() { this->publish_steering_report_extd_2(); });
-    register_timer("publish_steering_report_extd_3_ms",
+    register_can_timer("publish_steering_report_extd_3_ms",
                    [this]() { this->publish_steering_report_extd_3(); });
-    register_timer("publish_brake_pressure_report_ms",
+    register_can_timer("publish_brake_pressure_report_ms",
                    [this]() { this->publish_brake_pressure_report(); });
-    register_timer("publish_brake_report_extd_ms",
+    register_can_timer("publish_brake_report_extd_ms",
                    [this]() { this->publish_brake_report_extd(); });
-    register_timer("publish_brake_report_extd_2_ms",
+    register_can_timer("publish_brake_report_extd_2_ms",
                    [this]() { this->publish_brake_report_extd_2(); });
-    register_timer("publish_accelerator_report_ms",
+    register_can_timer("publish_accelerator_report_ms",
                    [this]() { this->publish_accelerator_report(); });
-    register_timer("publish_Tire_Temp_RR_1_ms",
+    register_can_timer("publish_Tire_Temp_RR_1_ms",
                    [this]() { this->publish_Tire_Temp_RR_1(); });
-    register_timer("publish_Tire_Temp_RR_2_ms",
+    register_can_timer("publish_Tire_Temp_RR_2_ms",
                    [this]() { this->publish_Tire_Temp_RR_2(); });
-    register_timer("publish_Tire_Temp_RR_3_ms",
+    register_can_timer("publish_Tire_Temp_RR_3_ms",
                    [this]() { this->publish_Tire_Temp_RR_3(); });
-    register_timer("publish_Tire_Temp_RR_4_ms",
+    register_can_timer("publish_Tire_Temp_RR_4_ms",
                    [this]() { this->publish_Tire_Temp_RR_4(); });
-    register_timer("publish_Tire_Temp_RL_1_ms",
+    register_can_timer("publish_Tire_Temp_RL_1_ms",
                    [this]() { this->publish_Tire_Temp_RL_1(); });
-    register_timer("publish_Tire_Temp_RL_2_ms",
+    register_can_timer("publish_Tire_Temp_RL_2_ms",
                    [this]() { this->publish_Tire_Temp_RL_2(); });
-    register_timer("publish_Tire_Temp_RL_3_ms",
+    register_can_timer("publish_Tire_Temp_RL_3_ms",
                    [this]() { this->publish_Tire_Temp_RL_3(); });
-    register_timer("publish_Tire_Temp_RL_4_ms",
+    register_can_timer("publish_Tire_Temp_RL_4_ms",
                    [this]() { this->publish_Tire_Temp_RL_4(); });
-    register_timer("publish_Tire_Temp_FR_1_ms",
+    register_can_timer("publish_Tire_Temp_FR_1_ms",
                    [this]() { this->publish_Tire_Temp_FR_1(); });
-    register_timer("publish_Tire_Temp_FR_2_ms",
+    register_can_timer("publish_Tire_Temp_FR_2_ms",
                    [this]() { this->publish_Tire_Temp_FR_2(); });
-    register_timer("publish_Tire_Temp_FR_3_ms",
+    register_can_timer("publish_Tire_Temp_FR_3_ms",
                    [this]() { this->publish_Tire_Temp_FR_3(); });
-    register_timer("publish_Tire_Temp_FR_4_ms",
+    register_can_timer("publish_Tire_Temp_FR_4_ms",
                    [this]() { this->publish_Tire_Temp_FR_4(); });
-    register_timer("publish_Tire_Temp_FL_1_ms",
+    register_can_timer("publish_Tire_Temp_FL_1_ms",
                    [this]() { this->publish_Tire_Temp_FL_1(); });
-    register_timer("publish_Tire_Temp_FL_2_ms",
+    register_can_timer("publish_Tire_Temp_FL_2_ms",
                    [this]() { this->publish_Tire_Temp_FL_2(); });
-    register_timer("publish_Tire_Temp_FL_3_ms",
+    register_can_timer("publish_Tire_Temp_FL_3_ms",
                    [this]() { this->publish_Tire_Temp_FL_3(); });
-    register_timer("publish_Tire_Temp_FL_4_ms",
+    register_can_timer("publish_Tire_Temp_FL_4_ms",
                    [this]() { this->publish_Tire_Temp_FL_4(); });
-    register_timer("publish_Tire_Pressure_RR_ms",
+    register_can_timer("publish_Tire_Pressure_RR_ms",
                    [this]() { this->publish_Tire_Pressure_RR(); });
-    register_timer("publish_Tire_Pressure_RL_ms",
+    register_can_timer("publish_Tire_Pressure_RL_ms",
                    [this]() { this->publish_Tire_Pressure_RL(); });
-    register_timer("publish_Tire_Pressure_FR_ms",
+    register_can_timer("publish_Tire_Pressure_FR_ms",
                    [this]() { this->publish_Tire_Pressure_FR(); });
-    register_timer("publish_Tire_Pressure_FL_ms",
+    register_can_timer("publish_Tire_Pressure_FL_ms",
                    [this]() { this->publish_Tire_Pressure_FL(); });
-    register_timer("publish_wheel_strain_gauge_ms",
+    register_can_timer("publish_wheel_strain_gauge_ms",
                    [this]() { this->publish_wheel_strain_gauge(); });
-    register_timer("publish_wheel_potentiometer_data_ms",
+    register_can_timer("publish_wheel_potentiometer_data_ms",
                    [this]() { this->publish_wheel_potentiometer_data(); });
-    register_timer("publish_wheel_speed_report_ms",
+    register_can_timer("publish_wheel_speed_report_ms",
                    [this]() { this->publish_wheel_speed_report(); });
-    register_timer("publish_misc_report_ms",
+    register_can_timer("publish_misc_report_ms",
                    [this]() { this->publish_misc_report(); });
-    register_timer("publish_diagnostic_report_ms",
+    register_can_timer("publish_diagnostic_report_ms",
                    [this]() { this->publish_diagnostic_report(); });
-    register_timer("publish_novatel_report_ms",
+    register_can_timer("publish_novatel_report_ms",
                    [this]() { this->publish_novatel_report(); });
     register_timer("publish_novatel_bestpos1_ms",
                    [this]() { this->publish_novatel_bestpos(1); });

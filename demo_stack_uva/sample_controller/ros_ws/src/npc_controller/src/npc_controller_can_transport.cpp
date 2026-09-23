@@ -58,7 +58,14 @@ namespace controller
     void ControllerNode::finalizeCanMessage(const PreparedCanMessage &message)
     {
         if (sentMessagePrinting && message.metadata) {
-        RCLCPP_INFO(get_logger(), "can_out::%s", message.metadata->name);
+        if (simModeEnabled) {
+            RCLCPP_INFO(get_logger(),
+                        "can_out::%s sim_step=%llu",
+                        message.metadata->name,
+                        static_cast<unsigned long long>(current_sim_step_));
+        } else {
+            RCLCPP_INFO(get_logger(), "can_out::%s", message.metadata->name);
+        }
         RCLCPP_INFO(get_logger(),
                     "send: 0x%03X [%d] ",
                     message.metadata->id,

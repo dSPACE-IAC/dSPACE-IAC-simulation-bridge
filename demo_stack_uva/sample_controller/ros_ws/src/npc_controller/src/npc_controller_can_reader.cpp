@@ -54,6 +54,45 @@ namespace controller
             };
 
             switch (in_frame.can_id) {
+                case iac_sim_time::kSimStepMarkerCanId: {
+                    const auto marker_step = iac_sim_time::decodeSimStepMarkerPayload(
+                        in_frame.data,
+                        static_cast<std::size_t>(in_frame.can_dlc));
+                    if (!marker_step) {
+                        sim_step_marker_invalid_frames_.fetch_add(1);
+                        RCLCPP_WARN_ONCE(
+                            get_logger(),
+                            "SIM_STEP controller rejected a malformed step marker frame.");
+                        break;
+                    }
+
+                    std::uint64_t previous_step = 0;
+                    bool accepted = false;
+                    {
+                        std::lock_guard<std::mutex> lock(sim_step_marker_mutex_);
+                        previous_step = sim_step_marker_sequence_.lastStep();
+                        accepted = sim_step_marker_sequence_.accept(*marker_step) ==
+                            iac_sim_time::SimStepMarkerResult::accepted;
+                    }
+                    if (!accepted) {
+                        RCLCPP_ERROR_ONCE(
+                            get_logger(),
+                            "SIM_STEP controller rejected non-monotonic marker step=%llu last=%llu",
+                            static_cast<unsigned long long>(*marker_step),
+                            static_cast<unsigned long long>(previous_step));
+                        break;
+                    }
+                    if (*marker_step - previous_step > 1U) {
+                        RCLCPP_WARN_ONCE(
+                            get_logger(),
+                            "SIM_STEP controller observed marker gap after step=%llu; received=%llu",
+                            static_cast<unsigned long long>(previous_step),
+                            static_cast<unsigned long long>(*marker_step));
+                    }
+                    sim_step_marker_frames_received_.fetch_add(1);
+                    sim_step_marker_cv_.notify_all();
+                    break;
+                }
                 case 1300: {
                     if (this->receivedMessagePrinting)
                         RCLCPP_INFO(this->get_logger(), "wheel_speed_report");

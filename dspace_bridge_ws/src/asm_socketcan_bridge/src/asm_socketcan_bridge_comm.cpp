@@ -212,17 +212,29 @@ namespace asm_socketcan_bridge {
     }
 
     const auto substeps_before = sim_substeps_completed_.load();
-    runSimTimeHandshake(
+    const bool handshake_completed = runSimTimeHandshake(
       msg.data,
       [this]() {
         this->vesiCallback();
         sim_substeps_completed_.fetch_add(1);
       },
+      [this, handshake_count]() {
+        current_sim_step_ = handshake_count;
+        publishCanMessagesForSimStep();
+      },
+      [this, handshake_count]() { return publishSimStepMarker(handshake_count); },
       [this]() { this->simClockTimeCallback(); });
 
     const auto completed_substeps = sim_substeps_completed_.load() - substeps_before;
     if (completed_substeps != requested_substeps) {
       sim_substep_mismatches_.fetch_add(1);
+    }
+    if (!handshake_completed) {
+      RCLCPP_FATAL(get_logger(),
+                   "SIM_STEP bridge could not write marker for step=%llu; stopping clock progression.",
+                   static_cast<unsigned long long>(handshake_count));
+      rclcpp::shutdown();
+      return;
     }
     RCLCPP_INFO_THROTTLE(
       get_logger(),
@@ -235,6 +247,73 @@ namespace asm_socketcan_bridge {
       static_cast<unsigned long long>(sim_requested_substeps_.load()),
       static_cast<unsigned long long>(sim_substeps_completed_.load()),
       static_cast<unsigned long long>(sim_substep_mismatches_.load()));
+  }
+
+  void AsmSocketCanBridgeNode::publishCanMessagesForSimStep()
+  {
+    publish_base_to_car_summary();
+    publish_marelli_report_1();
+    publish_marelli_report_2();
+    publish_base_to_car_timing();
+    publish_rest_of_field();
+    publish_pt_report_1();
+    publish_pt_report_2();
+    publish_pt_report_3();
+    publish_pt_report_4();
+    publish_steering_report();
+    publish_steering_report_extd();
+    publish_steering_report_extd_2();
+    publish_steering_report_extd_3();
+    publish_brake_pressure_report();
+    publish_brake_report_extd();
+    publish_brake_report_extd_2();
+    publish_accelerator_report();
+    publish_Tire_Temp_RR_1();
+    publish_Tire_Temp_RR_2();
+    publish_Tire_Temp_RR_3();
+    publish_Tire_Temp_RR_4();
+    publish_Tire_Temp_RL_1();
+    publish_Tire_Temp_RL_2();
+    publish_Tire_Temp_RL_3();
+    publish_Tire_Temp_RL_4();
+    publish_Tire_Temp_FR_1();
+    publish_Tire_Temp_FR_2();
+    publish_Tire_Temp_FR_3();
+    publish_Tire_Temp_FR_4();
+    publish_Tire_Temp_FL_1();
+    publish_Tire_Temp_FL_2();
+    publish_Tire_Temp_FL_3();
+    publish_Tire_Temp_FL_4();
+    publish_Tire_Pressure_RR();
+    publish_Tire_Pressure_RL();
+    publish_Tire_Pressure_FR();
+    publish_Tire_Pressure_FL();
+    publish_wheel_strain_gauge();
+    publish_wheel_potentiometer_data();
+    publish_wheel_speed_report();
+    publish_misc_report();
+    publish_diagnostic_report();
+    publish_novatel_report();
+  }
+
+  bool AsmSocketCanBridgeNode::publishSimStepMarker(std::uint64_t step)
+  {
+    can_frame marker{};
+    marker.can_id = iac_sim_time::kSimStepMarkerCanId;
+    marker.can_dlc = static_cast<__u8>(iac_sim_time::kSimStepMarkerPayloadSize);
+    const auto payload = iac_sim_time::encodeSimStepMarkerPayload(step);
+    std::copy(payload.begin(), payload.end(), marker.data);
+
+    const std::lock_guard<std::mutex> socket_lock(can_socket_mutex_);
+    if (!can_write(can_socket, marker)) {
+      sim_step_marker_write_failures_.fetch_add(1);
+      RCLCPP_ERROR_ONCE(
+        get_logger(),
+        "SIM_STEP bridge marker write failed; clock progression will stop.");
+      return false;
+    }
+    sim_step_markers_sent_.fetch_add(1);
+    return true;
   }
 
 } // namespace asm_socketcan_bridge

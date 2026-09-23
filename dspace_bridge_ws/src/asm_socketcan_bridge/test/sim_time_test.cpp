@@ -1,6 +1,7 @@
 #include "sim_time.h"
 
 #include <iostream>
+#include <string>
 
 namespace
 {
@@ -24,24 +25,55 @@ int main()
   }
 
   int step_count = 0;
+  int sensor_batch_count = 0;
+  int marker_count = 0;
   int clock_publish_count = 0;
   uint64_t published_clock_milliseconds = 0;
-  asm_socketcan_bridge::runSimTimeHandshake(
+  std::string event_order;
+  const bool handshake_completed = asm_socketcan_bridge::runSimTimeHandshake(
     10,
     [&]() {
       ++step_count;
+      event_order += 'S';
       time.advanceMilliseconds(1);
     },
     [&]() {
+      ++sensor_batch_count;
+      event_order += 'F';
+    },
+    [&]() {
+      ++marker_count;
+      event_order += 'M';
+      return true;
+    },
+    [&]() {
       ++clock_publish_count;
+      event_order += 'C';
       published_clock_milliseconds = time.totalMilliseconds();
     });
-  if (!expect(step_count == 10, "ten V-ESI step callbacks") ||
+  if (!expect(handshake_completed, "marker allows handshake completion") ||
+      !expect(step_count == 10, "ten V-ESI step callbacks") ||
+      !expect(sensor_batch_count == 1, "one sensor CAN batch per handshake") ||
+      !expect(marker_count == 1, "one step marker per handshake") ||
       !expect(clock_publish_count == 1, "one clock publication per handshake") ||
+      !expect(event_order == std::string(10, 'S') + "FMC",
+              "sensor frames and marker precede the clock publication") ||
       !expect(published_clock_milliseconds == 10, "clock published after ten steps") ||
       !expect(time.totalMilliseconds() == 10, "ten millisecond handshake") ||
       !expect(time.seconds() == 0, "ten millisecond seconds") ||
       !expect(time.nanoseconds() == 10000000, "ten millisecond nanoseconds")) {
+    return 1;
+  }
+
+  int clock_after_failed_marker = 0;
+  const bool failed_handshake_completed = asm_socketcan_bridge::runSimTimeHandshake(
+    1,
+    []() {},
+    []() {},
+    []() { return false; },
+    [&]() { ++clock_after_failed_marker; });
+  if (!expect(!failed_handshake_completed, "marker write failure aborts handshake") ||
+      !expect(clock_after_failed_marker == 0, "clock is not published after marker failure")) {
     return 1;
   }
 

@@ -3,6 +3,8 @@
 
 #include <cmath>
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -55,6 +57,7 @@
 #include "dbw_state_machine.hpp"
 #include "lap_state_machine.hpp"
 #include "iac_qos.h"
+#include "iac_sim_time/sim_step_marker.hpp"
 #include "sim_clock_control.h"
 #include "signal_codec.h"
 
@@ -123,6 +126,7 @@ namespace controller
         int ct_input = 0;
         bool estop = false;
         double sim_time = 0.0;
+        std::uint64_t sim_step = 0;
     };
 
     class ControllerNode : public rclcpp::Node
@@ -205,6 +209,14 @@ namespace controller
         std::atomic<std::uint64_t> sim_control_invocations_{0};
         std::atomic<std::uint64_t> sim_zero_clock_messages_{0};
         std::atomic<std::uint64_t> sim_handshakes_sent_{0};
+        std::atomic<std::uint64_t> sim_step_marker_frames_received_{0};
+        std::atomic<std::uint64_t> sim_step_marker_invalid_frames_{0};
+        std::atomic<std::uint64_t> sim_step_marker_wait_timeouts_{0};
+        std::atomic<std::uint64_t> sim_step_barrier_failures_{0};
+        std::mutex sim_step_marker_mutex_;
+        std::condition_variable sim_step_marker_cv_;
+        iac_sim_time::SimStepMarkerSequence sim_step_marker_sequence_;
+        std::uint64_t current_sim_step_ = 0;
         // Debug Messages
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr target_point_pub_;
@@ -239,6 +251,7 @@ namespace controller
 
         // Callbacks
         void simClockTimeCallback(const rosgraph_msgs::msg::Clock &msg);
+        bool waitForSimStepMarker(std::uint64_t expected_step);
         void bestpos_callback(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg);
         void wheel_speed_callback();
         void wheel_speed_callback_ros_msg(const raptor_dbw_msgs::msg::WheelSpeedReport::SharedPtr msg);

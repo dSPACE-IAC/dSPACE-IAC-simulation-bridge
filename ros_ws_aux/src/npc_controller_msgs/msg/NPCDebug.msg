@@ -1,4 +1,5 @@
 # This message contains debugging information for the NPC Controller
+uint64 sim_step
 
 # Long Control Vehicle States
 float64 desired_acceleration

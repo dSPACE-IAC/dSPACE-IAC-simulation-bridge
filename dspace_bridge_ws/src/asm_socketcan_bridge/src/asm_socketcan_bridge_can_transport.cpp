@@ -49,18 +49,26 @@ namespace asm_socketcan_bridge {
     return s;
   }
 
-  void AsmSocketCanBridgeNode::can_write(int sock, const struct can_frame &frame)
+  bool AsmSocketCanBridgeNode::can_write(int sock, const struct can_frame &frame)
   {
     if (write(sock, &frame, sizeof(struct can_frame)) != sizeof(frame)) {
       perror("Write");
-      return;
+      return false;
     }
+    return true;
   }
 
   void AsmSocketCanBridgeNode::finalizeCanMessage(const PreparedCanMessage &message)
   {
     if (sentMessagePrinting && message.metadata) {
-      RCLCPP_INFO(get_logger(), "can_out::%s", message.metadata->name);
+      if (simModeEnabled) {
+        RCLCPP_INFO(get_logger(),
+                    "can_out::%s sim_step=%llu",
+                    message.metadata->name,
+                    static_cast<unsigned long long>(current_sim_step_));
+      } else {
+        RCLCPP_INFO(get_logger(), "can_out::%s", message.metadata->name);
+      }
       RCLCPP_INFO(get_logger(),
                   "send: 0x%03X [%d] ",
                   message.metadata->id,
@@ -70,7 +78,7 @@ namespace asm_socketcan_bridge {
       }
     }
     const std::lock_guard<std::mutex> socket_lock(can_socket_mutex_);
-    can_write(can_socket, message.frame);
+    static_cast<void>(can_write(can_socket, message.frame));
   }
 
 } // namespace asm_socketcan_bridge

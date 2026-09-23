@@ -10,16 +10,23 @@ constexpr bool shouldCreateWallClockAcquisitionTimer(bool sim_mode) noexcept
   return !sim_mode;
 }
 
-template <typename StepFunction, typename ClockPublisher>
-void runSimTimeHandshake(
+template <typename StepFunction, typename FramePublisher, typename MarkerPublisher, typename ClockPublisher>
+bool runSimTimeHandshake(
   std::uint16_t step_count,
   StepFunction step,
+  FramePublisher publish_sensor_frames,
+  MarkerPublisher publish_step_marker,
   ClockPublisher publish_clock)
 {
   for (std::uint16_t step_index = 0; step_index < step_count; ++step_index) {
     step();
   }
+  publish_sensor_frames();
+  if (!publish_step_marker()) {
+    return false;
+  }
   publish_clock();
+  return true;
 }
 
 class SimTime

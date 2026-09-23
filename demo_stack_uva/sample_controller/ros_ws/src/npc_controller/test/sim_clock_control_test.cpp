@@ -25,7 +25,21 @@ int main()
       !expect(controller::shouldRunSimTimeControl(0, 1000000),
               "first nonzero nanosecond runs control") ||
       !expect(controller::shouldRunSimTimeControl(1, 0),
-              "exact whole second runs control")) {
+              "exact whole second runs control") ||
+            !expect(controller::shouldWaitForSimStepMarker(true, false),
+              "sim direct-CAN mode waits for the step marker") ||
+            !expect(!controller::shouldWaitForSimStepMarker(true, true),
+              "Raptor DBW mode does not wait on its absent CAN reader") ||
+            !expect(!controller::shouldWaitForSimStepMarker(false, false),
+              "wall mode does not wait for sim markers") ||
+            !expect(controller::simStepForClockMessage(0) == 0,
+              "no received clock has no completed sim step") ||
+            !expect(controller::simStepForClockMessage(1) == 0,
+              "initial clock is the step-zero baseline") ||
+            !expect(controller::simStepForClockMessage(2) == 1,
+              "second clock consumes marker one") ||
+            !expect(controller::simStepForClockMessage(301) == 300,
+              "clock count maps to its completed logical step")) {
     return 1;
   }
 

@@ -464,17 +464,35 @@ namespace controller
     ControllerNode::~ControllerNode()
     {
         if (simModeEnabled) {
+            std::uint64_t marker_last_step = 0;
+            std::uint64_t marker_gaps = 0;
+            std::uint64_t marker_non_monotonic = 0;
+            {
+                std::lock_guard<std::mutex> lock(sim_step_marker_mutex_);
+                marker_last_step = sim_step_marker_sequence_.lastStep();
+                marker_gaps = sim_step_marker_sequence_.gapCount();
+                marker_non_monotonic = sim_step_marker_sequence_.nonMonotonicCount();
+            }
             RCLCPP_INFO(
                 get_logger(),
                 "SIM_OBS controller summary=1 clock_received=%llu control_invocations=%llu "
                 "zero_clock_messages=%llu handshakes_sent=%llu last_clock_sec=%u "
-                "last_clock_nanosec=%u",
+                "last_clock_nanosec=%u marker_frames=%llu marker_invalid=%llu "
+                "marker_last=%llu marker_gaps=%llu marker_non_monotonic=%llu "
+                "barrier_failures=%llu barrier_timeouts=%llu",
                 static_cast<unsigned long long>(sim_clock_messages_received_.load()),
                 static_cast<unsigned long long>(sim_control_invocations_.load()),
                 static_cast<unsigned long long>(sim_zero_clock_messages_.load()),
                 static_cast<unsigned long long>(sim_handshakes_sent_.load()),
                 sec,
-                nsec);
+                nsec,
+                static_cast<unsigned long long>(sim_step_marker_frames_received_.load()),
+                static_cast<unsigned long long>(sim_step_marker_invalid_frames_.load()),
+                static_cast<unsigned long long>(marker_last_step),
+                static_cast<unsigned long long>(marker_gaps),
+                static_cast<unsigned long long>(marker_non_monotonic),
+                static_cast<unsigned long long>(sim_step_barrier_failures_.load()),
+                static_cast<unsigned long long>(sim_step_marker_wait_timeouts_.load()));
         }
     }
 

@@ -112,6 +112,7 @@ namespace controller
         debug_msg_.output_throttle = throttle_cmd;
         debug_msg_.output_brake = brake_cmd_front;
         debug_msg_.max_throttle = max_thr;
+        debug_msg_.sim_step = inputs ? inputs->sim_step : 0;
 
         debug_pub_->publish(debug_msg_);
     }

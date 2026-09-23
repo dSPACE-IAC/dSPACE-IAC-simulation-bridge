@@ -67,6 +67,7 @@
 #include "ament_index_cpp/get_package_share_directory.hpp"
 
 #include "iac_qos.h"
+#include "iac_sim_time/sim_step_marker.hpp"
 
 #include "VESIAPI.h"
 #include "VESIResultData.h"
@@ -151,6 +152,9 @@ namespace asm_socketcan_bridge
         std::atomic<std::uint64_t> sim_clock_publications_{0};
         std::atomic<std::uint64_t> sim_non_ten_handshakes_{0};
         std::atomic<std::uint64_t> sim_substep_mismatches_{0};
+        std::atomic<std::uint64_t> sim_step_markers_sent_{0};
+        std::atomic<std::uint64_t> sim_step_marker_write_failures_{0};
+        std::uint64_t current_sim_step_ = 0;
         uint8_t prestart_rolling_counter;
         uint8_t raptor_rolling_counter = 0;
         uint8_t brk_pressure_fdbk_counter = 0;
@@ -203,6 +207,8 @@ namespace asm_socketcan_bridge
         void subscribeRaptorCommandsCallback();
         void switchRaceControlSourceCallback(const std_msgs::msg::Bool &msg);
         void simTimeIncreaseCallback(const std_msgs::msg::UInt16 &msg);
+        void publishCanMessagesForSimStep();
+        bool publishSimStepMarker(std::uint64_t step);
 
         // Publishing functions
         void publish_map2d_ego_position();
@@ -275,7 +281,7 @@ namespace asm_socketcan_bridge
         // socket helpers
         int open_socket(const std::string &iface);
         void can_reader_loop(int sock, const std::string &bus_id);
-        void can_write(int sock, const struct can_frame &frame);
+        bool can_write(int sock, const struct can_frame &frame);
         template <typename T>
         void insertBits(uint8_t* data, Signal signal_information, T physical_value);
         int32_t extractBits(const uint8_t* data, Signal signal_information) const;
