@@ -3,3 +3,6 @@ __pycache__/
 /docker-compose.yml
 plan_*.md
 rosbags/*
+/sim-*.log
+/sim-*.txt
+/sim-*.summary

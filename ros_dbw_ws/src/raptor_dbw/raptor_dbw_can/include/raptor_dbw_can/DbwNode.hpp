@@ -45,6 +45,8 @@
 #include <raptor_dbw_msgs/msg/driver_input_report.hpp>
 #include <raptor_dbw_msgs/msg/fault_actions_report.hpp>
 #include <raptor_dbw_msgs/msg/gear_report.hpp>
+#include <raptor_dbw_msgs/msg/low_voltage_system_report.hpp>
+#include <raptor_dbw_msgs/msg/motec_report.hpp>
 #include <raptor_dbw_msgs/msg/steering2_report.hpp>
 #include <raptor_dbw_msgs/msg/steering_cmd.hpp>
 #include <raptor_dbw_msgs/msg/steering_report.hpp>
@@ -134,6 +136,7 @@ private:
   bool gear_warned_;
 
   npc_controller_msgs::msg::PtReport pt_report_msg;
+    raptor_dbw_msgs::msg::MotecReport motec_report_msg_;
   npc_controller_msgs::msg::TireReport tire_report_msg;
 
   // Licensing
@@ -167,6 +170,11 @@ private:
 
   rclcpp::Publisher<raptor_dbw_msgs::msg::Brake2Report>::SharedPtr pub_brake_2_report_; // brake report do
   rclcpp::Publisher<raptor_dbw_msgs::msg::DiagnosticReport>::SharedPtr pub_diagnostic_report_;
+  rclcpp::Publisher<raptor_dbw_msgs::msg::TirePressureReport>::SharedPtr pub_tire_pressure_report_;
+  rclcpp::Publisher<raptor_dbw_msgs::msg::WheelPositionReport>::SharedPtr pub_wheel_position_report_;
+  rclcpp::Publisher<raptor_dbw_msgs::msg::MotecReport>::SharedPtr pub_motec_report_;
+  rclcpp::Publisher<raptor_dbw_msgs::msg::GearReport>::SharedPtr pub_gear_report_;
+  rclcpp::Publisher<raptor_dbw_msgs::msg::LowVoltageSystemReport>::SharedPtr pub_low_voltage_report_;
 
   // Custom Messages specific to NPC Controller
   rclcpp::Publisher<npc_controller_msgs::msg::MiscReport>::SharedPtr pub_misc_do_;
@@ -176,6 +184,7 @@ private:
 
   npc_controller_msgs::msg::RcToCt rc_to_ct_msg_;
   bool have_marelli_flags_ = false;
+  raptor_dbw_msgs::msg::TirePressureReport tire_pressure_report_msg_;
 
   NewEagle::Dbc dbwDbc_;
   std::string dbcFile_;

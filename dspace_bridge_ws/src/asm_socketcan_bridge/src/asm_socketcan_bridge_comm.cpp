@@ -222,6 +222,10 @@ namespace asm_socketcan_bridge {
         current_sim_step_ = handshake_count;
         publishCanMessagesForSimStep();
       },
+      [this]() {
+        publish_novatel_bestpos(1);
+        publish_novatel_bestpos(2);
+      },
       [this, handshake_count]() { return publishSimStepMarker(handshake_count); },
       [this]() { this->simClockTimeCallback(); });
 

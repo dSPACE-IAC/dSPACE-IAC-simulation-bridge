@@ -72,6 +72,25 @@ if(BUILD_TESTING)
   target_include_directories(sim_clock_control_test PRIVATE include)
   add_test(NAME npc_controller_sim_clock_control COMMAND sim_clock_control_test)
 
+  add_executable(sim_clock_node_test test/sim_clock_node_test.cpp)
+  target_link_libraries(sim_clock_node_test controller)
+  ament_target_dependencies(sim_clock_node_test
+    rclcpp
+    rclcpp_components
+    vectornav_msgs
+    novatel_oem7_msgs
+    raptor_dbw_msgs
+    npc_controller_msgs
+    std_msgs
+    geometry_msgs
+    sensor_msgs
+    nav_msgs
+    autonoma_msgs
+    rosgraph_msgs
+    iac_sim_time
+  )
+  add_test(NAME npc_controller_sim_clock_node COMMAND sim_clock_node_test)
+
   add_executable(signal_codec_test test/signal_codec_test.cpp src/signal_codec.cpp)
   target_include_directories(signal_codec_test PRIVATE include)
   add_test(NAME npc_controller_signal_codec COMMAND signal_codec_test)

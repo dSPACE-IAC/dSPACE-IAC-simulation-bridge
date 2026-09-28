@@ -56,28 +56,63 @@ namespace controller
             rclcpp::shutdown();
             return;
         }
+        pending_sim_clock_ = msg;
+        pending_sim_clock_count_ = clock_count;
+        pending_sim_step_ = expected_step;
+        sim_bestpos_gate_.observeClock(msg.clock.sec, msg.clock.nanosec);
+        processPendingSimClock();
+    }
+
+    void ControllerNode::processPendingSimClock()
+    {
+        if (!pending_sim_clock_) {
+            return;
+        }
+
+        const auto &msg = *pending_sim_clock_;
+        const double sim_time_seconds = static_cast<double>(msg.clock.sec) +
+                static_cast<double>(msg.clock.nanosec) * 1e-9;
+        const auto clock_count = pending_sim_clock_count_;
+        const auto expected_step = pending_sim_step_;
+        if (!sim_bestpos_gate_.readyForStep(expected_step)) {
+            if (sim_bestpos_gate_.hasMismatchedPosition()) {
+                RCLCPP_ERROR_ONCE(
+                    get_logger(),
+                    "SIM_BESTPOS controller waiting for matching position: clock=%d.%09u bestpos=%d.%09u",
+                    msg.clock.sec,
+                    msg.clock.nanosec,
+                    pending_sim_bestpos_->header.stamp.sec,
+                    pending_sim_bestpos_->header.stamp.nanosec);
+            }
+            return;
+        }
+
+        if (expected_step > 0) {
+            applyBestPosMessage(pending_sim_bestpos_);
+            pending_sim_bestpos_.reset();
+        }
         current_sim_step_ = expected_step;
 
-        SimControlInputs step_inputs;
-        {
-            std::lock_guard<std::mutex> lock(feedback_mutex_);
-            step_inputs.vehicle_state = vehicle_state_;
-            step_inputs.previous_state = previous_state_;
-            step_inputs.prev_time = prev_time_;
-            step_inputs.non_brake_decel = non_brake_decel_;
-            step_inputs.track_flag = track_flag_;
-            step_inputs.vehicle_flag = vehicle_flag_;
-            step_inputs.sys_state = sys_state_;
-            step_inputs.round_target_speed = target_speed_;
-            step_inputs.throttle_position = reported_throttle_;
-            step_inputs.current_gear = current_gear_;
-            step_inputs.engine_rpm = engine_speed_;
-            step_inputs.engine_running = engine_running_;
-            step_inputs.position_received = position_received;
-            step_inputs.wheel_speed_received = wheel_speed_received;
-            step_inputs.ct_input = ct_input_;
-            step_inputs.estop = estop_;
-        }
+        SimControlInputs step_inputs = captureSimControlInputs(feedback_mutex_, [this]() {
+            SimControlInputs inputs;
+            inputs.vehicle_state = vehicle_state_;
+            inputs.previous_state = previous_state_;
+            inputs.prev_time = prev_time_;
+            inputs.non_brake_decel = non_brake_decel_;
+            inputs.track_flag = track_flag_;
+            inputs.vehicle_flag = vehicle_flag_;
+            inputs.sys_state = sys_state_;
+            inputs.round_target_speed = target_speed_;
+            inputs.throttle_position = reported_throttle_;
+            inputs.current_gear = current_gear_;
+            inputs.engine_rpm = engine_speed_;
+            inputs.engine_running = engine_running_;
+            inputs.position_received = position_received;
+            inputs.wheel_speed_received = wheel_speed_received;
+            inputs.ct_input = ct_input_;
+            inputs.estop = estop_;
+            return inputs;
+        });
         step_inputs.sim_time = sim_time_seconds;
         step_inputs.sim_step = expected_step;
         const bool control_ran = runSimTimeControlStep(
@@ -132,9 +167,26 @@ namespace controller
             static_cast<unsigned long long>(marker_non_monotonic),
             static_cast<unsigned long long>(sim_step_barrier_failures_.load()),
             static_cast<unsigned long long>(sim_step_marker_wait_timeouts_.load()));
+
+        pending_sim_clock_.reset();
+        pending_sim_clock_count_ = 0;
+        pending_sim_step_ = 0;
+        sim_bestpos_gate_.reset();
     }
 
     void ControllerNode::bestpos_callback(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg)
+    {
+        if (simModeEnabled) {
+            pending_sim_bestpos_ = msg;
+            sim_bestpos_gate_.observeBestPos(msg->header.stamp.sec, msg->header.stamp.nanosec);
+            processPendingSimClock();
+            return;
+        }
+
+        applyBestPosMessage(msg);
+    }
+
+    void ControllerNode::applyBestPosMessage(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg)
     {
         double lat = msg->lat;
         double lon = msg->lon;

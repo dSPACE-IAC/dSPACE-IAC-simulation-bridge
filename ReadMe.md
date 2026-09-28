@@ -93,7 +93,7 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 3. Copy `docker-compose_example.yml` and rename to `docker-compose.yml`.
 4. Adjust parameters in `docker-compose.yml` to match your registry tags and license server. Update the `dspace_bridge` service to point to the bridge variant you want to launch (socketcan, ros2, aurelion or dev).
 5. Provide your custom bridge parameters by editing `asm_socketcan_bridge_override.yaml` and removing the comment in the volume mount for the bridge. E.g. adjust the `publish_intervals.*` values whenever you want to slow down or speed up individual CAN and ROS2 message publishers.
-6. Set `SIM_CLOCK_MODE=true` when deterministic simulation stepping is required. The Compose examples pass this value to both the bridge and demo controller; it overrides the bridge YAML `use_sim_time` value.
+6. Set `SIM_CLOCK_MODE=true` when deterministic simulation stepping is required. The Compose configuration passes this value to the bridge and demo controller; it overrides the bridge YAML `use_sim_time` value.
 7. Open a terminal and execute `docker compose up`.
 8. Start Lichtblick
     1. Open Lichtblick for visualisation either the local container `localhost:8080` or from the Lichtblick suite `https://lichtblick-suite.github.io/lichtblick/`
@@ -108,6 +108,8 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 10. To shut down the simulation, open another terminal and execute `docker compose down --remove-orphans`
 
 ### Sim-time observability
+For deterministic runs, set `SIM_CLOCK_MODE=true` for the bridge and stack, and for `raptor_dbw` when that path is selected. Supply `DS_CMU_SERVER` through your local environment or secret manager; do not store the license-server address in this repository. The base Compose file's `DS_CMU_SERVER=xxx` is only a placeholder and must be overridden. Also set `DS_CUSTOM_DATA_NUM_SAMPLES=1`. Without this value, the first `requestCustomData()` call can block inside the 1 ms V-ESI sub-step loop.
+
 The bridge and controller emit sampled `SIM_OBS` counters in sim mode. Capture the relevant service logs and reduce one run with:
 
 ```bash

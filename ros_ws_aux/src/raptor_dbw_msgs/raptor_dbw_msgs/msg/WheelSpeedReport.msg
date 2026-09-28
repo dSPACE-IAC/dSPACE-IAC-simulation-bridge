@@ -1,6 +1,6 @@
 std_msgs/Header header
 
-# Wheel speeds (rad/sec)
+# Wheel speeds (km/h, as provided by the configured DBC)
 float32 front_left
 float32 front_right
 float32 rear_left

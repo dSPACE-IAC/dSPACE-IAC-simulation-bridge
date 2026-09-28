@@ -2,6 +2,8 @@
 #define NPC_CONTROLLER__SIM_CLOCK_CONTROL_H_
 
 #include <cstdint>
+#include <mutex>
+#include <utility>
 
 namespace controller
 {
@@ -23,6 +25,13 @@ constexpr std::uint64_t simStepForClockMessage(std::uint64_t clock_message_count
 constexpr bool shouldWaitForSimStepMarker(bool sim_mode, bool use_raptor_dbw_node) noexcept
 {
   return sim_mode && !use_raptor_dbw_node;
+}
+
+template <typename SnapshotFunction>
+auto captureSimControlInputs(std::mutex &feedback_mutex, SnapshotFunction &&capture)
+{
+  std::lock_guard<std::mutex> lock(feedback_mutex);
+  return std::forward<SnapshotFunction>(capture)();
 }
 
 template <typename ControlFunction, typename HandshakeFunction>

@@ -51,6 +51,7 @@ from launch_ros.actions import Node
 from launch_ros.actions import LifecycleNode
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import ThisLaunchFileDir
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python import get_package_share_directory
 
 from launch import LaunchDescription
@@ -184,13 +185,18 @@ def generate_launch_description():
             socket_can_sender_configure_event_handler,
             socket_can_sender_activate_event_handler,
 
+            DeclareLaunchArgument('use_sim_time', default_value='false'),
             Node(
                 package='raptor_dbw_can',
                 executable='raptor_dbw_can_node',
                 output='screen',
                 namespace='raptor_dbw_interface',
                 parameters=[
-                    {"dbw_dbc_file": dbc_file_path}
+                    {
+                        "dbw_dbc_file": dbc_file_path,
+                        "use_sim_time": ParameterValue(
+                            LaunchConfiguration('use_sim_time'), value_type=bool),
+                    }
                 ],
                 remappings=[
                     ('/raptor_dbw_interface/can_rx', '/from_can_bus'),

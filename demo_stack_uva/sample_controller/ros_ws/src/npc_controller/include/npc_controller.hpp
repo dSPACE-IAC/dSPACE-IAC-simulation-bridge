@@ -59,6 +59,7 @@
 #include "iac_qos.h"
 #include "iac_sim_time/sim_step_marker.hpp"
 #include "sim_clock_control.h"
+#include "sim_bestpos_gate.h"
 #include "signal_codec.h"
 
 #include "npc_controller_msgs/msg/npc_debug.hpp"
@@ -216,6 +217,11 @@ namespace controller
         std::mutex sim_step_marker_mutex_;
         std::condition_variable sim_step_marker_cv_;
         iac_sim_time::SimStepMarkerSequence sim_step_marker_sequence_;
+        SimBestPosGate sim_bestpos_gate_;
+        std::optional<rosgraph_msgs::msg::Clock> pending_sim_clock_;
+        novatel_oem7_msgs::msg::BESTPOS::SharedPtr pending_sim_bestpos_;
+        std::uint64_t pending_sim_clock_count_ = 0;
+        std::uint64_t pending_sim_step_ = 0;
         std::uint64_t current_sim_step_ = 0;
         // Debug Messages
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
@@ -251,8 +257,10 @@ namespace controller
 
         // Callbacks
         void simClockTimeCallback(const rosgraph_msgs::msg::Clock &msg);
+        void processPendingSimClock();
         bool waitForSimStepMarker(std::uint64_t expected_step);
         void bestpos_callback(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg);
+        void applyBestPosMessage(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg);
         void wheel_speed_callback();
         void wheel_speed_callback_ros_msg(const raptor_dbw_msgs::msg::WheelSpeedReport::SharedPtr msg);
         void receiveCtInput(const std_msgs::msg::Int32::SharedPtr msg);

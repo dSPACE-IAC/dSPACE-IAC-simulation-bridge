@@ -26,6 +26,7 @@ int main()
 
   int step_count = 0;
   int sensor_batch_count = 0;
+  int step_position_count = 0;
   int marker_count = 0;
   int clock_publish_count = 0;
   uint64_t published_clock_milliseconds = 0;
@@ -42,6 +43,10 @@ int main()
       event_order += 'F';
     },
     [&]() {
+      ++step_position_count;
+      event_order += 'P';
+    },
+    [&]() {
       ++marker_count;
       event_order += 'M';
       return true;
@@ -54,10 +59,11 @@ int main()
   if (!expect(handshake_completed, "marker allows handshake completion") ||
       !expect(step_count == 10, "ten V-ESI step callbacks") ||
       !expect(sensor_batch_count == 1, "one sensor CAN batch per handshake") ||
+            !expect(step_position_count == 1, "one synchronous BESTPOS publication per handshake") ||
       !expect(marker_count == 1, "one step marker per handshake") ||
       !expect(clock_publish_count == 1, "one clock publication per handshake") ||
-      !expect(event_order == std::string(10, 'S') + "FMC",
-              "sensor frames and marker precede the clock publication") ||
+            !expect(event_order == std::string(10, 'S') + "FPMC",
+              "CAN and BESTPOS inputs and marker precede the clock publication") ||
       !expect(published_clock_milliseconds == 10, "clock published after ten steps") ||
       !expect(time.totalMilliseconds() == 10, "ten millisecond handshake") ||
       !expect(time.seconds() == 0, "ten millisecond seconds") ||
@@ -68,6 +74,7 @@ int main()
   int clock_after_failed_marker = 0;
   const bool failed_handshake_completed = asm_socketcan_bridge::runSimTimeHandshake(
     1,
+    []() {},
     []() {},
     []() {},
     []() { return false; },

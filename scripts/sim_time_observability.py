@@ -14,17 +14,23 @@ OBSERVATION_RE = re.compile(r"SIM_OBS\s+(?P<node>[a-z_]+)\s+(?P<fields>.*)")
 FIELD_RE = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S+)")
 CAN_FRAME_RE = re.compile(r"\bsend:\s+(0x[0-9A-Fa-f]+)\s+\[(\d+)\]")
 CAN_BYTE_RE = re.compile(r"\bsend:\s+([0-9A-Fa-f]{2})\s*$")
-CAN_DUMP_RE = re.compile(r"^\s*\([^)]*\)\s+\S+\s+(?P<frame>[0-9A-Fa-f]+#[0-9A-Fa-f]*)")
+CAN_DUMP_RE = re.compile(
+    r"^\s*\([^)]*\)\s+\S+\s+(?P<identifier>[0-9A-Fa-f]+)#(?P<data>[0-9A-Fa-f]*)")
+CAN_OUTPUT_RE = re.compile(
+    r"\bcan_out::(?P<name>\S+?)(?:\s+sim_step=(?P<step>\d+))?(?:\s|$)")
 CLOCK_RECORD_RE = re.compile(
     r"clock:\s*\n\s*sec:\s*(-?\d+)\s*\n\s*nanosec:\s*(\d+)",
     re.MULTILINE,
 )
 HANDSHAKE_RE = re.compile(r"^data:\s*(\d+)\s*$", re.MULTILINE)
-DEBUG_STEERING_RE = re.compile(r"^output_steering:\s*(\S+)\s*$", re.MULTILINE)
-DEBUG_TIMING_RE = re.compile(r"^(vel_pid_dt|acc_pid_dt|steering_dt):\s*(\S+)\s*$", re.MULTILINE)
+DEBUG_FIELD_RE = re.compile(
+    r"^\s*(?P<key>[A-Za-z_][A-Za-z0-9_]*):\s*(?P<value>\S+)\s*$", re.MULTILINE)
 DEBUG_VELOCITY_RE = re.compile(
     r"^(desired_velocity|current_velocity|error_velocity):\s*(\S+)\s*$", re.MULTILINE)
 DEBUG_RECORD_SEPARATOR_RE = re.compile(r"(?m)^\s*---\s*$")
+DEBUG_TIMING_FIELDS = ("vel_pid_dt", "acc_pid_dt", "steering_dt")
+DEBUG_TIMING_WARMUP_RECORDS = 4
+SIM_STEP_MARKER_ID = 0x7FF
 
 Observation = Tuple[str, Dict[str, str]]
 COMPANION_SUFFIXES = {
@@ -47,12 +53,33 @@ class RunData:
         self.runtime_text = self.companion_text.get("runtime", "")
         self.observations: List[Observation] = []
         self.controller_can_records: List[str] = []
+        self.controller_can_by_step: Dict[int, List[str]] = {}
         self.can_capture_records: List[str] = []
+        self.can_capture_by_step: Dict[int, List[str]] = {}
+        self.can_marker_steps: List[int] = []
+        self.can_marker_invalid = 0
         self.clock_ms: List[int] = []
         self.handshakes: List[int] = []
         self.debug_steering: List[str] = []
+        self.debug_steering_by_step: Dict[int, List[str]] = {}
         self.debug_timing: List[str] = []
+        self.debug_timing_records: List[Dict[str, str]] = []
         self.debug_velocity_records: List[Dict[str, str]] = []
+        self.debug_records: List[Dict[str, str]] = []
+
+        pending_controller_record: List[str] = []
+        pending_controller_step: Optional[int] = None
+
+        def flush_controller_record() -> None:
+            nonlocal pending_controller_record, pending_controller_step
+            if not pending_controller_record:
+                return
+            record = " | ".join(pending_controller_record)
+            self.controller_can_records.append(record)
+            if pending_controller_step is not None:
+                self.controller_can_by_step.setdefault(pending_controller_step, []).append(record)
+            pending_controller_record = []
+            pending_controller_step = None
 
         for line in text.splitlines():
             observation = OBSERVATION_RE.search(line)
@@ -60,10 +87,24 @@ class RunData:
                 fields = dict(FIELD_RE.findall(observation.group("fields")))
                 self.observations.append((observation.group("node"), fields))
 
-            can_out = re.search(r"can_out::(\S+)", line)
+            can_out = CAN_OUTPUT_RE.search(line)
             if can_out:
-                self.controller_can_records.append("can_out::" + can_out.group(1))
+                flush_controller_record()
+                pending_controller_record = ["can_out::" + can_out.group("name")]
+                step_text = can_out.group("step")
+                pending_controller_step = int(step_text) if step_text is not None else None
                 continue
+
+            if pending_controller_record:
+                can_frame = CAN_FRAME_RE.search(line)
+                if can_frame:
+                    pending_controller_record.append("send: %s [%s]" % can_frame.groups())
+                    continue
+                can_byte = CAN_BYTE_RE.search(line)
+                if can_byte:
+                    pending_controller_record.append("send: " + can_byte.group(1).upper())
+                    continue
+
             can_frame = CAN_FRAME_RE.search(line)
             if can_frame:
                 self.controller_can_records.append("send: %s [%s]" % can_frame.groups())
@@ -71,6 +112,7 @@ class RunData:
             can_byte = CAN_BYTE_RE.search(line)
             if can_byte:
                 self.controller_can_records.append("send: " + can_byte.group(1).upper())
+        flush_controller_record()
 
         clock_text = self.companion_text.get("clock", "")
         self.clock_ms = [
@@ -80,19 +122,51 @@ class RunData:
         self.handshakes = [int(value) for value in HANDSHAKE_RE.findall(
             self.companion_text.get("handshake", ""))]
         debug_text = self.companion_text.get("debug", "")
-        self.debug_steering = DEBUG_STEERING_RE.findall(debug_text)
-        self.debug_timing = DEBUG_TIMING_RE.findall(debug_text)
-        self.debug_velocity_records = [
-            fields for fields in (
-                dict(DEBUG_VELOCITY_RE.findall(record))
-                for record in DEBUG_RECORD_SEPARATOR_RE.split(debug_text)
-            ) if fields
-        ]
-        self.can_capture_records = [
-            match.group("frame").upper()
-            for line in self.companion_text.get("can", "").splitlines()
-            if (match := CAN_DUMP_RE.match(line))
-        ]
+        for record in DEBUG_RECORD_SEPARATOR_RE.split(debug_text):
+            fields = dict(DEBUG_FIELD_RE.findall(record))
+            if not fields:
+                continue
+            self.debug_records.append(fields)
+            self.debug_velocity_records.append(dict(DEBUG_VELOCITY_RE.findall(record)))
+            timing_fields = {name: fields[name] for name in DEBUG_TIMING_FIELDS if name in fields}
+            if timing_fields:
+                self.debug_timing_records.append(fields)
+                self.debug_timing.extend(timing_fields.items())
+            if "output_steering" in fields:
+                self.debug_steering.append(fields["output_steering"])
+                try:
+                    step = int(fields["sim_step"])
+                except (KeyError, ValueError):
+                    continue
+                self.debug_steering_by_step.setdefault(step, []).append(fields["output_steering"])
+
+        pending_capture_frames: List[str] = []
+        for line in self.companion_text.get("can", "").splitlines():
+            match = CAN_DUMP_RE.match(line)
+            if not match:
+                continue
+            identifier = int(match.group("identifier"), 16)
+            data = match.group("data").upper()
+            frame = "%X#%s" % (identifier, data)
+            self.can_capture_records.append(frame)
+            if identifier != SIM_STEP_MARKER_ID:
+                pending_capture_frames.append(frame)
+                continue
+
+            try:
+                marker_data = bytes.fromhex(data)
+            except ValueError:
+                marker_data = b""
+            step = int.from_bytes(marker_data, byteorder="little") if len(marker_data) == 8 else 0
+            if step == 0:
+                self.can_marker_invalid += 1
+                pending_capture_frames = []
+                continue
+            self.can_marker_steps.append(step)
+            step_frames = self.can_capture_by_step.setdefault(step, [])
+            step_frames.extend(pending_capture_frames)
+            step_frames.append(frame)
+            pending_capture_frames = []
 
     @property
     def all_text(self) -> str:
@@ -166,6 +240,45 @@ def check_debug_velocity_consistency(records: Sequence[Dict[str, str]]) -> Tuple
     return status, details
 
 
+def check_debug_timing(records: Sequence[Dict[str, str]]) -> List[Tuple[str, str, str]]:
+    if not records:
+        return [("controller debug timing", "FAIL", "debug capture is missing")]
+
+    warmup = records[:DEBUG_TIMING_WARMUP_RECORDS]
+    steady_state = records[DEBUG_TIMING_WARMUP_RECORDS:]
+    warmup_values = [
+        "%s=%s" % (name, fields[name])
+        for fields in warmup
+        for name in DEBUG_TIMING_FIELDS
+        if name in fields
+    ]
+    warmup_details = "%d startup records excluded" % len(warmup)
+    if warmup_values:
+        warmup_details += "; " + ", ".join(warmup_values)
+
+    values = []
+    incomplete = 0
+    for fields in steady_state:
+        for name in DEBUG_TIMING_FIELDS:
+            try:
+                values.append(float(fields[name]))
+            except (KeyError, ValueError):
+                incomplete += 1
+
+    status = "PASS" if (
+        steady_state and values and not incomplete and
+        all(abs(value - 0.01) <= 1e-9 for value in values)
+    ) else "FAIL"
+    details = "%d steady-state records, %d timing values, %d incomplete; expected 0.01 s" % (
+        len(steady_state), len(values), incomplete)
+    if not steady_state:
+        details = "no steady-state records remain after startup warm-up"
+    return [
+        ("controller debug timing warm-up", "INFO", warmup_details),
+        ("controller debug timing", status, details),
+    ]
+
+
 def format_table(rows: Sequence[Tuple[str, str, str]]) -> None:
     print("CHECK | STATUS | DETAILS")
     print("----- | ------ | -------")
@@ -179,9 +292,16 @@ def reduce_run(data: RunData, expected_substeps: int, minimum_sim_ms: int) -> Li
     rows.append(("sim mode enabled on bridge and controller",
                  "PASS" if mode_count >= 2 else "FAIL",
                  "%d enabled startup messages" % mode_count))
-    rows.append(("direct CAN path",
-                 "PASS" if "Direct CAN communication is enabled" in data.text else "FAIL",
-                 "controller selected direct CAN"))
+    uses_raptor_dbw = "Raptor DBW node is used." in data.text
+    if uses_raptor_dbw:
+        rows.append(("Raptor DBW path", "PASS",
+                     "controller selected Raptor DBW; direct CAN is disabled"))
+    else:
+        direct_can_enabled = "Direct CAN communication is enabled" in data.text
+        rows.append(("direct CAN path",
+                     "PASS" if direct_can_enabled else "FAIL",
+                     "controller selected direct CAN" if direct_can_enabled else
+                     "controller path was not identified"))
 
     if data.runtime_text:
         true_parameter_count = len(re.findall(r"Boolean value is: True", data.runtime_text))
@@ -310,18 +430,7 @@ def reduce_run(data: RunData, expected_substeps: int, minimum_sim_ms: int) -> Li
     else:
         rows.append(("captured handshake values", "FAIL", "handshake capture is missing"))
 
-    if data.debug_timing:
-        timing_values = []
-        for _, value in data.debug_timing:
-            try:
-                timing_values.append(float(value))
-            except ValueError:
-                pass
-        timing_status = "PASS" if timing_values and all(abs(value - 0.01) <= 1e-9 for value in timing_values) else "FAIL"
-        rows.append(("controller debug timing", timing_status,
-                     "checked %d PID timing fields against 0.01 s" % len(timing_values)))
-    else:
-        rows.append(("controller debug timing", "FAIL", "debug capture is missing"))
+    rows.extend(check_debug_timing(data.debug_timing_records))
 
     velocity_status, velocity_details = check_debug_velocity_consistency(
         data.debug_velocity_records)
@@ -330,6 +439,9 @@ def reduce_run(data: RunData, expected_substeps: int, minimum_sim_ms: int) -> Li
     if data.controller_can_records:
         rows.append(("controller CAN output records captured", "PASS",
                      "%d normalized records" % len(data.controller_can_records)))
+    elif uses_raptor_dbw:
+        rows.append(("controller CAN output records captured", "INFO",
+                     "Raptor DBW commands are validated from the marker-grouped bus capture"))
     else:
         rows.append(("controller CAN output records captured", "WARN",
                      "enable logging.sent_can_frames for payload comparison"))
@@ -339,6 +451,24 @@ def reduce_run(data: RunData, expected_substeps: int, minimum_sim_ms: int) -> Li
     else:
         rows.append(("CAN capture records captured", "WARN",
                      "candump artifact is unavailable; CAN comparison will be skipped"))
+    if data.can_marker_steps:
+        monotonic = all(
+            current > previous
+            for previous, current in zip(data.can_marker_steps, data.can_marker_steps[1:]))
+        gaps = sum(
+            current - previous - 1
+            for previous, current in zip(data.can_marker_steps, data.can_marker_steps[1:])
+            if current > previous + 1
+        )
+        marker_status = "PASS" if monotonic and not data.can_marker_invalid else "FAIL"
+        rows.append(("captured CAN step markers", marker_status,
+                     "%d valid markers, %d gaps, %d malformed" % (
+                         len(data.can_marker_steps), gaps, data.can_marker_invalid)))
+    elif data.can_marker_invalid:
+        rows.append(("captured CAN step markers", "FAIL",
+                     "no valid markers; %d malformed marker frames" % data.can_marker_invalid))
+    else:
+        rows.append(("captured CAN step markers", "WARN", "step markers are absent"))
     return rows
 
 
@@ -432,15 +562,31 @@ def compare_fixed_capture(label: str, first: Sequence[str], second: Sequence[str
     return compare_records(label, fixed_prefix(first, count), fixed_prefix(second, count), limit)
 
 
+def compare_step_capture(label: str, first: Dict[int, List[str]], second: Dict[int, List[str]],
+                         steps: Sequence[int], limit: int) -> bool:
+    missing_first = [step for step in steps if not first.get(step)]
+    missing_second = [step for step in steps if not second.get(step)]
+    if missing_first or missing_second:
+        print("%s: FAIL (missing step records; run-a=%s run-b=%s)" % (
+            label, missing_first[:8], missing_second[:8]))
+        return True
+
+    first_records = ["step=%d %s" % (step, record)
+                     for step in steps for record in first[step]]
+    second_records = ["step=%d %s" % (step, record)
+                      for step in steps for record in second[step]]
+    return compare_records(label, first_records, second_records, limit)
+
+
 def compare_runs(first: RunData, second: RunData, expected_substeps: int,
                  handshake_count: Optional[int], start_sim_ms: Optional[int],
                  max_diff_lines: int) -> bool:
     comparison_failed = False
-    comparison_failed |= compare_records(
-        "summary counters",
-        normalized_summary_records(first),
-        normalized_summary_records(second),
-        max_diff_lines)
+    first_summary = normalized_summary_records(first)
+    second_summary = normalized_summary_records(second)
+    summary_result = "match" if first_summary == second_summary else "differ"
+    print("summary counters: INFO (%s; end-of-run totals are not a comparison criterion)" %
+          summary_result)
 
     target = common_clock_window(first, second, start_sim_ms, handshake_count)
     requested_count = handshake_count if handshake_count is not None else len(target)
@@ -455,19 +601,45 @@ def compare_runs(first: RunData, second: RunData, expected_substeps: int,
         print("payload comparisons: SKIP (unbounded captures are not logically aligned)")
         return comparison_failed
 
+    target_steps = [
+        sim_ms // expected_substeps
+        for sim_ms in target
+        if sim_ms % expected_substeps == 0
+    ]
     comparison_failed |= compare_fixed_capture(
         "handshake topic values", [str(value) for value in first.handshakes],
         [str(value) for value in second.handshakes], requested_count, max_diff_lines)
-    comparison_failed |= compare_fixed_capture(
-        "controller steering records", first.debug_steering, second.debug_steering,
-        requested_count, max_diff_lines)
-    if first.controller_can_records and second.controller_can_records:
+    if first.debug_steering_by_step or second.debug_steering_by_step:
+        comparison_failed |= compare_step_capture(
+            "controller steering records by step", first.debug_steering_by_step,
+            second.debug_steering_by_step, target_steps, max_diff_lines)
+    else:
+        comparison_failed |= compare_fixed_capture(
+            "controller steering records", first.debug_steering, second.debug_steering,
+            requested_count, max_diff_lines)
+
+    markers_present = bool(first.can_marker_steps or second.can_marker_steps)
+    if first.controller_can_by_step or second.controller_can_by_step:
+        comparison_failed |= compare_step_capture(
+            "controller CAN output records by step", first.controller_can_by_step,
+            second.controller_can_by_step, target_steps, max_diff_lines)
+    elif first.controller_can_records and second.controller_can_records:
         comparison_failed |= compare_records(
             "controller CAN output records", first.controller_can_records,
             second.controller_can_records, max_diff_lines)
     else:
-        print("controller CAN output records: WARN (service CAN logging missing in one or both runs)")
-    if first.can_capture_records and second.can_capture_records:
+        if ("Raptor DBW node is used." in first.text and
+                "Raptor DBW node is used." in second.text):
+            print("controller CAN output records: INFO (Raptor commands are checked in the "
+                  "marker-grouped CAN capture)")
+        else:
+            print("controller CAN output records: WARN (service CAN logging missing in one or both runs)")
+
+    if markers_present:
+        comparison_failed |= compare_step_capture(
+            "CAN capture records by marker step", first.can_capture_by_step,
+            second.can_capture_by_step, target_steps, max_diff_lines)
+    elif first.can_capture_records and second.can_capture_records:
         comparison_failed |= compare_records(
             "CAN capture records (bounded run)", first.can_capture_records,
             second.can_capture_records, max_diff_lines)

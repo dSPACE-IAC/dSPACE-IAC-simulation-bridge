@@ -230,9 +230,17 @@ namespace asm_socketcan_bridge {
     register_can_timer("publish_novatel_report_ms",
                    [this]() { this->publish_novatel_report(); });
     register_timer("publish_novatel_bestpos1_ms",
-                   [this]() { this->publish_novatel_bestpos(1); });
+                   [this]() {
+                     if (!this->simModeEnabled) {
+                       this->publish_novatel_bestpos(1);
+                     }
+                   });
     register_timer("publish_novatel_bestpos2_ms",
-                   [this]() { this->publish_novatel_bestpos(2); });
+                   [this]() {
+                     if (!this->simModeEnabled) {
+                       this->publish_novatel_bestpos(2);
+                     }
+                   });
     register_timer("publish_novatel_bestgnsspos1_ms",
                    [this]() { this->publish_novatel_bestgnsspos(1); });
     register_timer("publish_novatel_bestgnsspos2_ms",
