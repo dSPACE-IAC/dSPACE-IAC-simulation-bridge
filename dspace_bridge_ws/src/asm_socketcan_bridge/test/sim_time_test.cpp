@@ -31,7 +31,7 @@ int main()
   int clock_publish_count = 0;
   uint64_t published_clock_milliseconds = 0;
   std::string event_order;
-  const bool handshake_completed = asm_socketcan_bridge::runSimTimeHandshake(
+  const bool step_completed = asm_socketcan_bridge::runSimStepSequence(
     10,
     [&]() {
       ++step_count;
@@ -56,30 +56,30 @@ int main()
       event_order += 'C';
       published_clock_milliseconds = time.totalMilliseconds();
     });
-  if (!expect(handshake_completed, "marker allows handshake completion") ||
+  if (!expect(step_completed, "marker allows step completion") ||
       !expect(step_count == 10, "ten V-ESI step callbacks") ||
-      !expect(sensor_batch_count == 1, "one sensor CAN batch per handshake") ||
-            !expect(step_position_count == 1, "one synchronous BESTPOS publication per handshake") ||
-      !expect(marker_count == 1, "one step marker per handshake") ||
-      !expect(clock_publish_count == 1, "one clock publication per handshake") ||
+      !expect(sensor_batch_count == 1, "one sensor CAN batch per step") ||
+            !expect(step_position_count == 1, "one synchronous BESTPOS publication per step") ||
+      !expect(marker_count == 1, "one step marker per step") ||
+      !expect(clock_publish_count == 1, "one clock publication per step") ||
             !expect(event_order == std::string(10, 'S') + "FPMC",
               "CAN and BESTPOS inputs and marker precede the clock publication") ||
       !expect(published_clock_milliseconds == 10, "clock published after ten steps") ||
-      !expect(time.totalMilliseconds() == 10, "ten millisecond handshake") ||
+      !expect(time.totalMilliseconds() == 10, "ten millisecond step") ||
       !expect(time.seconds() == 0, "ten millisecond seconds") ||
       !expect(time.nanoseconds() == 10000000, "ten millisecond nanoseconds")) {
     return 1;
   }
 
   int clock_after_failed_marker = 0;
-  const bool failed_handshake_completed = asm_socketcan_bridge::runSimTimeHandshake(
+  const bool failed_step_completed = asm_socketcan_bridge::runSimStepSequence(
     1,
     []() {},
     []() {},
     []() {},
     []() { return false; },
     [&]() { ++clock_after_failed_marker; });
-  if (!expect(!failed_handshake_completed, "marker write failure aborts handshake") ||
+  if (!expect(!failed_step_completed, "marker write failure aborts step") ||
       !expect(clock_after_failed_marker == 0, "clock is not published after marker failure")) {
     return 1;
   }

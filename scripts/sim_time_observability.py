@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Reduce sim-time logs and compare repeated runs over a logical-clock window."""
+"""Reduce environment-owned sim-time logs and compare repeated runs."""
 
 import argparse
+import csv
 import difflib
-import math
+import glob
+import io
 import re
 import sys
 from pathlib import Path
@@ -12,33 +14,34 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 OBSERVATION_RE = re.compile(r"SIM_OBS\s+(?P<node>[a-z_]+)\s+(?P<fields>.*)")
 FIELD_RE = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S+)")
-CAN_FRAME_RE = re.compile(r"\bsend:\s+(0x[0-9A-Fa-f]+)\s+\[(\d+)\]")
-CAN_BYTE_RE = re.compile(r"\bsend:\s+([0-9A-Fa-f]{2})\s*$")
 CAN_DUMP_RE = re.compile(
     r"^\s*\([^)]*\)\s+\S+\s+(?P<identifier>[0-9A-Fa-f]+)#(?P<data>[0-9A-Fa-f]*)")
-CAN_OUTPUT_RE = re.compile(
-    r"\bcan_out::(?P<name>\S+?)(?:\s+sim_step=(?P<step>\d+))?(?:\s|$)")
 CLOCK_RECORD_RE = re.compile(
     r"clock:\s*\n\s*sec:\s*(-?\d+)\s*\n\s*nanosec:\s*(\d+)",
     re.MULTILINE,
 )
-HANDSHAKE_RE = re.compile(r"^data:\s*(\d+)\s*$", re.MULTILINE)
-DEBUG_FIELD_RE = re.compile(
-    r"^\s*(?P<key>[A-Za-z_][A-Za-z0-9_]*):\s*(?P<value>\S+)\s*$", re.MULTILINE)
-DEBUG_VELOCITY_RE = re.compile(
-    r"^(desired_velocity|current_velocity|error_velocity):\s*(\S+)\s*$", re.MULTILINE)
-DEBUG_RECORD_SEPARATOR_RE = re.compile(r"(?m)^\s*---\s*$")
-DEBUG_TIMING_FIELDS = ("vel_pid_dt", "acc_pid_dt", "steering_dt")
-DEBUG_TIMING_WARMUP_RECORDS = 4
+RECORD_SEPARATOR_RE = re.compile(r"(?m)^\s*---\s*$")
 SIM_STEP_MARKER_ID = 0x7FF
+CONTROLLER_COMMAND_IDS = range(0x578, 0x57E)
+STATIC_STEP_RE = re.compile(
+    r"Simulation stepping owned by the environment: step=(?P<step>\d+) ms")
+ADAPTATION_COMPLETE_RE = re.compile(
+    r"SIM_STEP adaptation complete: step=(?P<step>\d+) ms timeout=(?P<timeout>\d+) ms "
+    r"switch_ms=(?P<switch>\d+)")
+ADAPTATION_ID_RE = re.compile(
+    r"SIM_STEP adaptation id=(?P<id>0x[0-9A-Fa-f]+) arrivals=\d+ class=(?P<cls>\S+) "
+    r"period_ms=(?P<period>\d+) anchor_ms=(?P<anchor>\d+)")
+REPLAY_RE = re.compile(r"Simulation stepping owned by the environment: open-loop replay of ")
+REPLAY_SCHEDULE_RE = re.compile(
+    r"SIM_STEP replay schedule: step_ms=(?P<step>\d+) switch_ms=(?P<switch>\d+)")
+ROS_CAPTURE_PREFIX = "ros:"
 
 Observation = Tuple[str, Dict[str, str]]
 COMPANION_SUFFIXES = {
     "runtime": "-runtime.txt",
     "clock": "-clock.txt",
-    "handshake": "-handshake.txt",
-    "debug": "-debug.txt",
     "can": "-can.txt",
+    "steps": "-steps.csv",
 }
 
 
@@ -52,34 +55,40 @@ class RunData:
         self.companion_text = companion_text or {}
         self.runtime_text = self.companion_text.get("runtime", "")
         self.observations: List[Observation] = []
-        self.controller_can_records: List[str] = []
-        self.controller_can_by_step: Dict[int, List[str]] = {}
         self.can_capture_records: List[str] = []
         self.can_capture_by_step: Dict[int, List[str]] = {}
         self.can_marker_steps: List[int] = []
         self.can_marker_invalid = 0
         self.clock_ms: List[int] = []
-        self.handshakes: List[int] = []
-        self.debug_steering: List[str] = []
-        self.debug_steering_by_step: Dict[int, List[str]] = {}
-        self.debug_timing: List[str] = []
-        self.debug_timing_records: List[Dict[str, str]] = []
-        self.debug_velocity_records: List[Dict[str, str]] = []
-        self.debug_records: List[Dict[str, str]] = []
-
-        pending_controller_record: List[str] = []
-        pending_controller_step: Optional[int] = None
-
-        def flush_controller_record() -> None:
-            nonlocal pending_controller_record, pending_controller_step
-            if not pending_controller_record:
-                return
-            record = " | ".join(pending_controller_record)
-            self.controller_can_records.append(record)
-            if pending_controller_step is not None:
-                self.controller_can_by_step.setdefault(pending_controller_step, []).append(record)
-            pending_controller_record = []
-            pending_controller_step = None
+        self.step_rows: List[Dict[str, str]] = []
+        static_match = STATIC_STEP_RE.search(text)
+        adaptation_match = ADAPTATION_COMPLETE_RE.search(text)
+        self.adaptation_switch_ms = 0
+        self.environment_step_ms = None
+        if static_match:
+            self.environment_step_ms = int(static_match.group("step"))
+        if adaptation_match:
+            self.environment_step_ms = int(adaptation_match.group("step"))
+            self.adaptation_switch_ms = int(adaptation_match.group("switch"))
+        self.adaptation_expected = "adaptation on" in text or adaptation_match is not None
+        self.replay = REPLAY_RE.search(text) is not None
+        replay_schedule = REPLAY_SCHEDULE_RE.search(text)
+        if replay_schedule:
+            self.environment_step_ms = int(replay_schedule.group("step"))
+            self.adaptation_switch_ms = int(replay_schedule.group("switch"))
+        self.ros_records: Dict[str, List[str]] = {
+            name[len(ROS_CAPTURE_PREFIX):]: [
+                record.strip() for record in RECORD_SEPARATOR_RE.split(captured)
+                if record.strip()]
+            for name, captured in self.companion_text.items()
+            if name.startswith(ROS_CAPTURE_PREFIX)
+        }
+        self.adaptation_ids = sorted(
+            (m.group("id").upper(), m.group("cls"), int(m.group("period")), int(m.group("anchor")))
+            for m in ADAPTATION_ID_RE.finditer(text))
+        steps_text = self.companion_text.get("steps", "")
+        if steps_text:
+            self.step_rows = list(csv.DictReader(io.StringIO(steps_text)))
 
         for line in text.splitlines():
             observation = OBSERVATION_RE.search(line)
@@ -87,58 +96,11 @@ class RunData:
                 fields = dict(FIELD_RE.findall(observation.group("fields")))
                 self.observations.append((observation.group("node"), fields))
 
-            can_out = CAN_OUTPUT_RE.search(line)
-            if can_out:
-                flush_controller_record()
-                pending_controller_record = ["can_out::" + can_out.group("name")]
-                step_text = can_out.group("step")
-                pending_controller_step = int(step_text) if step_text is not None else None
-                continue
-
-            if pending_controller_record:
-                can_frame = CAN_FRAME_RE.search(line)
-                if can_frame:
-                    pending_controller_record.append("send: %s [%s]" % can_frame.groups())
-                    continue
-                can_byte = CAN_BYTE_RE.search(line)
-                if can_byte:
-                    pending_controller_record.append("send: " + can_byte.group(1).upper())
-                    continue
-
-            can_frame = CAN_FRAME_RE.search(line)
-            if can_frame:
-                self.controller_can_records.append("send: %s [%s]" % can_frame.groups())
-                continue
-            can_byte = CAN_BYTE_RE.search(line)
-            if can_byte:
-                self.controller_can_records.append("send: " + can_byte.group(1).upper())
-        flush_controller_record()
-
         clock_text = self.companion_text.get("clock", "")
         self.clock_ms = [
             int(seconds) * 1000 + int(nanoseconds) // 1000000
             for seconds, nanoseconds in CLOCK_RECORD_RE.findall(clock_text)
         ]
-        self.handshakes = [int(value) for value in HANDSHAKE_RE.findall(
-            self.companion_text.get("handshake", ""))]
-        debug_text = self.companion_text.get("debug", "")
-        for record in DEBUG_RECORD_SEPARATOR_RE.split(debug_text):
-            fields = dict(DEBUG_FIELD_RE.findall(record))
-            if not fields:
-                continue
-            self.debug_records.append(fields)
-            self.debug_velocity_records.append(dict(DEBUG_VELOCITY_RE.findall(record)))
-            timing_fields = {name: fields[name] for name in DEBUG_TIMING_FIELDS if name in fields}
-            if timing_fields:
-                self.debug_timing_records.append(fields)
-                self.debug_timing.extend(timing_fields.items())
-            if "output_steering" in fields:
-                self.debug_steering.append(fields["output_steering"])
-                try:
-                    step = int(fields["sim_step"])
-                except (KeyError, ValueError):
-                    continue
-                self.debug_steering_by_step.setdefault(step, []).append(fields["output_steering"])
 
         pending_capture_frames: List[str] = []
         for line in self.companion_text.get("can", "").splitlines():
@@ -190,6 +152,9 @@ def load_run(path_text: str) -> RunData:
         companion_path = path.with_name(path.stem + suffix)
         if companion_path.exists():
             companion_text[name] = read_text(companion_path)
+    for ros_path in sorted(path.parent.glob(glob.escape(path.stem) + "-ros-*.txt")):
+        topic = ros_path.name[len(path.stem) + len("-ros-"):-len(".txt")]
+        companion_text[ROS_CAPTURE_PREFIX + topic] = read_text(ros_path)
     return RunData(read_text(path), companion_text)
 
 
@@ -209,76 +174,6 @@ def as_int(fields: Dict[str, str], key: str):
         return None
 
 
-def check_debug_velocity_consistency(records: Sequence[Dict[str, str]]) -> Tuple[str, str]:
-    if not records:
-        return "FAIL", "debug capture is missing"
-
-    checked_records = 0
-    mismatches = 0
-    incomplete_records = 0
-    for fields in records:
-        try:
-            desired_velocity = float(fields["desired_velocity"])
-            current_velocity = float(fields["current_velocity"])
-            error_velocity = float(fields["error_velocity"])
-        except (KeyError, ValueError):
-            incomplete_records += 1
-            continue
-
-        checked_records += 1
-        if not math.isclose(
-            error_velocity,
-            desired_velocity - current_velocity,
-            rel_tol=1e-12,
-            abs_tol=1e-12,
-        ):
-            mismatches += 1
-
-    status = "PASS" if not mismatches and not incomplete_records else "FAIL"
-    details = "%d records checked; %d mismatches, %d incomplete" % (
-        checked_records, mismatches, incomplete_records)
-    return status, details
-
-
-def check_debug_timing(records: Sequence[Dict[str, str]]) -> List[Tuple[str, str, str]]:
-    if not records:
-        return [("controller debug timing", "FAIL", "debug capture is missing")]
-
-    warmup = records[:DEBUG_TIMING_WARMUP_RECORDS]
-    steady_state = records[DEBUG_TIMING_WARMUP_RECORDS:]
-    warmup_values = [
-        "%s=%s" % (name, fields[name])
-        for fields in warmup
-        for name in DEBUG_TIMING_FIELDS
-        if name in fields
-    ]
-    warmup_details = "%d startup records excluded" % len(warmup)
-    if warmup_values:
-        warmup_details += "; " + ", ".join(warmup_values)
-
-    values = []
-    incomplete = 0
-    for fields in steady_state:
-        for name in DEBUG_TIMING_FIELDS:
-            try:
-                values.append(float(fields[name]))
-            except (KeyError, ValueError):
-                incomplete += 1
-
-    status = "PASS" if (
-        steady_state and values and not incomplete and
-        all(abs(value - 0.01) <= 1e-9 for value in values)
-    ) else "FAIL"
-    details = "%d steady-state records, %d timing values, %d incomplete; expected 0.01 s" % (
-        len(steady_state), len(values), incomplete)
-    if not steady_state:
-        details = "no steady-state records remain after startup warm-up"
-    return [
-        ("controller debug timing warm-up", "INFO", warmup_details),
-        ("controller debug timing", status, details),
-    ]
-
-
 def format_table(rows: Sequence[Tuple[str, str, str]]) -> None:
     print("CHECK | STATUS | DETAILS")
     print("----- | ------ | -------")
@@ -286,204 +181,316 @@ def format_table(rows: Sequence[Tuple[str, str, str]]) -> None:
         print("%s | %s | %s" % (name, status, details))
 
 
-def reduce_run(data: RunData, expected_substeps: int, minimum_sim_ms: int) -> List[Tuple[str, str, str]]:
+def _step_row_int(row: Dict[str, str], key: str) -> Optional[int]:
+    try:
+        return int(row[key])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def expected_increment(t_ms: int, step_ms: int, switch_ms: int) -> int:
+    """Clock increment after t_ms: 1 ms during adaptation, the derived step after the switch."""
+    return 1 if t_ms < switch_ms else step_ms
+
+
+def step_index(t_ms: int, step_ms: int, switch_ms: int) -> int:
+    if t_ms <= switch_ms:
+        return t_ms
+    return switch_ms + (t_ms - switch_ms) // step_ms
+
+
+def check_step_records(rows: Sequence[Dict[str, str]], step_ms: int,
+                       switch_ms: int = 0) -> List[Tuple[str, str, str]]:
+    """F.7 logical-time and command-attribution checks on the bridge step records."""
+    if not rows:
+        return [("step records", "FAIL", "sim_steps.csv is missing (logging.sim_steps)")]
+
+    out_of_order = 0
+    bad_time = 0
+    bad_timeout_flag = 0
+    missing_arrival = 0
+    arrival_after_close = 0
+    malformed = 0
+    previous_step = 0
+    previous_t = 0
+    for row in rows:
+        step = _step_row_int(row, "step")
+        t_ms = _step_row_int(row, "t_ms")
+        wait_us = _step_row_int(row, "wait_us")
+        timed_out = _step_row_int(row, "timed_out")
+        if None in (step, t_ms, wait_us, timed_out):
+            malformed += 1
+            continue
+        if step != previous_step + 1:
+            out_of_order += 1
+        if t_ms - previous_t != expected_increment(previous_t, step_ms, switch_ms):
+            bad_time += 1
+        previous_step, previous_t = step, t_ms
+        due = [item for item in row.get("due", "").split("|") if item]
+        missing = [item for item in row.get("missing", "").split("|") if item]
+        arrivals = {}
+        for item in row.get("arrivals_us", "").split("|"):
+            if ":" in item:
+                identifier, latency = item.split(":", 1)
+                try:
+                    arrivals[identifier] = int(latency)
+                except ValueError:
+                    malformed += 1
+        if bool(timed_out) != bool(missing):
+            bad_timeout_flag += 1
+        if not timed_out and any(identifier not in arrivals for identifier in due):
+            missing_arrival += 1
+        if any(latency > wait_us for latency in arrivals.values()):
+            arrival_after_close += 1
+
+    complete = not (out_of_order or bad_time or malformed)
+    rows_out = [
+        ("step records complete and consecutive", "PASS" if complete else "FAIL",
+         "%d records; %d out of order, %d time increments off the expected step (%d ms after %d ms), %d malformed" % (
+             len(rows), out_of_order, bad_time, step_ms, switch_ms, malformed)),
+        ("step closure consistent with due IDs",
+         "PASS" if not (bad_timeout_flag or missing_arrival) else "FAIL",
+         "%d timeout flag mismatches, %d complete steps with a due ID lacking an arrival" % (
+             bad_timeout_flag, missing_arrival)),
+        ("no frame merged into a closed step", "PASS" if not arrival_after_close else "FAIL",
+         "%d steps with an arrival later than the close" % arrival_after_close),
+    ]
+    timeouts = sum(1 for row in rows if row.get("timed_out") == "1")
+    late = sum(_step_row_int(row, "late") or 0 for row in rows)
+    early = sum(_step_row_int(row, "early") or 0 for row in rows)
+    duplicates = sum(_step_row_int(row, "duplicates") or 0 for row in rows)
+    waits = sorted(_step_row_int(row, "wait_us") or 0 for row in rows if row.get("timed_out") != "1")
+    if waits:
+        percentile = lambda fraction: waits[min(len(waits) - 1, int(fraction * len(waits)))]
+        latency = "wait_us p50=%d p95=%d p99=%d max=%d" % (
+            percentile(0.5), percentile(0.95), percentile(0.99), waits[-1])
+    else:
+        latency = "no completed steps"
+    rows_out.append(("step timeouts, duplicates, late and early frames", "INFO",
+                     "%d timeouts, %d duplicates, %d late, %d early; %s" % (
+                         timeouts, duplicates, late, early, latency)))
+    return rows_out
+
+
+def reduce_run(data: RunData, expected_step_ms: int,
+               minimum_sim_ms: int) -> List[Tuple[str, str, str]]:
+    step_ms = data.environment_step_ms or expected_step_ms
     rows: List[Tuple[str, str, str]] = []
     mode_count = len(re.findall(r"Simulation clock mode enabled", data.text))
+    required_mode_count = 1 if data.replay else 2
     rows.append(("sim mode enabled on bridge and controller",
-                 "PASS" if mode_count >= 2 else "FAIL",
+                 "PASS" if mode_count >= required_mode_count else "FAIL",
                  "%d enabled startup messages" % mode_count))
-    uses_raptor_dbw = "Raptor DBW node is used." in data.text
-    if uses_raptor_dbw:
-        rows.append(("Raptor DBW path", "PASS",
-                     "controller selected Raptor DBW; direct CAN is disabled"))
+    started = "SIM_STEP environment-owned stepping started." in data.text
+    switch_ms = data.adaptation_switch_ms
+    rows.append(("environment-owned stepping", "PASS" if started else "FAIL",
+                 "step=%s ms; stepping %s" % (step_ms, "started" if started else "did not start")))
+    if data.adaptation_expected:
+        scheduled = [item for item in data.adaptation_ids if item[1] == "scheduled"]
+        rows.append(("adaptation period completed",
+                     "PASS" if data.adaptation_switch_ms and scheduled else "FAIL",
+                     "switch at %d ms, step %s ms; scheduled %s; unscheduled %s" % (
+                         switch_ms, step_ms,
+                         ", ".join("%s@%d" % (i[0], i[2]) for i in scheduled) or "none",
+                         ", ".join(i[0] for i in data.adaptation_ids if i[1] != "scheduled") or "none")))
+    if data.replay:
+        rows.append(("controller command path", "PASS",
+                     "open-loop replay; command intake from CAN is disabled"))
+    elif "Raptor DBW node is used." in data.text:
+        rows.append(("Raptor DBW path", "PASS", "controller selected Raptor DBW (variant V3)"))
+    elif "Direct CAN communication is enabled" in data.text:
+        rows.append(("direct CAN path", "PASS", "controller selected direct CAN (variant V1)"))
     else:
-        direct_can_enabled = "Direct CAN communication is enabled" in data.text
-        rows.append(("direct CAN path",
-                     "PASS" if direct_can_enabled else "FAIL",
-                     "controller selected direct CAN" if direct_can_enabled else
-                     "controller path was not identified"))
+        rows.append(("controller command path", "FAIL", "controller path was not identified"))
 
     if data.runtime_text:
-        true_parameter_count = len(re.findall(r"Boolean value is: True", data.runtime_text))
-        rows.append(("use_sim_time parameters",
-                     "PASS" if true_parameter_count >= 2 else "FAIL",
-                     "%d true Boolean values in runtime artifact" % true_parameter_count))
+        true_count = len(re.findall(r"Boolean value is: True", data.runtime_text))
+        rows.append(("use_sim_time parameters", "PASS" if true_count >= required_mode_count else "FAIL",
+                     "%d true Boolean values in runtime artifact" % true_count))
     else:
         rows.append(("use_sim_time parameters", "FAIL", "runtime artifact is missing"))
 
-    bridge_handshake_records = [
-        fields for node, fields in data.observations
-        if node == "bridge" and ("handshake_received" in fields or fields.get("summary") == "1")
-    ]
-    bridge_clock_records = [
-        fields for node, fields in data.observations
-        if node == "bridge" and "clock_published" in fields
-    ]
-    controller_records = [
-        fields for node, fields in data.observations
-        if node == "controller" and "clock_received" in fields
-    ]
-    rows.append(("bridge handshake observations", "PASS" if bridge_handshake_records else "FAIL",
-                 "%d sampled records" % len(bridge_handshake_records)))
-    rows.append(("bridge clock observations", "PASS" if bridge_clock_records else "FAIL",
-                 "%d sampled records" % len(bridge_clock_records)))
-    rows.append(("controller clock observations", "PASS" if controller_records else "FAIL",
-                 "%d sampled records" % len(controller_records)))
-
     bridge = latest_summary(data, "bridge")
-    controller = latest_summary(data, "controller")
-
-    if controller:
-        clock_received = as_int(controller, "clock_received")
-        control_invocations = as_int(controller, "control_invocations")
-        zero_clock_messages = as_int(controller, "zero_clock_messages")
-        handshakes_sent = as_int(controller, "handshakes_sent")
-        if None not in (clock_received, control_invocations, zero_clock_messages):
-            expected_controls = clock_received - zero_clock_messages
-            status = "PASS" if control_invocations == expected_controls else "FAIL"
-            rows.append(("one control cycle per nonzero clock", status,
-                         "%d controls / %d eligible clocks" %
-                         (control_invocations, expected_controls)))
-        else:
-            rows.append(("one control cycle per nonzero clock", "FAIL", "summary fields incomplete"))
-        if None not in (clock_received, handshakes_sent):
-            status = "PASS" if handshakes_sent == clock_received else "FAIL"
-            rows.append(("one sim_time_increase per clock", status,
-                         "%d handshakes / %d clocks" % (handshakes_sent, clock_received)))
-        else:
-            rows.append(("one sim_time_increase per clock", "FAIL", "summary fields incomplete"))
-    else:
-        rows.append(("one control cycle per nonzero clock", "FAIL", "controller summary missing"))
-        rows.append(("one sim_time_increase per clock", "FAIL", "controller summary missing"))
-
+    steps_run = None
     if bridge:
-        handshakes_received = as_int(bridge, "handshakes_received")
-        requested_substeps = as_int(bridge, "requested_substeps")
-        cumulative_substeps = as_int(bridge, "cumulative_substeps")
-        clock_published = as_int(bridge, "clock_published")
-        non_ten_handshakes = as_int(bridge, "non_ten_handshakes")
-        substep_mismatches = as_int(bridge, "substep_mismatches")
-        if None not in (handshakes_received, requested_substeps, cumulative_substeps,
-                        non_ten_handshakes, substep_mismatches):
-            status = "PASS" if (
-                requested_substeps == handshakes_received * expected_substeps and
-                cumulative_substeps == requested_substeps and
-                non_ten_handshakes == 0 and
-                substep_mismatches == 0
-            ) else "FAIL"
-            rows.append(("ten V-ESI substeps per handshake", status,
-                         "%d requested / %d completed over %d handshakes" %
-                         (requested_substeps, cumulative_substeps, handshakes_received)))
+        sim_ms = as_int(bridge, "sim_time_ms")
+        cumulative = as_int(bridge, "cumulative_substeps")
+        mismatches = as_int(bridge, "substep_mismatches")
+        published = as_int(bridge, "clock_published")
+        markers = as_int(bridge, "step_markers_sent")
+        time_mismatches = as_int(bridge, "env_time_mismatches")
+        closed = as_int(bridge, "env_steps_closed")
+        if None not in (sim_ms, cumulative, mismatches):
+            steps_run = step_index(sim_ms, step_ms, switch_ms)
+            status = "PASS" if ((sim_ms <= switch_ms or (sim_ms - switch_ms) % step_ms == 0) and
+                                cumulative == sim_ms and mismatches == 0) else "FAIL"
+            rows.append(("exact sub-step count per step", status,
+                         "%d sub-steps over %d steps (1 ms until %d ms, then %d ms); %d mismatches" % (
+                             cumulative, steps_run, switch_ms, step_ms, mismatches)))
+            if published is not None:
+                status = "PASS" if published in (steps_run, steps_run + 1) else "FAIL"
+                rows.append(("one release per step", status,
+                             "%d clock publications / %d steps plus initial clock" % (
+                                 published, steps_run)))
+            if markers is not None and data.can_marker_steps:
+                rows.append(("step markers sent per step",
+                             "PASS" if markers == steps_run else "FAIL",
+                             "%d markers / %d steps" % (markers, steps_run)))
+            if closed is not None:
+                rows.append(("closed steps",
+                             "PASS" if closed in (steps_run, steps_run - 1) else "FAIL",
+                             "%d closed / %d steps (one may be open at shutdown)" % (
+                                 closed, steps_run)))
         else:
-            rows.append(("ten V-ESI substeps per handshake", "FAIL", "summary fields incomplete"))
-        if None not in (clock_published, handshakes_received):
-            valid_publication_counts = (handshakes_received, handshakes_received + 1)
-            status = "PASS" if clock_published in valid_publication_counts else "FAIL"
-            if clock_published == handshakes_received + 1:
-                detail = "%d publications / %d handshakes including initial clock" % (
-                    clock_published, handshakes_received)
-            elif clock_published == handshakes_received:
-                detail = "%d publications / %d handshakes; shutdown snapshot may omit final callback" % (
-                    clock_published, handshakes_received)
-            else:
-                detail = "%d publications / %d handshakes; expected equal or equal plus initial clock" % (
-                    clock_published, handshakes_received)
-            rows.append(("one clock publication per handshake", status, detail))
-        else:
-            rows.append(("one clock publication per handshake", "FAIL", "summary fields incomplete"))
-        simulated_ms = as_int(bridge, "sim_time_ms")
-        rows.append(("minimum logical runtime", "PASS" if simulated_ms is not None and simulated_ms >= minimum_sim_ms else "FAIL",
-                     "sim_time_ms=%s (minimum %d)" % (simulated_ms, minimum_sim_ms)))
+            rows.append(("exact sub-step count per step", "FAIL", "summary fields incomplete"))
+        rows.append(("coordinator time equals published time",
+                     "PASS" if time_mismatches == 0 else "FAIL",
+                     "env_time_mismatches=%s" % time_mismatches))
+        rows.append(("minimum logical runtime",
+                     "PASS" if sim_ms is not None and sim_ms >= minimum_sim_ms else "FAIL",
+                     "sim_time_ms=%s (minimum %d)" % (sim_ms, minimum_sim_ms)))
+        rtf = bridge.get("realtime_factor")
+        if rtf is not None:
+            rows.append(("real-time factor", "INFO", "realtime_factor=%s env_wall_ms=%s wait_wall_ms=%s" % (
+                rtf, bridge.get("env_wall_ms"), bridge.get("wait_wall_ms"))))
+        summary_fields = ["env_timeouts", "env_max_consecutive_timeouts", "env_duplicates",
+                          "env_late", "env_early", "env_rephased"]
+        rows.append(("coordinator totals", "INFO", ", ".join(
+            "%s=%s" % (name, bridge.get(name)) for name in summary_fields)))
+        if data.replay:
+            done, _, total = bridge.get("env_replay_steps", "").partition("/")
+            complete = ("SIM_STEP replay complete" in data.text and done.isdigit() and
+                        done == total)
+            rows.append(("replay ran every recorded step", "PASS" if complete else "FAIL",
+                         "env_replay_steps=%s" % bridge.get("env_replay_steps")))
     else:
-        rows.append(("ten V-ESI substeps per handshake", "FAIL", "bridge summary missing"))
-        rows.append(("one clock publication per handshake", "FAIL", "bridge summary missing"))
+        rows.append(("exact sub-step count per step", "FAIL", "bridge summary missing"))
         rows.append(("minimum logical runtime", "FAIL", "bridge summary missing"))
 
     if data.clock_ms:
-        clock_intervals = [current - previous for previous, current in zip(data.clock_ms, data.clock_ms[1:])]
-        status = "PASS" if len(clock_intervals) > 0 and all(
-            interval == expected_substeps for interval in clock_intervals) else "FAIL"
-        rows.append(("captured clock advances per handshake", status,
-                     "%d samples, %d ms intervals" % (len(data.clock_ms), expected_substeps)))
+        intervals = [b - a for a, b in zip(data.clock_ms, data.clock_ms[1:])]
+        ok = (data.clock_ms[0] == 0 and bool(intervals) and
+              all(i == expected_increment(t, step_ms, switch_ms)
+                  for t, i in zip(data.clock_ms, intervals)))
+        rows.append(("logical time strictly monotonic in exact steps", "PASS" if ok else "FAIL",
+                     "%d clock samples from %d ms, 1 ms increments until %d ms then %d ms" % (
+                         len(data.clock_ms), data.clock_ms[0], switch_ms, step_ms)))
     else:
-        rows.append(("captured clock advances per handshake", "FAIL", "clock capture is missing"))
+        rows.append(("logical time strictly monotonic in exact steps", "FAIL",
+                     "clock capture is missing"))
 
-    wall_timer_message = "Use Wall Clock (system clock)." in data.text
-    rows.append(("no wall-clock acquisition path in sim mode",
-                 "PASS" if not wall_timer_message else "FAIL",
-                 "wall-clock startup message %s" % ("found" if wall_timer_message else "not found")))
-    periodic_timer_messages = re.findall(
-        r"publish_intervals\.(pure_pursuit_timer|long_control_timer|control_timer|state_machine_timer):",
-        data.text)
-    rows.append(("no periodic controller timers in sim mode",
-                 "PASS" if not periodic_timer_messages else "FAIL",
-                 "%d periodic timer messages" % len(periodic_timer_messages)))
-    executor_message = "Spinning with single-threaded executor (deterministic sim mode)."
-    rows.append(("single-threaded sim executor", "PASS" if executor_message in data.text else "FAIL",
-                 "deterministic executor startup message %s" %
-                 ("found" if executor_message in data.text else "not found")))
+    rows.extend(check_step_records(data.step_rows, step_ms, switch_ms))
+    if data.clock_ms and data.step_rows:
+        step_times = [_step_row_int(row, "t_ms") for row in data.step_rows]
+        captured = data.clock_ms[1:]
+        common = min(len(captured), len(step_times))
+        rows.append(("clock capture matches step records",
+                     "PASS" if common and captured[:common] == step_times[:common] else "FAIL",
+                     "%d common steps" % common))
 
-    if data.handshakes:
-        handshake_status = "PASS" if all(value == expected_substeps for value in data.handshakes) else "FAIL"
-        rows.append(("captured handshake values", handshake_status,
-                     "checked %d topic samples" % len(data.handshakes)))
-    else:
-        rows.append(("captured handshake values", "FAIL", "handshake capture is missing"))
-
-    rows.extend(check_debug_timing(data.debug_timing_records))
-
-    velocity_status, velocity_details = check_debug_velocity_consistency(
-        data.debug_velocity_records)
-    rows.append(("debug velocity snapshot consistency", velocity_status, velocity_details))
-
-    if data.controller_can_records:
-        rows.append(("controller CAN output records captured", "PASS",
-                     "%d normalized records" % len(data.controller_can_records)))
-    elif uses_raptor_dbw:
-        rows.append(("controller CAN output records captured", "INFO",
-                     "Raptor DBW commands are validated from the marker-grouped bus capture"))
-    else:
-        rows.append(("controller CAN output records captured", "WARN",
-                     "enable logging.sent_can_frames for payload comparison"))
-    if data.can_capture_records:
-        rows.append(("CAN capture records captured", "PASS",
-                     "%d normalized frames" % len(data.can_capture_records)))
-    else:
-        rows.append(("CAN capture records captured", "WARN",
-                     "candump artifact is unavailable; CAN comparison will be skipped"))
     if data.can_marker_steps:
-        monotonic = all(
-            current > previous
-            for previous, current in zip(data.can_marker_steps, data.can_marker_steps[1:]))
-        gaps = sum(
-            current - previous - 1
-            for previous, current in zip(data.can_marker_steps, data.can_marker_steps[1:])
-            if current > previous + 1
-        )
-        marker_status = "PASS" if monotonic and not data.can_marker_invalid else "FAIL"
-        rows.append(("captured CAN step markers", marker_status,
-                     "%d valid markers, %d gaps, %d malformed" % (
-                         len(data.can_marker_steps), gaps, data.can_marker_invalid)))
-    elif data.can_marker_invalid:
-        rows.append(("captured CAN step markers", "FAIL",
-                     "no valid markers; %d malformed marker frames" % data.can_marker_invalid))
+        steps = data.can_marker_steps
+        contiguous = steps[0] == 1 and all(b == a + 1 for a, b in zip(steps, steps[1:]))
+        rows.append(("captured CAN step markers",
+                     "PASS" if contiguous and not data.can_marker_invalid else "FAIL",
+                     "%d markers from %d to %d, %d malformed" % (
+                         len(steps), steps[0], steps[-1], data.can_marker_invalid)))
     else:
         rows.append(("captured CAN step markers", "WARN", "step markers are absent"))
+    if data.ros_records:
+        rows.append(("captured ROS outputs", "INFO", ", ".join(
+            "%s=%d" % item for item in ((topic, len(records))
+                                       for topic, records in sorted(data.ros_records.items())))))
     return rows
 
 
-def normalized_summary_records(data: RunData) -> List[str]:
-    records = []
-    for node in ("bridge", "controller"):
-        fields = latest_summary(data, node)
-        if fields:
-            comparable_fields = {
-                key: value for key, value in fields.items()
-                if key != "clock_published"
-            }
-            records.append("%s %s" % (
-                node, " ".join("%s=%s" % item for item in sorted(comparable_fields.items()))))
-    return records
+def _split_marker_group(frames: Sequence[str]) -> Tuple[List[str], List[str]]:
+    controller, environment = [], []
+    for frame in frames:
+        identifier = int(frame.split("#", 1)[0], 16)
+        if identifier == SIM_STEP_MARKER_ID:
+            continue
+        (controller if identifier in CONTROLLER_COMMAND_IDS else environment).append(frame)
+    return sorted(controller), environment
+
+
+def compare_runs(first: RunData, second: RunData, expected_step_ms: int,
+                 step_count: Optional[int], max_diff_lines: int) -> bool:
+    """Required: identical logical clock. Informational: closed-loop repeat of the team stack."""
+    step_ms = first.environment_step_ms or expected_step_ms
+    switch_ms = first.adaptation_switch_ms
+    target = common_clock_window(first, second, None, step_count)
+    failed = compare_clock_window(first, second, target, step_ms, switch_ms)
+    if first.adaptation_expected or second.adaptation_expected:
+        same = first.adaptation_ids == second.adaptation_ids and (
+            first.environment_step_ms == second.environment_step_ms and
+            first.adaptation_switch_ms == second.adaptation_switch_ms)
+        print("derived schedule (class, period, anchor per ID, step, switch): INFO (%s)" % (
+            "identical" if same else "differs"))
+
+    all_steps = [step_index(t, step_ms, switch_ms) for t in target]
+    if first.replay and second.replay:
+        return compare_replay_outputs(first, second, all_steps, max_diff_lines) or failed
+
+    steps = [s for s in all_steps if first.can_capture_by_step.get(s) and second.can_capture_by_step.get(s)]
+    if not steps:
+        print("closed-loop CAN comparison: SKIP (no common marker-grouped captures)")
+        return failed
+    timeouts = [sum(1 for row in run.step_rows if row.get("timed_out") == "1")
+                for run in (first, second)]
+    note = "; inconclusive, runs had timeouts %s" % timeouts if any(timeouts) else ""
+    kind = "recording-vs-replay" if first.replay or second.replay else "closed-loop"
+    for label, index in (("controller command frames", 0), ("environment CAN outputs", 1)):
+        differing = [s for s in steps
+                     if _split_marker_group(first.can_capture_by_step[s])[index] !=
+                     _split_marker_group(second.can_capture_by_step[s])[index]]
+        if differing:
+            print("%s %s by step: INFO (%d of %d steps differ, first at step %d%s)" % (
+                kind, label, len(differing), len(steps), differing[0], note))
+        else:
+            print("%s %s by step: INFO (identical over %d steps%s)" % (
+                kind, label, len(steps), note))
+    return failed
+
+
+def compare_replay_outputs(first: RunData, second: RunData, steps: Sequence[int],
+                           max_diff_lines: int) -> bool:
+    """F.7 environment determinism: two replays of one command sequence must match exactly."""
+    failed = False
+    missing = [s for s in steps if not first.can_capture_by_step.get(s) or
+               not second.can_capture_by_step.get(s)]
+    if not steps or missing:
+        print("replay CAN outputs by step: FAIL (%d steps, %d without a marker-grouped capture, "
+              "first at step %s)" % (len(steps), len(missing), missing[0] if missing else "-"))
+        failed = True
+    else:
+        for label, index in (("environment CAN outputs", 1), ("controller-ID CAN frames", 0)):
+            first_frames = [(s, f) for s in steps for f in
+                            _split_marker_group(first.can_capture_by_step[s])[index]]
+            second_frames = [(s, f) for s in steps for f in
+                             _split_marker_group(second.can_capture_by_step[s])[index]]
+            failed |= compare_records(
+                "replay %s by step" % label,
+                ["step=%d %s" % item for item in first_frames],
+                ["step=%d %s" % item for item in second_frames], max_diff_lines)
+    topics = sorted(set(first.ros_records) | set(second.ros_records))
+    if not topics:
+        print("replay ROS outputs: WARN (no ROS captures)")
+    for topic in topics:
+        one, two = first.ros_records.get(topic), second.ros_records.get(topic)
+        if not one or not two:
+            print("replay ROS output %s: FAIL (missing capture; run-a=%s run-b=%s)" % (
+                topic, len(one or []), len(two or [])))
+            failed = True
+        elif one == two:
+            print("replay ROS output %s: PASS (%d messages identical)" % (topic, len(one)))
+        else:
+            index = next((i for i, pair in enumerate(zip(one, two)) if pair[0] != pair[1]),
+                         min(len(one), len(two)))
+            print("replay ROS output %s: FAIL (%d vs %d messages, first difference at message %d)" % (
+                topic, len(one), len(two), index))
+            failed = True
+    return failed
 
 
 def ordered_unique(values: Sequence[int]) -> List[int]:
@@ -526,17 +533,19 @@ def compare_records(label: str, first: Sequence[str], second: Sequence[str], lim
     return True
 
 
-def compare_clock_window(first: RunData, second: RunData, target: Sequence[int], expected_step_ms: int) -> bool:
+def compare_clock_window(first: RunData, second: RunData, target: Sequence[int], expected_step_ms: int,
+                         switch_ms: int = 0) -> bool:
     first_values = clock_window_values(first, target)
     second_values = clock_window_values(second, target)
     missing = len(target) - min(len(first_values), len(second_values))
     first_intervals = [current - previous for previous, current in zip(first_values, first_values[1:])]
     second_intervals = [current - previous for previous, current in zip(second_values, second_values[1:])]
     complete = bool(target) and not missing and len(first_values) == len(second_values)
+    expected_intervals = [expected_increment(t, expected_step_ms, switch_ms) for t in target[:-1]]
     interval_ok = (
         len(first_intervals) == max(0, len(target) - 1) and
         len(second_intervals) == max(0, len(target) - 1) and
-        all(interval == expected_step_ms for interval in first_intervals + second_intervals)
+        first_intervals == expected_intervals and second_intervals == expected_intervals
     )
     if complete and interval_ok and first_values == second_values:
         print("logical clock records: PASS (%d common steps, %d..%d ms)" %
@@ -549,144 +558,42 @@ def compare_clock_window(first: RunData, second: RunData, target: Sequence[int],
     return True
 
 
-def fixed_prefix(values: Sequence[str], count: int) -> Sequence[str]:
-    return values[:count]
-
-
-def compare_fixed_capture(label: str, first: Sequence[str], second: Sequence[str], count: int,
-                          limit: int) -> bool:
-    if len(first) < count or len(second) < count:
-        print("%s: FAIL (need %d records; run-a=%d run-b=%d)" %
-              (label, count, len(first), len(second)))
-        return True
-    return compare_records(label, fixed_prefix(first, count), fixed_prefix(second, count), limit)
-
-
-def compare_step_capture(label: str, first: Dict[int, List[str]], second: Dict[int, List[str]],
-                         steps: Sequence[int], limit: int) -> bool:
-    missing_first = [step for step in steps if not first.get(step)]
-    missing_second = [step for step in steps if not second.get(step)]
-    if missing_first or missing_second:
-        print("%s: FAIL (missing step records; run-a=%s run-b=%s)" % (
-            label, missing_first[:8], missing_second[:8]))
-        return True
-
-    first_records = ["step=%d %s" % (step, record)
-                     for step in steps for record in first[step]]
-    second_records = ["step=%d %s" % (step, record)
-                      for step in steps for record in second[step]]
-    return compare_records(label, first_records, second_records, limit)
-
-
-def compare_runs(first: RunData, second: RunData, expected_substeps: int,
-                 handshake_count: Optional[int], start_sim_ms: Optional[int],
-                 max_diff_lines: int) -> bool:
-    comparison_failed = False
-    first_summary = normalized_summary_records(first)
-    second_summary = normalized_summary_records(second)
-    summary_result = "match" if first_summary == second_summary else "differ"
-    print("summary counters: INFO (%s; end-of-run totals are not a comparison criterion)" %
-          summary_result)
-
-    target = common_clock_window(first, second, start_sim_ms, handshake_count)
-    requested_count = handshake_count if handshake_count is not None else len(target)
-    if handshake_count is not None and len(target) < handshake_count:
-        print("logical clock window: FAIL (requested %d common steps, found %d)" %
-              (handshake_count, len(target)))
-        comparison_failed = True
-    comparison_failed |= compare_clock_window(first, second, target, expected_substeps)
-
-    if handshake_count is None:
-        print("fixed-window captures: WARN (pass --handshake-count to compare topic and payload prefixes)")
-        print("payload comparisons: SKIP (unbounded captures are not logically aligned)")
-        return comparison_failed
-
-    target_steps = [
-        sim_ms // expected_substeps
-        for sim_ms in target
-        if sim_ms % expected_substeps == 0
-    ]
-    comparison_failed |= compare_fixed_capture(
-        "handshake topic values", [str(value) for value in first.handshakes],
-        [str(value) for value in second.handshakes], requested_count, max_diff_lines)
-    if first.debug_steering_by_step or second.debug_steering_by_step:
-        comparison_failed |= compare_step_capture(
-            "controller steering records by step", first.debug_steering_by_step,
-            second.debug_steering_by_step, target_steps, max_diff_lines)
-    else:
-        comparison_failed |= compare_fixed_capture(
-            "controller steering records", first.debug_steering, second.debug_steering,
-            requested_count, max_diff_lines)
-
-    markers_present = bool(first.can_marker_steps or second.can_marker_steps)
-    if first.controller_can_by_step or second.controller_can_by_step:
-        comparison_failed |= compare_step_capture(
-            "controller CAN output records by step", first.controller_can_by_step,
-            second.controller_can_by_step, target_steps, max_diff_lines)
-    elif first.controller_can_records and second.controller_can_records:
-        comparison_failed |= compare_records(
-            "controller CAN output records", first.controller_can_records,
-            second.controller_can_records, max_diff_lines)
-    else:
-        if ("Raptor DBW node is used." in first.text and
-                "Raptor DBW node is used." in second.text):
-            print("controller CAN output records: INFO (Raptor commands are checked in the "
-                  "marker-grouped CAN capture)")
-        else:
-            print("controller CAN output records: WARN (service CAN logging missing in one or both runs)")
-
-    if markers_present:
-        comparison_failed |= compare_step_capture(
-            "CAN capture records by marker step", first.can_capture_by_step,
-            second.can_capture_by_step, target_steps, max_diff_lines)
-    elif first.can_capture_records and second.can_capture_records:
-        comparison_failed |= compare_records(
-            "CAN capture records (bounded run)", first.can_capture_records,
-            second.can_capture_records, max_diff_lines)
-    else:
-        print("CAN capture records (bounded run): WARN (candump artifact missing in one or both runs)")
-    return comparison_failed
-
-
 def main() -> int:
     argument_parser = argparse.ArgumentParser(description=__doc__)
     argument_parser.add_argument(
         "run", help="combined docker log file, directory of .log files, or - for stdin")
     argument_parser.add_argument("--compare", metavar="RUN", help="second run to compare with the first")
-    argument_parser.add_argument("--expected-substeps", type=int, default=10,
-                                 help="expected substeps in each controller handshake (default: 10)")
+    argument_parser.add_argument("--expected-step-ms", type=int, default=10,
+                                 help="step duration when the log does not report it (default: 10)")
     argument_parser.add_argument("--minimum-sim-ms", type=int, default=3000,
                                  help="minimum logical runtime for an individual run (default: 3000)")
     argument_parser.add_argument(
-        "--handshake-count", "--steps", dest="handshake_count", type=int,
+        "--steps", type=int,
         help="number of common positive logical-clock steps to compare")
-    argument_parser.add_argument(
-        "--start-sim-ms", type=int,
-        help="first common logical time to compare; default is the first common nonzero time")
     argument_parser.add_argument("--max-diff-lines", type=int, default=40,
                                  help="maximum comparison diff lines to print (default: 40)")
     arguments = argument_parser.parse_args()
 
-    if arguments.handshake_count is not None and arguments.handshake_count <= 0:
-        argument_parser.error("--handshake-count must be positive")
-    if arguments.expected_substeps <= 0:
-        argument_parser.error("--expected-substeps must be positive")
+    if arguments.steps is not None and arguments.steps <= 0:
+        argument_parser.error("--steps must be positive")
+    if arguments.expected_step_ms <= 0:
+        argument_parser.error("--expected-step-ms must be positive")
 
     first_run = load_run(arguments.run)
-    first_rows = reduce_run(first_run, arguments.expected_substeps, arguments.minimum_sim_ms)
+    first_rows = reduce_run(first_run, arguments.expected_step_ms, arguments.minimum_sim_ms)
     print("SIM-TIME RUN: %s" % arguments.run)
     format_table(first_rows)
 
     comparison_failed = False
     if arguments.compare:
         second_run = load_run(arguments.compare)
-        second_rows = reduce_run(second_run, arguments.expected_substeps, arguments.minimum_sim_ms)
+        second_rows = reduce_run(second_run, arguments.expected_step_ms, arguments.minimum_sim_ms)
         print("\nSIM-TIME COMPARISON RUN: %s" % arguments.compare)
         format_table(second_rows)
         print("\nDETERMINISM COMPARISON")
         comparison_failed = compare_runs(
-            first_run, second_run, arguments.expected_substeps,
-            arguments.handshake_count, arguments.start_sim_ms, arguments.max_diff_lines)
+            first_run, second_run, arguments.expected_step_ms,
+            arguments.steps, arguments.max_diff_lines)
         comparison_failed |= any(status == "FAIL" for _, status, _ in second_rows)
 
     return 1 if comparison_failed or any(status == "FAIL" for _, status, _ in first_rows) else 0

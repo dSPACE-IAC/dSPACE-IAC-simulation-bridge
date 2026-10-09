@@ -51,7 +51,6 @@ from launch_ros.actions import Node
 from launch_ros.actions import LifecycleNode
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import ThisLaunchFileDir
-from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python import get_package_share_directory
 
 from launch import LaunchDescription
@@ -170,7 +169,7 @@ def generate_launch_description():
     return LaunchDescription(
         [   
             DeclareLaunchArgument('interface', default_value='can0'),
-            DeclareLaunchArgument('interval_sec', default_value='0.01'),
+            DeclareLaunchArgument('interval_sec', default_value='0.05'),
             DeclareLaunchArgument('auto_configure', default_value='true'),
             DeclareLaunchArgument('auto_activate', default_value='true'),
             socket_can_receiver_node,
@@ -185,18 +184,18 @@ def generate_launch_description():
             socket_can_sender_configure_event_handler,
             socket_can_sender_activate_event_handler,
 
-            DeclareLaunchArgument('use_sim_time', default_value='false'),
+            DeclareLaunchArgument(
+                'dbw_params_file',
+                default_value=get_package_share_directory('raptor_dbw_can') +
+                '/launch/raptor_dbw_can.param.yaml'),
             Node(
                 package='raptor_dbw_can',
                 executable='raptor_dbw_can_node',
                 output='screen',
                 namespace='raptor_dbw_interface',
                 parameters=[
-                    {
-                        "dbw_dbc_file": dbc_file_path,
-                        "use_sim_time": ParameterValue(
-                            LaunchConfiguration('use_sim_time'), value_type=bool),
-                    }
+                    LaunchConfiguration('dbw_params_file'),
+                    {"dbw_dbc_file": dbc_file_path},
                 ],
                 remappings=[
                     ('/raptor_dbw_interface/can_rx', '/from_can_bus'),

@@ -23,7 +23,6 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
-from launch_ros.actions import SetParameter
 from launch.actions import (DeclareLaunchArgument, EmitEvent,
                             RegisterEventHandler)
 
@@ -141,8 +140,4 @@ def generate_launch_description():
     node_arguments.append(npc_controller_node)
     
     # node_arguments.append(can_parser_node)
-    clock_setting='false'
-    if "SIM_CLOCK_MODE" in os.environ:
-        clock_setting = os.environ['SIM_CLOCK_MODE']
-    
-    return LaunchDescription([SetParameter(name='use_sim_time', value=clock_setting)] + include_arguments+node_arguments)
+    return LaunchDescription(include_arguments+node_arguments)

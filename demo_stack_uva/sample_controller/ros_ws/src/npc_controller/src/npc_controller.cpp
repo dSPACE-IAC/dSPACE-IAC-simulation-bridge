@@ -6,7 +6,6 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include "npc_controller.hpp"
-#include "iac_sim_time/sim_clock_mode.hpp"
 #include <rclcpp/qos.hpp>
 #include <rclcpp/logging.hpp>
 #include <rclcpp_components/register_node_macro.hpp>
@@ -57,31 +56,11 @@ namespace controller
     {
         const auto history_size{declare_parameter("qos_history", 1)};
         const auto qos = rclcpp::QoS(rclcpp::KeepLast(history_size), rmw_qos_profile_iac);
-        const auto sim_qos = rclcpp::QoS(rclcpp::KeepLast(history_size), rmw_qos_profile_sim_clock);
 
         bool use_sim_time = false;
         if (!this->get_parameter("use_sim_time", use_sim_time))
         {
             use_sim_time = false;
-        }
-
-        if (const char *sim_clock_mode = std::getenv("SIM_CLOCK_MODE"))
-        {
-            const auto environment_setting = iac_sim_time::parse_sim_clock_mode(sim_clock_mode);
-            if (environment_setting.has_value())
-            {
-                use_sim_time = environment_setting.value();
-                this->set_parameter(rclcpp::Parameter("use_sim_time", use_sim_time));
-                RCLCPP_INFO(this->get_logger(),
-                            "SIM_CLOCK_MODE environment override: %s",
-                            use_sim_time ? "true" : "false");
-            }
-            else
-            {
-                RCLCPP_WARN(this->get_logger(),
-                            "Ignoring invalid SIM_CLOCK_MODE value '%s'; using use_sim_time parameter",
-                            sim_clock_mode);
-            }
         }
 
         this->simModeEnabled = use_sim_time;
@@ -109,6 +88,9 @@ namespace controller
         false);
         this->publish_ros_all = this->declare_parameter<bool>(
         "logging.publish_ros_all",
+        false);
+        this->controllerErrorPrinting = this->declare_parameter<bool>(
+        "logging.controller_errors",
         false);
 
         if (this->verbosePrinting) {
@@ -152,11 +134,18 @@ namespace controller
         }
         ct_input_sub_ = this->create_subscription<std_msgs::msg::Int32>("ct_input", qos, std::bind(&ControllerNode::receiveCtInput, this, std::placeholders::_1));
 
-        if(this->simModeEnabled)
-            simClockTime_ = this->create_subscription<rosgraph_msgs::msg::Clock>("clock", sim_qos, std::bind(&ControllerNode::simClockTimeCallback, this, std::placeholders::_1));
-
         // Load Track Paths
         std::string track_name = declare_parameter("track_name", "ims");
+
+        const std::string driving_line = declare_parameter<std::string>("driving_line", "center_line");
+        if (driving_line == "optimal_line") {
+            this->driveOnOptimalLine = true;
+        } else if (driving_line != "center_line") {
+            RCLCPP_WARN(this->get_logger(),
+                        "Unknown driving_line '%s' (expected 'center_line' or 'optimal_line'); using center_line",
+                        driving_line.c_str());
+        }
+        RCLCPP_INFO(this->get_logger(), "Driving on %s", this->driveOnOptimalLine ? "optimal_line" : "center_line");
 
         // Configure geodetic origin for global GPS -> local XY conversion.
         const double gps_origin_lat = this->declare_parameter<double>(
@@ -236,23 +225,15 @@ namespace controller
                 publisher_callback_group_);
             publisher_timers_.push_back(timer);
         };
-        // In deterministic sim mode the control functions are invoked once per /clock tick
-        // from simClockTimeCallback, so periodic timers must NOT be created here (they would
-        // double-invoke the control loop). Wall mode keeps the periodic timers unchanged.
-        if (shouldCreatePeriodicControlTimers(this->simModeEnabled)) {
-            register_timer("pure_pursuit_timer", [this]() { this->pure_pursuit(); });
-            register_timer("long_control_timer", [this]() { this->long_control(); });
-            register_timer("control_timer", [this]() { this->lateral_control(); });
-            register_timer("state_machine_timer", [this]() { this->state_machine(); });
-        }
-
-        // Set time increase step to 10 ms
-        sim_time_increase_msg_.data = 10;
+        // Timers use the node clock, so they follow /clock when use_sim_time is set.
+        register_timer("pure_pursuit_timer", [this]() { this->pure_pursuit(); });
+        register_timer("long_control_timer", [this]() { this->long_control(); });
+        register_timer("control_timer", [this]() { this->lateral_control(); });
+        register_timer("state_machine_timer", [this]() { this->state_machine(); });
 
         // Initialize publishers.
         vehicle_cmd_pub_ = this->create_publisher<autonoma_msgs::msg::VehicleInputs>("vehicle_inputs", qos);
         ct_report_pub_ = this->create_publisher<autonoma_msgs::msg::ToRaptor>("to_raptor", qos);
-        sim_time_increase_pub_ = this->create_publisher<std_msgs::msg::UInt16>("sim_time_increase", sim_qos);
         steering_cmd_pub_ = create_publisher<raptor_dbw_msgs::msg::SteeringCmd>("steering_cmd", 1);
         gear_cmd_pub_ = create_publisher<std_msgs::msg::UInt8>("gear_cmd", 1);
         throttle_cmd_pub_ = create_publisher<raptor_dbw_msgs::msg::AcceleratorPedalCmd>("accelerator_pedal_cmd", 1);
@@ -265,18 +246,9 @@ namespace controller
         base_point_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>("base_point", qos);
         debug_pub_ = this->create_publisher<npc_controller_msgs::msg::NPCDebug>("debug", qos);
 
-        if(this->simModeEnabled)
-        {
-            prev_time_ = double(this->sec) + double(this->nsec) * 1e-9;
-            prev_vel_time_ = double(this->sec) + double(this->nsec) * 1e-9;
-            prev_acc_time_ = double(this->sec) + double(this->nsec) * 1e-9;
-        }
-        else
-        {
-            prev_time_ = this->now().seconds() + this->now().nanoseconds() * 1e-9;
-            prev_vel_time_ = this->now().seconds() + this->now().nanoseconds() * 1e-9;
-            prev_acc_time_ = this->now().seconds() + this->now().nanoseconds() * 1e-9;
-        }
+        prev_time_ = this->now().seconds() + this->now().nanoseconds() * 1e-9;
+        prev_vel_time_ = this->now().seconds() + this->now().nanoseconds() * 1e-9;
+        prev_acc_time_ = this->now().seconds() + this->now().nanoseconds() * 1e-9;
 
         // Declare Parameters
         declare_parameter("vehicle.wheelbase", 2.971);
@@ -458,41 +430,6 @@ namespace controller
             reader_thread1 = std::thread([this]() {
                 can_reader_loop(this->can_socket, "CAN1");
             });
-        }
-    }
-
-    ControllerNode::~ControllerNode()
-    {
-        if (simModeEnabled) {
-            std::uint64_t marker_last_step = 0;
-            std::uint64_t marker_gaps = 0;
-            std::uint64_t marker_non_monotonic = 0;
-            {
-                std::lock_guard<std::mutex> lock(sim_step_marker_mutex_);
-                marker_last_step = sim_step_marker_sequence_.lastStep();
-                marker_gaps = sim_step_marker_sequence_.gapCount();
-                marker_non_monotonic = sim_step_marker_sequence_.nonMonotonicCount();
-            }
-            RCLCPP_INFO(
-                get_logger(),
-                "SIM_OBS controller summary=1 clock_received=%llu control_invocations=%llu "
-                "zero_clock_messages=%llu handshakes_sent=%llu last_clock_sec=%u "
-                "last_clock_nanosec=%u marker_frames=%llu marker_invalid=%llu "
-                "marker_last=%llu marker_gaps=%llu marker_non_monotonic=%llu "
-                "barrier_failures=%llu barrier_timeouts=%llu",
-                static_cast<unsigned long long>(sim_clock_messages_received_.load()),
-                static_cast<unsigned long long>(sim_control_invocations_.load()),
-                static_cast<unsigned long long>(sim_zero_clock_messages_.load()),
-                static_cast<unsigned long long>(sim_handshakes_sent_.load()),
-                sec,
-                nsec,
-                static_cast<unsigned long long>(sim_step_marker_frames_received_.load()),
-                static_cast<unsigned long long>(sim_step_marker_invalid_frames_.load()),
-                static_cast<unsigned long long>(marker_last_step),
-                static_cast<unsigned long long>(marker_gaps),
-                static_cast<unsigned long long>(marker_non_monotonic),
-                static_cast<unsigned long long>(sim_step_barrier_failures_.load()),
-                static_cast<unsigned long long>(sim_step_marker_wait_timeouts_.load()));
         }
     }
 

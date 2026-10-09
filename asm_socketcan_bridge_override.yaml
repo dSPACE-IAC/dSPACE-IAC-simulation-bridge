@@ -7,8 +7,26 @@ asm_socketcan_bridge_node:
 
     asm.host: "10.6.0.2"
 
-    use_sim_time: false
+    use_sim_time: true
 
+    # Sim mode: the bridge steps the simulation and waits for the stack's command frames on can0.
+    sim.step_marker.enabled: true
+    sim.readiness.min_clock_subscribers: 1
+    sim.readiness.settle_ms: 5000
+    sim.static.step_ms: 10
+    sim.static.required_command_ids: [1400, 1401, 1402, 1403, 1404]
+    sim.static.command_periods_ms: [10, 10, 10, 10, 500]
+    sim.static.command_first_due_ms: [10, 10, 10, 10, 510]
+    sim.timeout_ms: 20
+    sim.replay_file: ""
+
+    adaptation.mode: "on"
+    adaptation.duration_s: 5.0
+    adaptation.realtime_factor: 1.0
+
+    logging.sim_steps: false
+    logging.real_time_factor: true
+    logging.sim_observability: false
     logging.path: "/root/record_log"
     logging.cycle_time: false
     logging.verbose: false

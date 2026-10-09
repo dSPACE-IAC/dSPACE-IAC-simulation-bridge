@@ -9,6 +9,37 @@ asm_socketcan_bridge_node:
 
     use_sim_time: false
 
+    # Sim mode: the bridge steps the simulation and waits for the stack's command frames on can0.
+    sim.step_marker.enabled: true
+    sim.readiness.min_clock_subscribers: 1
+    sim.readiness.settle_ms: 1000
+    sim.static.step_ms: 10
+    sim.static.required_command_ids: [1400, 1401, 1402, 1403, 1404]
+    # Period in ms of each ID above (same order); the ID is awaited only at steps where it is due.
+    # first_due_ms is the simulation time of the first due step. The example stack sends 0x57C (1404)
+    # from a 500 ms ROS-time timer that fires one step late, so its first frame follows release 510.
+    # Every ID of the stack's cycle must be listed: one that arrives after the step closed is dropped.
+    sim.static.command_periods_ms: [10, 10, 10, 10, 500]
+    sim.static.command_first_due_ms: [10, 10, 10, 10, 510]
+    # Wall-time limit in ms (1-10000) for the stack's commands per step, from the release of /clock.
+    # On expiry the bridge warns and continues with the last accepted command values. Set it
+    # comfortably above the stack's slowest reaction time.
+    sim.timeout_ms: 20
+    # Adaptation (sim mode): "on" learns the command schedule during the first
+    # adaptation.duration_s simulated seconds (1 ms steps paced at adaptation.realtime_factor) and derives the
+    # step; "off" uses sim.static.* above.
+    adaptation.mode: "on"
+    adaptation.duration_s: 3.0
+    adaptation.realtime_factor: 1.0
+    logging.sim_steps: false
+    # Open-loop replay (sim mode): path of a sim_commands.csv written by a run with
+    # logging.sim_steps. The recorded commands replace CAN command intake; no stack is needed.
+    sim.replay_file: ""
+    # Sim mode: log the real-time factor every 30 simulated seconds.
+    logging.real_time_factor: false
+    # Sim mode: debug counters (SIM_OBS env_step/timeouts) once per second; the shutdown summary is always logged.
+    logging.sim_observability: false
+
     logging.path: "/root/record_log"
     logging.cycle_time: false
     logging.verbose: false
@@ -20,6 +51,9 @@ asm_socketcan_bridge_node:
     can.interface: "can0"
 
     connection.max_retries: 1
+    # Output intervals in ms: 0 disables an output, 1-1000 is the publication interval; other values
+    # are rejected with a warning and replaced by 10. In sim mode an interval that is not a multiple
+    # of the simulation step is published late by less than one step; the average rate stays exact.
     publish_intervals.publish_map2d_ego_position_ms: 10
     publish_intervals.publish_map2d_fellow1_position_ms: 10
     publish_intervals.publish_map2d_fellow2_position_ms: 10

@@ -3,6 +3,14 @@ __pycache__/
 /docker-compose.yml
 plan_*.md
 rosbags/*
-/sim-*.log
-/sim-*.txt
-/sim-*.summary
+/sim_time_test_logs/
+
+# Local debugging artifacts not included in the bridge change.
+/DEBUGGING_GUIDE.md
+/DEBUG_QUICK_REFERENCE.md
+/demo_stack_uva/sample_controller/runtime_scripts/analyze_debug_rosbag.py
+/demo_stack_uva/sample_controller/runtime_scripts/record_debug_rosbag.sh
+/dspace_bridge_ws/src/asm_socketcan_bridge/config/AV24_CAN1_MASTER_V0.dbc
+/dspace_bridge_ws/src/asm_socketcan_bridge/config/CAN2-INDY-V0.dbc
+/plan_simtime.md.bak
+/scripts/sim_env_capture.sh

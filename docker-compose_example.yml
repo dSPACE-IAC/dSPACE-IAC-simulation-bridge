@@ -17,6 +17,7 @@ services:
         - DS_ASM_SCENARIO_ID=1 # ID 1: IMS; ID 2: Putnam Park, ID 3: Monza, ID 4: Las Vegas Outside Course, ID 5: Laguna Seca (new versions, no pit), ID 6: Laguna Seca (old versions, with pit)
         - DS_START_COMMAND=deactivatepush2pass-start
         - DS_VEOS_REMOTE_CAPABLE=1
+        - DS_CUSTOM_DATA_NUM_SAMPLES=1
         - DS_ROUTE_ID=2 # 1: start on track, 2: start in pit lane
         - DS_INIT_S=400 # distance around track in meters
     shm_size: 256m
@@ -66,8 +67,6 @@ services:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_asm_socketcan_bridge:sim_pack_v4.0
     container_name: asm_socketcan_bridge
     restart: no
-    environment:
-        - "SIM_CLOCK_MODE=${SIM_CLOCK_MODE:-false}"
     volumes:
         - ./asm_socketcan_bridge_override.yaml:/root/dspace_bridge_ws/install/asm_socketcan_bridge/share/asm_socketcan_bridge/config/asm_socketcan_bridge.yaml
     cap_add:
@@ -107,10 +106,12 @@ services:
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
     container_name: demo_stack_uva
     environment:
-        - "SIM_CLOCK_MODE=${SIM_CLOCK_MODE:-false}"
         - CAR_NUM=78
     volumes:
-        - ./demo_stack_uva/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
+        - ./demo_stack_uva/sample_controller/runtime_scripts:/root/runtime_scripts
+        - ./demo_stack_uva/base.param_override.yaml:/root/ros_ws/install/npc_controller/share/npc_controller/config/base.param.yaml
+        - ./demo_stack_uva/laguna_seca.param_override.yaml:/root/ros_ws/install/npc_controller/share/npc_controller/config/laguna_seca.param.yaml
+        - ./demo_stack_uva/ims.param_override.yaml:/root/ros_ws/install/npc_controller/share/npc_controller/config/ims.param.yaml
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
     depends_on:
@@ -125,6 +126,8 @@ services:
     restart: no
     cap_add:
         - NET_ADMIN
+    volumes:
+        - ./raptor_dbw_override.yaml:/root/ros_dbw_ws/install/raptor_dbw_can/share/raptor_dbw_can/launch/raptor_dbw_can.param.yaml
     network_mode: "service:can-netns"
     ipc: "container:can-netns"
     depends_on:

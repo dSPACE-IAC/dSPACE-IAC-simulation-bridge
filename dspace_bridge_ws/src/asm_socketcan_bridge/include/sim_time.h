@@ -12,7 +12,7 @@ constexpr bool shouldCreateWallClockAcquisitionTimer(bool sim_mode) noexcept
 
 template <typename StepFunction, typename FramePublisher, typename PositionPublisher,
           typename MarkerPublisher, typename ClockPublisher>
-bool runSimTimeHandshake(
+bool runSimStepSequence(
   std::uint16_t step_count,
   StepFunction step,
   FramePublisher publish_sensor_frames,

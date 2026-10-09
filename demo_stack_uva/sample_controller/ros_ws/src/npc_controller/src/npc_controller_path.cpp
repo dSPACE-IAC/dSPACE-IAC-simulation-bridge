@@ -6,16 +6,16 @@
 namespace controller
 {
 
-    void ControllerNode::pure_pursuit(SimControlInputs *inputs)
+    void ControllerNode::pure_pursuit()
     {
         /**
          * @brief This function computes the steering angle using the pure pursuit algorithm
          * @return The steering angle in radians
          */
 
-        const VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const bool control_wheel_speed_received = inputs ? inputs->wheel_speed_received : wheel_speed_received;
-        const bool control_position_received = inputs ? inputs->position_received : position_received;
+        const VehicleState &control_state = vehicle_state_;
+        const bool control_wheel_speed_received = wheel_speed_received;
+        const bool control_position_received = position_received;
 
         // Check to see if we have enough localization data.
         if (!control_wheel_speed_received || !control_position_received || !path_loaded) {return;}
@@ -57,7 +57,7 @@ namespace controller
         log_counter++;
 
         // Log critical data every 10 cycles (~1Hz at 10Hz control loop)
-        if (log_counter % 10 == 0) {
+        if (controllerErrorPrinting && log_counter % 10 == 0) {
             RCLCPP_INFO(this->get_logger(),
                 "[CONTROL] s=%.1f opt_s=%.1f dist=%.3fm err=%.3fm | v=%.1f mph delta=%.3f rad lookahead=%.1f | state=%d",
                 center_line_s_, optimal_line_s_, optimal_line_distance_, optimal_line_signed_error_,
@@ -65,7 +65,7 @@ namespace controller
         }
 
         // Alert if deviation is excessive (> 1.5 meters from optimal line)
-        if (optimal_line_distance_ > 1.5) {
+        if (controllerErrorPrinting && optimal_line_distance_ > 1.5) {
             RCLCPP_WARN(this->get_logger(),
                 "[DEVIATION WARNING] Large deviation from optimal line: %.2f m at s=%.1f | signed_err=%.3f | pos=(%.2f, %.2f) | target=(%.2f, %.2f)",
                 optimal_line_distance_, optimal_line_s_, optimal_line_signed_error_,
@@ -73,7 +73,7 @@ namespace controller
         }
 
         // Alert if steering angle exceeds safe threshold (> 0.3 radians = ~17 degrees)
-        if (std::abs(delta) > 0.3) {
+        if (controllerErrorPrinting && std::abs(delta) > 0.3) {
             RCLCPP_WARN(this->get_logger(),
                 "[STEERING ALERT] High steering angle: %.3f rad (%.1f deg) | alpha=%.3f | dist=%.2f m | lookahead=%.1f m",
                 delta, delta * 57.2958, alpha, optimal_line_distance_, lookahead);

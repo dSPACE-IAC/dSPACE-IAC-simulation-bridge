@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <linux/can.h>
+#include <poll.h>
 #include <string>
 #include <unistd.h>
 
@@ -64,9 +65,37 @@ namespace asm_socketcan_bridge {
       if (this->receivedMessagePrinting)
         RCLCPP_INFO(get_logger(), "Can reader loop...");
 
+      struct pollfd socket_poll{};
+      socket_poll.fd = sock;
+      socket_poll.events = POLLIN;
+      const int poll_result = poll(&socket_poll, 1, 100);
+      if (poll_result < 0) {
+        if (errno == EINTR) {
+          continue;
+        }
+        if (stop_reader_.load()) {
+          break;
+        }
+        RCLCPP_ERROR(get_logger(), "CAN poll failed: %s", strerror(errno));
+        continue;
+      }
+      if (poll_result == 0) {
+        continue;
+      }
+      if ((socket_poll.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+        if (!stop_reader_.load()) {
+          RCLCPP_ERROR(get_logger(), "CAN socket poll reported revents=0x%X",
+                       static_cast<unsigned int>(socket_poll.revents));
+        }
+        break;
+      }
+      if ((socket_poll.revents & POLLIN) == 0) {
+        continue;
+      }
+
       int nbytes = read(sock, &in_frame, sizeof(in_frame));
       if (nbytes < 0) {
-        if (errno == EINTR) {
+        if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
           continue;
         }
         if (stop_reader_.load()) {
@@ -86,6 +115,21 @@ namespace asm_socketcan_bridge {
           RCLCPP_INFO(get_logger(), "received: %02X ", in_frame.data[i]);
       }
 
+      if (this->simModeEnabled) {
+        submitCommandFrame(in_frame);
+      } else {
+        applyCommandFrame(in_frame);
+      }
+    }
+
+    if (!stop_reader_.load() && sock >= 0) {
+      close(sock);
+    }
+  }
+
+  // Decodes one command frame into feedbackCmd; called by the reader (wall mode) or the step thread.
+  void AsmSocketCanBridgeNode::applyCommandFrame(const struct can_frame &in_frame)
+  {
       const auto warn_missing_metadata = [&](uint32_t message_id) {
         if (this->verbosePrinting) {
           RCLCPP_WARN(get_logger(),
@@ -395,11 +439,6 @@ namespace asm_socketcan_bridge {
             RCLCPP_INFO(get_logger(), "Message with unknown CAN ID received: 0x%03X [%d] ",in_frame.can_id, in_frame.can_dlc);
           break;
       }
-    }
-
-    if (!stop_reader_.load() && sock >= 0) {
-      close(sock);
-    }
   }
 
 } // namespace asm_socketcan_bridge

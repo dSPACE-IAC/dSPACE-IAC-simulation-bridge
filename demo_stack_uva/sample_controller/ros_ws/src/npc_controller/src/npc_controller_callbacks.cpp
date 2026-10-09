@@ -6,183 +6,8 @@
 namespace controller
 {
 
-    bool ControllerNode::waitForSimStepMarker(std::uint64_t expected_step)
-    {
-        if (expected_step == 0) {
-            return true;
-        }
-
-        std::unique_lock<std::mutex> lock(sim_step_marker_mutex_);
-        const bool marker_observed = sim_step_marker_cv_.wait_for(
-            lock,
-            std::chrono::milliseconds(1000),
-            [this, expected_step]() {
-                return sim_step_marker_sequence_.lastStep() >= expected_step;
-            });
-        const auto last_step = sim_step_marker_sequence_.lastStep();
-        lock.unlock();
-
-        if (marker_observed && last_step == expected_step) {
-            return true;
-        }
-        if (!marker_observed) {
-            sim_step_marker_wait_timeouts_.fetch_add(1);
-        }
-        sim_step_barrier_failures_.fetch_add(1);
-        RCLCPP_ERROR_ONCE(
-            get_logger(),
-            "SIM_STEP controller barrier failed expected=%llu last_received=%llu timed_out=%s",
-            static_cast<unsigned long long>(expected_step),
-            static_cast<unsigned long long>(last_step),
-            marker_observed ? "false" : "true");
-        return false;
-    }
-
-    void ControllerNode::simClockTimeCallback(const rosgraph_msgs::msg::Clock &msg)
-    {
-        if (!this->simModeEnabled) {
-            return;
-        }
-
-        const auto clock_count = sim_clock_messages_received_.fetch_add(1) + 1;
-        const double sim_time_seconds = static_cast<double>(msg.clock.sec) +
-                    static_cast<double>(msg.clock.nanosec) * 1e-9;
-        this->sec = msg.clock.sec;
-        this->nsec = msg.clock.nanosec;
-        sim_time_snapshot_seconds_.store(sim_time_seconds, std::memory_order_relaxed);
-        const auto expected_step = simStepForClockMessage(clock_count);
-        if (shouldWaitForSimStepMarker(this->simModeEnabled, this->useRaptorDbwNode) &&
-            !waitForSimStepMarker(expected_step)) {
-            rclcpp::shutdown();
-            return;
-        }
-        pending_sim_clock_ = msg;
-        pending_sim_clock_count_ = clock_count;
-        pending_sim_step_ = expected_step;
-        sim_bestpos_gate_.observeClock(msg.clock.sec, msg.clock.nanosec);
-        processPendingSimClock();
-    }
-
-    void ControllerNode::processPendingSimClock()
-    {
-        if (!pending_sim_clock_) {
-            return;
-        }
-
-        const auto &msg = *pending_sim_clock_;
-        const double sim_time_seconds = static_cast<double>(msg.clock.sec) +
-                static_cast<double>(msg.clock.nanosec) * 1e-9;
-        const auto clock_count = pending_sim_clock_count_;
-        const auto expected_step = pending_sim_step_;
-        if (!sim_bestpos_gate_.readyForStep(expected_step)) {
-            if (sim_bestpos_gate_.hasMismatchedPosition()) {
-                RCLCPP_ERROR_ONCE(
-                    get_logger(),
-                    "SIM_BESTPOS controller waiting for matching position: clock=%d.%09u bestpos=%d.%09u",
-                    msg.clock.sec,
-                    msg.clock.nanosec,
-                    pending_sim_bestpos_->header.stamp.sec,
-                    pending_sim_bestpos_->header.stamp.nanosec);
-            }
-            return;
-        }
-
-        if (expected_step > 0) {
-            applyBestPosMessage(pending_sim_bestpos_);
-            pending_sim_bestpos_.reset();
-        }
-        current_sim_step_ = expected_step;
-
-        SimControlInputs step_inputs = captureSimControlInputs(feedback_mutex_, [this]() {
-            SimControlInputs inputs;
-            inputs.vehicle_state = vehicle_state_;
-            inputs.previous_state = previous_state_;
-            inputs.prev_time = prev_time_;
-            inputs.non_brake_decel = non_brake_decel_;
-            inputs.track_flag = track_flag_;
-            inputs.vehicle_flag = vehicle_flag_;
-            inputs.sys_state = sys_state_;
-            inputs.round_target_speed = target_speed_;
-            inputs.throttle_position = reported_throttle_;
-            inputs.current_gear = current_gear_;
-            inputs.engine_rpm = engine_speed_;
-            inputs.engine_running = engine_running_;
-            inputs.position_received = position_received;
-            inputs.wheel_speed_received = wheel_speed_received;
-            inputs.ct_input = ct_input_;
-            inputs.estop = estop_;
-            return inputs;
-        });
-        step_inputs.sim_time = sim_time_seconds;
-        step_inputs.sim_step = expected_step;
-        const bool control_ran = runSimTimeControlStep(
-            msg.clock.sec,
-            msg.clock.nanosec,
-            [this, &step_inputs]() {
-                sim_control_invocations_.fetch_add(1);
-                step_inputs.vehicle_state.ax = vel_filter_.processSample(
-                    static_cast<float>(step_inputs.vehicle_state.ax));
-                pure_pursuit(&step_inputs);
-                long_control(&step_inputs);
-                lateral_control(&step_inputs);
-                state_machine(&step_inputs);
-                std::lock_guard<std::mutex> lock(feedback_mutex_);
-                vehicle_state_.throttle = step_inputs.vehicle_state.throttle;
-                vehicle_state_.brake = step_inputs.vehicle_state.brake;
-                ct_input_ = step_inputs.ct_input;
-            },
-            [this]() { sim_time_increase_pub_->publish(sim_time_increase_msg_); });
-        if (!control_ran) {
-            sim_zero_clock_messages_.fetch_add(1);
-        }
-        const auto handshake_count = sim_handshakes_sent_.fetch_add(1) + 1;
-        std::uint64_t marker_last_step = 0;
-        std::uint64_t marker_gaps = 0;
-        std::uint64_t marker_non_monotonic = 0;
-        {
-            std::lock_guard<std::mutex> lock(sim_step_marker_mutex_);
-            marker_last_step = sim_step_marker_sequence_.lastStep();
-            marker_gaps = sim_step_marker_sequence_.gapCount();
-            marker_non_monotonic = sim_step_marker_sequence_.nonMonotonicCount();
-        }
-        RCLCPP_INFO_THROTTLE(
-            get_logger(),
-            *this->get_clock(),
-            1000,
-            "SIM_OBS controller clock_received=%llu sim_time_sec=%u sim_time_nanosec=%u "
-            "control_invocations=%llu zero_clock_messages=%llu handshakes_sent=%llu control_ran=%s "
-            "marker_frames=%llu marker_invalid=%llu marker_last=%llu marker_gaps=%llu "
-            "marker_non_monotonic=%llu barrier_failures=%llu barrier_timeouts=%llu",
-            static_cast<unsigned long long>(clock_count),
-            this->sec,
-            this->nsec,
-            static_cast<unsigned long long>(sim_control_invocations_.load()),
-            static_cast<unsigned long long>(sim_zero_clock_messages_.load()),
-            static_cast<unsigned long long>(handshake_count),
-            control_ran ? "true" : "false",
-            static_cast<unsigned long long>(sim_step_marker_frames_received_.load()),
-            static_cast<unsigned long long>(sim_step_marker_invalid_frames_.load()),
-            static_cast<unsigned long long>(marker_last_step),
-            static_cast<unsigned long long>(marker_gaps),
-            static_cast<unsigned long long>(marker_non_monotonic),
-            static_cast<unsigned long long>(sim_step_barrier_failures_.load()),
-            static_cast<unsigned long long>(sim_step_marker_wait_timeouts_.load()));
-
-        pending_sim_clock_.reset();
-        pending_sim_clock_count_ = 0;
-        pending_sim_step_ = 0;
-        sim_bestpos_gate_.reset();
-    }
-
     void ControllerNode::bestpos_callback(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg)
     {
-        if (simModeEnabled) {
-            pending_sim_bestpos_ = msg;
-            sim_bestpos_gate_.observeBestPos(msg->header.stamp.sec, msg->header.stamp.nanosec);
-            processPendingSimClock();
-            return;
-        }
-
         applyBestPosMessage(msg);
     }
 
@@ -248,16 +73,11 @@ namespace controller
         double rr = this->ws_rear_right;
         double avg_ws = (fl + fr + rl + rr) / 4.0 / 3.6;
 
-        double current_time;
-        if(this->simModeEnabled) {
-            current_time = sim_time_snapshot_seconds_.load(std::memory_order_relaxed);
-        }
-        else {current_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;}
+        const double current_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;
 
         double dt = current_time - prev_time_;
         double raw_acceleration = (avg_ws - previous_state_.vx) / dt;
-        double accel = this->simModeEnabled ? raw_acceleration :
-            vel_filter_.processSample(static_cast<float>(raw_acceleration));
+        double accel = vel_filter_.processSample(static_cast<float>(raw_acceleration));
         previous_state_ = vehicle_state_;
         prev_time_ = current_time;
         vehicle_state_.vx = avg_ws; // Convert to m/s
@@ -283,16 +103,11 @@ namespace controller
         double rr = msg->rear_right;
         double avg_ws = (fl + fr + rl + rr) / 4.0 / 3.6;
 
-        double current_time;
-        if(this->simModeEnabled) {
-            current_time = sim_time_snapshot_seconds_.load(std::memory_order_relaxed);
-        }
-        else {current_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;}
+        const double current_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;
 
         double dt = current_time - prev_time_;
         double raw_acceleration = (avg_ws - previous_state_.vx) / dt;
-        double accel = this->simModeEnabled ? raw_acceleration :
-            vel_filter_.processSample(static_cast<float>(raw_acceleration));
+        double accel = vel_filter_.processSample(static_cast<float>(raw_acceleration));
         previous_state_ = vehicle_state_;
         prev_time_ = current_time;
         vehicle_state_.vx = avg_ws; // Convert to m/s

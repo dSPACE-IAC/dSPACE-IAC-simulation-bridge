@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    use_sim_time: false
+    use_sim_time: true
     disableStateMachine: false
     
     can.can1_dbc_path: "config/CAN1-INDY-V26.dbc"
@@ -18,6 +18,10 @@
     logging.received_decoded_frames: false
     logging.sent_can_frames: false
     logging.publish_ros_all: false
+    logging.controller_errors: false
 
     # track_name: "ims"
     track_name: "laguna_seca"
+
+    # "center_line" or "optimal_line"
+    driving_line: "optimal_line"

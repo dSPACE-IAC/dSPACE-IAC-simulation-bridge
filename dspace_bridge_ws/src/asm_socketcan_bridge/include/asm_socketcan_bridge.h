@@ -25,6 +25,8 @@
 #include <array>
 #include <utility>
 #include <cmath>
+#include <condition_variable>
+#include <functional>
 
 #include <rclcpp/create_timer.hpp>
 #include <rclcpp/executors/multi_threaded_executor.hpp>
@@ -77,6 +79,11 @@
 #include "dbc_structure.h"
 #include "signal_codec.h"
 #include "sim_time.h"
+#include "command_latch.h"
+#include "output_schedule.h"
+#include "step_coordinator.h"
+#include "command_replay.h"
+#include "adaptation_detector.h"
 
 namespace asm_socketcan_bridge
 {
@@ -124,9 +131,20 @@ namespace asm_socketcan_bridge
         rclcpp::CallbackGroup::SharedPtr publisher_callback_group_;
         std::vector<rclcpp::TimerBase::SharedPtr> publisher_timers_;
 
+        // Environment outputs: timers in wall mode, step schedules in sim mode (F.3).
+        enum class OutputKind { Can, Ros };
+        struct RegisteredOutput {
+            std::string name;
+            std::uint32_t interval_ms;
+            OutputKind kind;
+            std::function<void()> action;
+        };
+        std::vector<RegisteredOutput> registered_outputs_;
+        OutputSchedule canOutputSchedule_;
+        OutputSchedule rosOutputSchedule_;
+
         // Subsciber
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr useCustomRaceControlSource_;
-        rclcpp::Subscription<std_msgs::msg::UInt16>::SharedPtr simTimeIncrease_;
 
         // reader threads
         std::thread reader_thread1;
@@ -144,13 +162,55 @@ namespace asm_socketcan_bridge
         bool sentMessagePrinting = false;
 
         bool simModeEnabled = false;
+        std::uint32_t sim_step_ms_ = 10;
+        bool simStepMarkerEnabled_ = true;
+        std::int64_t readinessMinClockSubscribers_ = 1;
+        std::int64_t readinessSettleMs_ = 1000;
+        std::vector<std::uint32_t> staticRequiredCommandIds_;
+        // Adaptation period (F.4): learns the command schedule from the first simulated seconds.
+        bool adaptationEnabled_ = true;
+        double adaptationDurationS_ = 3.0;
+        double adaptationRealtimeFactor_ = 1.0;
+        AdaptationConfig adaptationConfig_;
+        std::int64_t activeTimeoutMs_ = 20;
+        std::vector<std::uint32_t> enabledOutputIntervalsMs_;
+        // Guarded by coordinator_mutex_: the reader thread feeds the detector.
+        std::optional<AdaptationDetector> adaptationDetector_;
+        std::int64_t lastReleaseNs_ = 0;
+        std::uint64_t lastReleaseTimeMs_ = 0;
+        bool timeMismatchReported_ = false;
+        bool logSimSteps_ = false;
+        // Wall time per step split into environment work and waiting for the stack (F.6).
+        struct RtfAccumulator {
+            std::uint64_t sim_ms = 0;
+            std::int64_t env_ns = 0;
+            std::int64_t wait_ns = 0;
+        };
+        bool logRealTimeFactor_ = false;
+        bool logSimObservability_ = false;
+        static constexpr std::uint64_t kRealtimeFactorLogIntervalMs = 30000;
+        RtfAccumulator rtfTotal_;
+        std::uint64_t rtfNextLogMs_ = kRealtimeFactorLogIntervalMs;
+        // Environment-owned stepping (F.2): coordinator state is shared with the CAN reader thread.
+        std::optional<StepCoordinator> stepCoordinator_;
+        std::mutex coordinator_mutex_;
+        std::condition_variable coordinator_cv_;
+        std::thread stepThread_;
+        std::atomic<bool> stop_stepping_{false};
+        std::unordered_map<std::uint32_t, const Signal *> command_counter_signals_;
+        std::ofstream simStepLog_;
+        std::ofstream simCommandLog_;
+        // Open-loop replay (PF10): recorded per-step commands replace CAN command intake.
+        bool replayActive_ = false;
+        std::vector<ReplayStep> replaySteps_;
+        std::atomic<std::uint64_t> replayStepsDone_{0};
+        std::int64_t lastTimeoutWarnNs_ = 0;
+        std::uint64_t suppressedTimeoutWarnings_ = 0;
+        std::atomic<std::uint64_t> sim_time_mismatches_{0};
         bool numberWarningSent = false;
         bool stackFeedbackConnectionWarningSent = false;
-        std::atomic<std::uint64_t> sim_handshakes_received_{0};
-        std::atomic<std::uint64_t> sim_requested_substeps_{0};
         std::atomic<std::uint64_t> sim_substeps_completed_{0};
         std::atomic<std::uint64_t> sim_clock_publications_{0};
-        std::atomic<std::uint64_t> sim_non_ten_handshakes_{0};
         std::atomic<std::uint64_t> sim_substep_mismatches_{0};
         std::atomic<std::uint64_t> sim_step_markers_sent_{0};
         std::atomic<std::uint64_t> sim_step_marker_write_failures_{0};
@@ -187,9 +247,12 @@ namespace asm_socketcan_bridge
         ASMBus canBusStorage_{};
         ASMBus *canBus = nullptr;
         VESIResultData feedbackCmd;
+        CommandLatch<VESIResultData> commandLatch_;
+        StaleCounterTracker<kCommandCounterSlotCount> staleCommandCounters_;
 
         void configureConnectionParameters();
         void configurePublisherTimers();
+        void startOutputs();
         void configureRuntimeParameters();
         bool connectToSimulation();
         bool initializeCanInterface();
@@ -203,12 +266,33 @@ namespace asm_socketcan_bridge
         void simClockTimeCallback();
         void initialSimClockPublish();
         void sendVehicleFeedbackToSimulation();
+        void latchCommandSnapshot();
         void subscribeVehicleCommandsCallback();
         void subscribeRaptorCommandsCallback();
         void switchRaceControlSourceCallback(const std_msgs::msg::Bool &msg);
-        void simTimeIncreaseCallback(const std_msgs::msg::UInt16 &msg);
-        void publishCanMessagesForSimStep();
         bool publishSimStepMarker(std::uint64_t step);
+
+        // Environment-owned stepping
+        void configureSimStepping();
+        void buildCommandCounterLookup();
+        void submitCommandFrame(const struct can_frame &frame);
+        void applyCommandFrame(const struct can_frame &frame);
+        void environmentStepLoop();
+        bool runEnvironmentStep(const ReplayStep *replay = nullptr);
+        bool runReplay();
+        void logAppliedCommands(
+            std::uint64_t step, std::uint64_t t_ms, const std::vector<SnapshotEntry> &snapshot);
+        bool runAdaptation();
+        void finishAdaptation(const DerivedSchedule &derived, std::uint64_t switch_ms);
+        void writeAdaptationReport(const DerivedSchedule &derived, std::uint64_t switch_ms);
+        bool waitForSimReadiness();
+        bool waitForManeuverActive();
+        void waitForStepClose();
+        void logStepRecord(const StepRecord &record);
+        void accountRealTimeFactor(
+            const StepRecord &record, std::int64_t step_start_ns, std::int64_t step_end_ns,
+            std::uint64_t timeouts);
+        void warnStepTimeout(const StepRecord &record, std::uint64_t total_timeouts);
 
         // Publishing functions
         void publish_map2d_ego_position();

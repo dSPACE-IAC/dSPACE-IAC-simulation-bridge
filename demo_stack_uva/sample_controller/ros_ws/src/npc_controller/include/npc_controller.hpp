@@ -28,7 +28,6 @@
 #include <std_msgs/msg/u_int8.hpp>
 #include <std_msgs/msg/u_int16.hpp>
 #include <std_msgs/msg/bool.hpp>
-#include "rosgraph_msgs/msg/clock.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/clock.hpp>
@@ -57,9 +56,6 @@
 #include "dbw_state_machine.hpp"
 #include "lap_state_machine.hpp"
 #include "iac_qos.h"
-#include "iac_sim_time/sim_step_marker.hpp"
-#include "sim_clock_control.h"
-#include "sim_bestpos_gate.h"
 #include "signal_codec.h"
 
 #include "npc_controller_msgs/msg/npc_debug.hpp"
@@ -108,34 +104,11 @@ namespace controller
         std::vector<PathPoint> points;
     };
 
-    struct SimControlInputs
-    {
-        VehicleState vehicle_state{};
-        VehicleState previous_state{};
-        double prev_time = 0.0;
-        double non_brake_decel = 0.0;
-        Rc2TrackFlags track_flag = Rc2TrackFlags::Rc2TrackFlag_Null;
-        Rc2VehFlags vehicle_flag = Rc2VehFlags::Rc2VehFlag_Null;
-        SysState sys_state = SysState::SS255_DEFAULT;
-        int round_target_speed = 0;
-        float throttle_position = 0.0F;
-        int8_t current_gear = 0;
-        float engine_rpm = 0.0F;
-        bool engine_running = false;
-        bool position_received = false;
-        bool wheel_speed_received = false;
-        int ct_input = 0;
-        bool estop = false;
-        double sim_time = 0.0;
-        std::uint64_t sim_step = 0;
-    };
-
     class ControllerNode : public rclcpp::Node
     {
 
     public:
         explicit ControllerNode(const rclcpp::NodeOptions &options);
-        ~ControllerNode() override;
 
     private:
         rclcpp::TimerBase::SharedPtr pure_pursuit_timer_;
@@ -148,6 +121,8 @@ namespace controller
         bool receivedDecodedMessagePrinting = false;
         bool sentMessagePrinting = false;
         bool publish_ros_all = false;
+        bool controllerErrorPrinting = false;
+        bool driveOnOptimalLine = false;
         bool useRaptorDbwNode = false;
         bool disableStateMachine = false;
 
@@ -193,7 +168,6 @@ namespace controller
         const int max_gear = 6;
 
         // Publishers.
-        std_msgs::msg::UInt16 sim_time_increase_msg_;
         autonoma_msgs::msg::VehicleInputs vehicle_cmd_msg_;
         rclcpp::Publisher<autonoma_msgs::msg::VehicleInputs>::SharedPtr vehicle_cmd_pub_;
         rclcpp::Publisher<raptor_dbw_msgs::msg::SteeringCmd>::SharedPtr steering_cmd_pub_;
@@ -202,27 +176,9 @@ namespace controller
         rclcpp::Publisher<raptor_dbw_msgs::msg::AcceleratorPedalCmd>::SharedPtr throttle_cmd_pub_;
         rclcpp::Publisher<autonoma_msgs::msg::ToRaptor>::SharedPtr ct_report_pub_;
         rclcpp::Publisher<npc_controller_msgs::msg::CtReport>::SharedPtr npc_ct_report_pub_;
-        rclcpp::Publisher<std_msgs::msg::UInt16>::SharedPtr sim_time_increase_pub_;
         rclcpp::CallbackGroup::SharedPtr publisher_callback_group_;
         std::vector<rclcpp::TimerBase::SharedPtr> publisher_timers_;
 
-        std::atomic<std::uint64_t> sim_clock_messages_received_{0};
-        std::atomic<std::uint64_t> sim_control_invocations_{0};
-        std::atomic<std::uint64_t> sim_zero_clock_messages_{0};
-        std::atomic<std::uint64_t> sim_handshakes_sent_{0};
-        std::atomic<std::uint64_t> sim_step_marker_frames_received_{0};
-        std::atomic<std::uint64_t> sim_step_marker_invalid_frames_{0};
-        std::atomic<std::uint64_t> sim_step_marker_wait_timeouts_{0};
-        std::atomic<std::uint64_t> sim_step_barrier_failures_{0};
-        std::mutex sim_step_marker_mutex_;
-        std::condition_variable sim_step_marker_cv_;
-        iac_sim_time::SimStepMarkerSequence sim_step_marker_sequence_;
-        SimBestPosGate sim_bestpos_gate_;
-        std::optional<rosgraph_msgs::msg::Clock> pending_sim_clock_;
-        novatel_oem7_msgs::msg::BESTPOS::SharedPtr pending_sim_bestpos_;
-        std::uint64_t pending_sim_clock_count_ = 0;
-        std::uint64_t pending_sim_step_ = 0;
-        std::uint64_t current_sim_step_ = 0;
         // Debug Messages
         rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odometry_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr target_point_pub_;
@@ -251,14 +207,10 @@ namespace controller
         uint8_t veh_flag = 0;
         uint8_t round_target_speed = 0;
         uint8_t sys_state = 0;
-        rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr simClockTime_;
         rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr ct_input_sub_;
         rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr estop_sub_;
 
         // Callbacks
-        void simClockTimeCallback(const rosgraph_msgs::msg::Clock &msg);
-        void processPendingSimClock();
-        bool waitForSimStepMarker(std::uint64_t expected_step);
         void bestpos_callback(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg);
         void applyBestPosMessage(const novatel_oem7_msgs::msg::BESTPOS::SharedPtr msg);
         void wheel_speed_callback();
@@ -270,24 +222,21 @@ namespace controller
         void receivePtReport();
         void receivePtReport_ros_msg(const npc_controller_msgs::msg::PtReport::SharedPtr msg);
         void receiveEstop(const std_msgs::msg::Bool::SharedPtr msg);
-        void long_control(SimControlInputs *inputs = nullptr);
-        void lateral_control(SimControlInputs *inputs = nullptr);
+        void long_control();
+        void lateral_control();
 
-        uint8_t get_gear_shift_cmd(SimControlInputs *inputs = nullptr);
+        uint8_t get_gear_shift_cmd();
 
         // Helper Functions
         Path load_path(std::string filename);
-        void pure_pursuit(SimControlInputs *inputs = nullptr);
+        void pure_pursuit();
         PathPoint pure_pursuit_target_point(const Path &path, int start_index, const PathPoint &position, double lookahead) const;
-        double calc_acceleration(double setpoint, SimControlInputs *inputs = nullptr);
-        void calc_throttle(double desired_acceleration, SimControlInputs *inputs = nullptr);
-        void calc_brake(double desired_acceleration, SimControlInputs *inputs = nullptr);
-        void state_machine(SimControlInputs *inputs = nullptr);
+        double calc_acceleration(double setpoint);
+        void calc_throttle(double desired_acceleration);
+        void calc_brake(double desired_acceleration);
+        void state_machine();
         int calculate_base_projections(const Path &path, const PathPoint &current_position);
 
-        uint32_t nsec = 0;
-        uint32_t sec = 0;
-        std::atomic<double> sim_time_snapshot_seconds_{0.0};
         bool simModeEnabled = false;
 
         // Parameters

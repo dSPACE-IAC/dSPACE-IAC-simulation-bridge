@@ -70,6 +70,7 @@ add_executable(
   src/asm_socketcan_bridge_can_reader.cpp
   src/asm_socketcan_bridge_can_transport.cpp
   src/asm_socketcan_bridge_setup.cpp
+  src/asm_socketcan_bridge_sim_step.cpp
   src/asm_socketcan_bridge_sensor_converters.cpp
   src/asm_socketcan_bridge_sensor_publishers.cpp
   src/asm_socketcan_bridge_can_publishers.cpp
@@ -96,9 +97,29 @@ if(BUILD_TESTING)
   target_include_directories(sim_time_test PRIVATE include)
   add_test(NAME asm_socketcan_bridge_sim_time COMMAND sim_time_test)
 
+  add_executable(command_latch_test test/command_latch_test.cpp)
+  target_include_directories(command_latch_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_command_latch COMMAND command_latch_test)
+
+  add_executable(output_schedule_test test/output_schedule_test.cpp)
+  target_include_directories(output_schedule_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_output_schedule COMMAND output_schedule_test)
+
+  add_executable(step_coordinator_test test/step_coordinator_test.cpp)
+  target_include_directories(step_coordinator_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_step_coordinator COMMAND step_coordinator_test)
+
+  add_executable(adaptation_detector_test test/adaptation_detector_test.cpp)
+  target_include_directories(adaptation_detector_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_adaptation_detector COMMAND adaptation_detector_test)
+
   add_executable(signal_codec_test test/signal_codec_test.cpp src/signal_codec.cpp)
   target_include_directories(signal_codec_test PRIVATE include)
   add_test(NAME asm_socketcan_bridge_signal_codec COMMAND signal_codec_test)
+
+  add_executable(command_replay_test test/command_replay_test.cpp)
+  target_include_directories(command_replay_test PRIVATE include)
+  add_test(NAME asm_socketcan_bridge_command_replay COMMAND command_replay_test)
 endif()
 
 target_include_directories(

@@ -47,8 +47,6 @@ x-dspace_foxglove_bridge: &dspace_foxglove_bridge
 
 x-demo_stack: &demo_stack
     image: 722180079256.dkr.ecr.eu-central-1.amazonaws.com/dspace/iac_uva_demo_av_stack:sim_pack_v4.0
-    env_file:
-        - docker-env.stack
     volumes:
         - ./mnt/ims.param_override.yaml:/root/ros_ws/src/npc_controller/config/ims.param.yaml
 

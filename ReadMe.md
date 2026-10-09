@@ -93,7 +93,7 @@ Example workflow for asm_socketcan_bridge including Foxglove:
 3. Copy `docker-compose_example.yml` and rename to `docker-compose.yml`.
 4. Adjust parameters in `docker-compose.yml` to match your registry tags and license server. Update the `dspace_bridge` service to point to the bridge variant you want to launch (socketcan, ros2, aurelion or dev).
 5. Provide your custom bridge parameters by editing `asm_socketcan_bridge_override.yaml` and removing the comment in the volume mount for the bridge. E.g. adjust the `publish_intervals.*` values whenever you want to slow down or speed up individual CAN and ROS2 message publishers.
-6. Set `SIM_CLOCK_MODE=true` when deterministic simulation stepping is required. The Compose configuration passes this value to the bridge and demo controller; it overrides the bridge YAML `use_sim_time` value.
+6. Set `use_sim_time: true` in the YAML files of the bridge (`asm_socketcan_bridge_override.yaml`), the demo controller (`demo_stack_uva/base.param_override.yaml`) and the Raptor DBW node (`raptor_dbw_override.yaml`) when deterministic simulation stepping is required. These YAML files are the only source of this setting; there is no environment variable override, so all three must agree.
 7. Open a terminal and execute `docker compose up`.
 8. Start Lichtblick
     1. Open Lichtblick for visualisation either the local container `localhost:8080` or from the Lichtblick suite `https://lichtblick-suite.github.io/lichtblick/`
@@ -107,23 +107,67 @@ Example workflow for asm_socketcan_bridge including Foxglove:
     5. `./entrypoint.sh`
 10. To shut down the simulation, open another terminal and execute `docker compose down --remove-orphans`
 
-### Sim-time observability
-For deterministic runs, set `SIM_CLOCK_MODE=true` for the bridge and stack, and for `raptor_dbw` when that path is selected. Supply `DS_CMU_SERVER` through your local environment or secret manager; do not store the license-server address in this repository. The base Compose file's `DS_CMU_SERVER=xxx` is only a placeholder and must be overridden. Also set `DS_CUSTOM_DATA_NUM_SAMPLES=1`. Without this value, the first `requestCustomData()` call can block inside the 1 ms V-ESI sub-step loop.
+### Simulation-time setup
+For simulation-time mode, set `use_sim_time: true` in the bridge, stack and (when that path is selected) `raptor_dbw` YAML files, see step 6 above. Set `DS_CUSTOM_DATA_NUM_SAMPLES=1`. Without this value, the first `requestCustomData()` call can block inside the 1 ms V-ESI sub-step loop.
 
-The bridge and controller emit sampled `SIM_OBS` counters in sim mode. Capture the relevant service logs and reduce one run with:
+The bridge emits a `SIM_OBS ... summary=1` line at shutdown in sim mode; sampled per-second `SIM_OBS` counters are logged only when `logging.sim_observability: true`. The `demo_stack_uva/ims.param_override.yaml` override exposes `connection.useRaptorDbwNode` so direct CAN and Raptor DBW runs can be selected without rebuilding the controller image.
 
-```bash
-docker compose logs --no-color dspace_restbus_bridge demo_stack_uva > sim-run.log
-python3 scripts/sim_time_observability.py sim-run.log
-```
+### Run modes and simulation time
+The `asm_socketcan_bridge` supports two run modes:
 
-Repeat the same scenario and compare both runs:
+| Mode | Selection | Time base | Step progression |
+|------|-----------|-----------|------------------|
+| Real-time | `use_sim_time: false` (default) | Wall clock, no `/clock` | Free-running bridge; publisher timers run on wall time. |
+| Sim time | `use_sim_time: true` | `/clock` published by the bridge | The bridge steps VEOS/V-ESI and waits for the stack's commands. |
 
-```bash
-python3 scripts/sim_time_observability.py sim-run-a.log --compare sim-run-b.log
-```
+`use_sim_time` is set in the bridge YAML.
 
-Set `logging.sent_can_frames: true` in `demo_stack_uva/ims.param_override.yaml` when CAN payloads should be included in the comparison. The override also exposes `connection.useRaptorDbwNode` so direct CAN and Raptor DBW runs can be selected without rebuilding the controller image.
+#### How to set up your team stack (sim time)
+The stack needs no simulator-specific code, topics or parameters:
+
+- It might be required to add a `use_sim_time=true` parameter to every stack node (take a look at the example stack, set it in `demo_stack_uva/base.param_override.yaml`). The bridge publishes standard `/clock` (reliable, transient local). Use ROS-time timers, as `steady_clock`, `system_clock` and wall timers do not follow `/clock`, and a ROS-time timer fires at most once per `/clock` jump.
+- The stack reads the sensor topics and CAN report frames it uses on the car and sends its usual DBW commands. The bridge observes the command frames on `can0`, so all of these variants work:
+  - **V1:** the stack writes CAN frames directly.
+  - **V2:** a team DBW node writes CAN frames.
+  - **V3:** the stack publishes Raptor command topics and the `raptor_dbw` default node from this repository writes the CAN frames (set `use_sim_time` as well in `raptor_dbw_override.yaml`).
+- Every command ID the stack sends per cycle must be a scheduled ID (see adaptation below). A frame with an unscheduled ID that arrives after its step closed is dropped.
+- The bridge emits a marker frame `0x7FF` (uint64 step counter) before each `/clock` for capture tooling, which might be used by your stack for synchronization (it will also work when you ignore this). Set `sim.step_marker.enabled: false` to disable this behavior.
+
+For each step the bridge latches one command snapshot, runs the number (given by `sim.step_size_ms`) of 1 ms V-ESI sub-steps with that snapshot, publishes all due outputs, the marker and finally `/clock`, then waits until every due command ID has a fresh frame or a wall timeout expires. On timeout it logs a warning and continues; missing IDs keep their last accepted value. Simulation time is independent of the wall time spent, so a run may be faster or slower than real time.
+
+#### Environment outputs and their intervals
+All environment outputs use `publish_intervals.*_ms` in `asm_socketcan_bridge.yaml` (or your override file) in every run mode. Valid values are `1` to `1000` (publication interval in ms) and `0` (output disabled: no timer, no message construction). Other values are rejected with a warning and replaced by 10 ms. The shipped values are examples which you should adjust to what your stack needs. It is recommended to disable (set to `0`) any outputs that your stack does not use to improve simulation performance.
+
+In sim mode each enabled output is published from the step scheduler with a drift-free rule: at the first step with `t >= next_due`, then `next_due += interval`. All outputs are built from the final ASM data of the step and stamped with the step time.
+
+#### Adaptation period
+With `adaptation.mode: on` (default) the bridge learns the stack's command schedule at the start of every run, while the car is usually stationary or leaving the pit lane:
+
+1. For the first `adaptation.duration_s` (default 3.0) simulated seconds, time advances in 1 ms steps, wall-paced at `adaptation.realtime_factor` (default 1.0). Nothing is awaited.
+2. Per command ID the bridge measures period, phase and reaction latency. An ID seen fewer than three times or with irregular spacing is unscheduled: applied when present, never awaited.
+3. Step duration = GCD of the scheduled command periods and the enabled output intervals, clamped to 1-100 ms. The bridge then switches to the normal protocol at the next multiple of the step.
+
+The detected schedule is written to `adaptation.txt` in `logging.path` for inspection. Currently there is no mechanism to read that back, so every run adapts from zero. If you use adaptation mode, make sure, that all stack commands are sent at their regular intervals during the adaptation period in order to get deterministic results. Adjust the `adaptation.duration_s` if needed. 
+Alternatively use `adaptation.mode: off` to provide a static schedule instead (see `sim.static.*` parameters below). 
+
+#### Parameters
+| Parameter | Default | Meaning |
+|-----------|---------|---------|
+| `sim.step_marker.enabled` | `true` | Emit marker `0x7FF` before each `/clock`. |
+| `sim.readiness.min_clock_subscribers` | `1` | Matched `/clock` subscriptions (excluding the bridge) required before stepping. |
+| `sim.readiness.settle_ms` | `1000` | Wall settle time after the subscriber condition holds. |
+| `adaptation.mode` | `on` | `on` or `off`. |
+| `adaptation.duration_s` | `3.0` | Adaptation window in simulated seconds. |
+| `adaptation.realtime_factor` | `1.0` | Wall pacing during adaptation only. |
+| `sim.timeout_ms` | `20` | Wall-time limit in ms (1-10000) to wait for the stack's commands, counted from the `/clock` release. Applies to all steps after adaptation. |
+| `sim.static.step_ms` | `10` | Feedback cycle time in ms with `adaptation.mode: off`. |
+| `sim.static.required_command_ids` | `[1400, 1401, 1402, 1403, 1404]` | Awaited CAN IDs with `adaptation.mode: off`. |
+| `sim.static.command_periods_ms` | `[10, 10, 10, 10, 500]` | Period per ID above. |
+| `sim.static.command_first_due_ms` | `[10, 10, 10, 10, 510]` | Simulation time of the first due step per ID. |
+| `logging.real_time_factor` | `false` | Log real-time factor every 30 simulated seconds and in the summary. |
+| `logging.sim_observability` | `false` | Log the `SIM_OBS` step and timeout counters once per second (debugging). The shutdown summary is always logged. |
+| `logging.sim_steps` | `false` | Write `sim_steps.csv` (step records) and `sim_commands.csv` (per-step commands) to `logging.path`. |
+| `sim.replay_file` | `""` | Open-loop replay of a `sim_commands.csv`; needs no stack. |
 
 ### Iterate
 To create an updated simulator image after touching the bridge sources, use `build_dspace_bridge.sh`.

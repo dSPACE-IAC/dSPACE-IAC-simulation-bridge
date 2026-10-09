@@ -6,13 +6,10 @@
 namespace controller
 {
 
-    double ControllerNode::calc_acceleration(double set_point, SimControlInputs *inputs)
+    double ControllerNode::calc_acceleration(double set_point)
     {
-        const VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const double control_time = inputs ? inputs->sim_time :
-            (this->simModeEnabled
-                 ? static_cast<double>(this->sec) + static_cast<double>(this->nsec) * 1e-9
-                 : this->now().seconds() + this->now().nanoseconds() * 1e-9);
+        const VehicleState &control_state = vehicle_state_;
+        const double control_time = this->now().seconds() + this->now().nanoseconds() * 1e-9;
 
         // removes oldest instant vel error from vector
         if (vel_error_arr_.size() >= 10)
@@ -85,10 +82,10 @@ namespace controller
         return des_accel;
     }
 
-    void ControllerNode::calc_throttle(double desired_acceleration, SimControlInputs *inputs)
+    void ControllerNode::calc_throttle(double desired_acceleration)
     {
-        VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const double control_non_brake_decel = inputs ? inputs->non_brake_decel : non_brake_decel_;
+        VehicleState &control_state = vehicle_state_;
+        const double control_non_brake_decel = non_brake_decel_;
 
         // Calculate Deadband
         double db = -control_non_brake_decel;
@@ -112,10 +109,10 @@ namespace controller
         }
     }
 
-    void ControllerNode::calc_brake(double desired_acceleration, SimControlInputs *inputs)
+    void ControllerNode::calc_brake(double desired_acceleration)
     {
-        VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const double control_non_brake_decel = inputs ? inputs->non_brake_decel : non_brake_decel_;
+        VehicleState &control_state = vehicle_state_;
+        const double control_non_brake_decel = non_brake_decel_;
 
         // Calculate Deadband
         double db = -control_non_brake_decel + 0.05;

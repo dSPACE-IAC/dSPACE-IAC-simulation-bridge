@@ -21,8 +21,6 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(autonoma_msgs REQUIRED)
-find_package(rosgraph_msgs REQUIRED)
-find_package(iac_sim_time REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(GEOGRAPHICLIB REQUIRED)
@@ -61,36 +59,11 @@ ament_target_dependencies(controller
   nav_msgs
   npc_controller_msgs
   autonoma_msgs
-  rosgraph_msgs
-  iac_sim_time
 )
 
 target_link_libraries(controller ${GeographicLib_LIBRARIES} ${ALGLIB_LIBRARIES})
 
 if(BUILD_TESTING)
-  add_executable(sim_clock_control_test test/sim_clock_control_test.cpp)
-  target_include_directories(sim_clock_control_test PRIVATE include)
-  add_test(NAME npc_controller_sim_clock_control COMMAND sim_clock_control_test)
-
-  add_executable(sim_clock_node_test test/sim_clock_node_test.cpp)
-  target_link_libraries(sim_clock_node_test controller)
-  ament_target_dependencies(sim_clock_node_test
-    rclcpp
-    rclcpp_components
-    vectornav_msgs
-    novatel_oem7_msgs
-    raptor_dbw_msgs
-    npc_controller_msgs
-    std_msgs
-    geometry_msgs
-    sensor_msgs
-    nav_msgs
-    autonoma_msgs
-    rosgraph_msgs
-    iac_sim_time
-  )
-  add_test(NAME npc_controller_sim_clock_node COMMAND sim_clock_node_test)
-
   add_executable(signal_codec_test test/signal_codec_test.cpp src/signal_codec.cpp)
   target_include_directories(signal_codec_test PRIVATE include)
   add_test(NAME npc_controller_signal_codec COMMAND signal_codec_test)

@@ -125,12 +125,6 @@ namespace asm_socketcan_bridge {
                    << std::to_string(interval_ms) << "\n";
       this->myfile.close();
     }
-    // NOTE (deterministic sim mode): /clock is published exactly once per sim_time_increase
-    // handshake, from simClockTimeCallback() after all sub-steps complete -- NOT on every
-    // vesiCallback. Publishing per sub-step made the controller run its control loop at the
-    // sub-step (~1 ms) rate and amplified handshake traffic, which (with KeepLast(10) queues)
-    // caused timing-dependent sample drops. One /clock per handshake keeps a clean 1:1 step
-    // and a fixed control cadence.
   }
 
   void AsmSocketCanBridgeNode::sendVehicleFeedbackToSimulation()
@@ -165,7 +159,14 @@ namespace asm_socketcan_bridge {
         this->stackFeedbackConnectionWarningSent = false;
       }
 
-      this->api.sendControlData(22222,std::addressof(this->feedbackCmd),sizeof(this->feedbackCmd));
+      // Sim mode: the snapshot latched at step start is sent for all sub-steps.
+      if (this->simModeEnabled && !this->commandLatch_.hasSnapshot()) {
+        this->commandLatch_.latch(this->feedbackCmd);
+      }
+      // sendControlData takes a non-const pointer, so send a copy.
+      VESIResultData outgoing =
+        this->simModeEnabled ? this->commandLatch_.snapshot() : this->feedbackCmd;
+      this->api.sendControlData(22222, std::addressof(outgoing), sizeof(outgoing));
     }
     if(this->simModeEnabled)
       this->api.increaseSimulationTime(0.001);
@@ -173,6 +174,27 @@ namespace asm_socketcan_bridge {
       this->api.increaseSimulationTime(0.01);
   }
 
+
+  void AsmSocketCanBridgeNode::latchCommandSnapshot()
+  {
+    std::lock_guard<std::mutex> lock(feedback_mutex_);
+    this->commandLatch_.latch(this->feedbackCmd);
+
+    // A repeated counter means the reader had not yet consumed this step's frame.
+    const auto &inputs = this->feedbackCmd.vehicle_inputs;
+    if (inputs.enable_brake_cmd) {
+      staleCommandCounters_.observe(kBrakeCommandCounter, inputs.brake_cmd_count);
+    }
+    if (inputs.enable_throttle_cmd) {
+      staleCommandCounters_.observe(kThrottleCommandCounter, inputs.throttle_cmd_count);
+    }
+    if (inputs.enable_steering_cmd) {
+      staleCommandCounters_.observe(kSteeringCommandCounter, inputs.steering_cmd_count);
+    }
+    if (this->raptorDataAvailabe) {
+      staleCommandCounters_.observe(kCtReportCounter, this->feedbackCmd.to_raptor.rolling_counter);
+    }
+  }
 
   // ros
   void AsmSocketCanBridgeNode::simClockTimeCallback()
@@ -183,121 +205,8 @@ namespace asm_socketcan_bridge {
 
     std::unique_lock<std::shared_mutex> lock(can_bus_mutex_);
     simClockTime.clock = rclcpp::Time(this->simTime_.seconds(), this->simTime_.nanoseconds());
-    const auto publication_count = sim_clock_publications_.fetch_add(1) + 1;
+    sim_clock_publications_.fetch_add(1);
     this->simClockTimePublisher_->publish(simClockTime);
-    RCLCPP_INFO_THROTTLE(
-      get_logger(),
-      *this->get_clock(),
-      1000,
-      "SIM_OBS bridge clock_published=%llu handshakes_received=%llu sim_time_sec=%llu "
-      "sim_time_nanosec=%llu sim_time_ms=%llu",
-      static_cast<unsigned long long>(publication_count),
-      static_cast<unsigned long long>(sim_handshakes_received_.load()),
-      static_cast<unsigned long long>(simTime_.seconds()),
-      static_cast<unsigned long long>(simTime_.nanoseconds()),
-      static_cast<unsigned long long>(simTime_.totalMilliseconds()));
-  }
-
-  void AsmSocketCanBridgeNode::simTimeIncreaseCallback(const std_msgs::msg::UInt16 & msg)
-  {
-    if (!this->simModeEnabled) {
-      return;
-    }
-
-    const auto handshake_count = sim_handshakes_received_.fetch_add(1) + 1;
-    const auto requested_substeps = static_cast<std::uint64_t>(msg.data);
-    sim_requested_substeps_.fetch_add(requested_substeps);
-    if (msg.data != 10) {
-      sim_non_ten_handshakes_.fetch_add(1);
-    }
-
-    const auto substeps_before = sim_substeps_completed_.load();
-    const bool handshake_completed = runSimTimeHandshake(
-      msg.data,
-      [this]() {
-        this->vesiCallback();
-        sim_substeps_completed_.fetch_add(1);
-      },
-      [this, handshake_count]() {
-        current_sim_step_ = handshake_count;
-        publishCanMessagesForSimStep();
-      },
-      [this]() {
-        publish_novatel_bestpos(1);
-        publish_novatel_bestpos(2);
-      },
-      [this, handshake_count]() { return publishSimStepMarker(handshake_count); },
-      [this]() { this->simClockTimeCallback(); });
-
-    const auto completed_substeps = sim_substeps_completed_.load() - substeps_before;
-    if (completed_substeps != requested_substeps) {
-      sim_substep_mismatches_.fetch_add(1);
-    }
-    if (!handshake_completed) {
-      RCLCPP_FATAL(get_logger(),
-                   "SIM_STEP bridge could not write marker for step=%llu; stopping clock progression.",
-                   static_cast<unsigned long long>(handshake_count));
-      rclcpp::shutdown();
-      return;
-    }
-    RCLCPP_INFO_THROTTLE(
-      get_logger(),
-      *this->get_clock(),
-      1000,
-      "SIM_OBS bridge handshake_received=%llu requested_substeps=%llu "
-      "cumulative_requested_substeps=%llu cumulative_substeps=%llu substep_mismatches=%llu",
-      static_cast<unsigned long long>(handshake_count),
-      static_cast<unsigned long long>(requested_substeps),
-      static_cast<unsigned long long>(sim_requested_substeps_.load()),
-      static_cast<unsigned long long>(sim_substeps_completed_.load()),
-      static_cast<unsigned long long>(sim_substep_mismatches_.load()));
-  }
-
-  void AsmSocketCanBridgeNode::publishCanMessagesForSimStep()
-  {
-    publish_base_to_car_summary();
-    publish_marelli_report_1();
-    publish_marelli_report_2();
-    publish_base_to_car_timing();
-    publish_rest_of_field();
-    publish_pt_report_1();
-    publish_pt_report_2();
-    publish_pt_report_3();
-    publish_pt_report_4();
-    publish_steering_report();
-    publish_steering_report_extd();
-    publish_steering_report_extd_2();
-    publish_steering_report_extd_3();
-    publish_brake_pressure_report();
-    publish_brake_report_extd();
-    publish_brake_report_extd_2();
-    publish_accelerator_report();
-    publish_Tire_Temp_RR_1();
-    publish_Tire_Temp_RR_2();
-    publish_Tire_Temp_RR_3();
-    publish_Tire_Temp_RR_4();
-    publish_Tire_Temp_RL_1();
-    publish_Tire_Temp_RL_2();
-    publish_Tire_Temp_RL_3();
-    publish_Tire_Temp_RL_4();
-    publish_Tire_Temp_FR_1();
-    publish_Tire_Temp_FR_2();
-    publish_Tire_Temp_FR_3();
-    publish_Tire_Temp_FR_4();
-    publish_Tire_Temp_FL_1();
-    publish_Tire_Temp_FL_2();
-    publish_Tire_Temp_FL_3();
-    publish_Tire_Temp_FL_4();
-    publish_Tire_Pressure_RR();
-    publish_Tire_Pressure_RL();
-    publish_Tire_Pressure_FR();
-    publish_Tire_Pressure_FL();
-    publish_wheel_strain_gauge();
-    publish_wheel_potentiometer_data();
-    publish_wheel_speed_report();
-    publish_misc_report();
-    publish_diagnostic_report();
-    publish_novatel_report();
   }
 
   bool AsmSocketCanBridgeNode::publishSimStepMarker(std::uint64_t step)

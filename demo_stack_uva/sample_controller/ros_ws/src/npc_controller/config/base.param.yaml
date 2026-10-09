@@ -18,5 +18,9 @@
     logging.received_decoded_frames: false
     logging.sent_can_frames: false
     logging.publish_ros_all: false
+    logging.controller_errors: false
 
     track_name: "ims"
+
+    # "center_line" or "optimal_line"
+    driving_line: "optimal_line"

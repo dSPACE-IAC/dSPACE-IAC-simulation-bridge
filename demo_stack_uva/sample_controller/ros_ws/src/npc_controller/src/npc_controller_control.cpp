@@ -6,10 +6,10 @@
 namespace controller
 {
 
-    void ControllerNode::long_control(SimControlInputs *inputs)
+    void ControllerNode::long_control()
     {
-        VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const double control_non_brake_decel = inputs ? inputs->non_brake_decel : non_brake_decel_;
+        VehicleState &control_state = vehicle_state_;
+        const double control_non_brake_decel = non_brake_decel_;
 
         // Update Long Control Parameters
         min_throttle_ = get_parameter("vehicle.min_throttle").as_double();
@@ -29,15 +29,15 @@ namespace controller
         brake_kd_ = get_parameter("vehicle.braking_kd").as_double();
 
         // Calculate Desired Acceleration
-        double desired_acceleration = calc_acceleration(desired_velocity_, inputs);
+        double desired_acceleration = calc_acceleration(desired_velocity_);
         desired_acceleration = std::max(min_acc_, std::min(desired_acceleration, max_acc_));
         debug_msg_.desired_acceleration_clamped = desired_acceleration;
         debug_msg_.non_brake_decel = control_non_brake_decel;
         // double throttle = vehicle_state_.throttle;
         // bool is_accelerating = throttle > 0;
 
-        calc_throttle(desired_acceleration, inputs);
-        calc_brake(desired_acceleration, inputs);
+        calc_throttle(desired_acceleration);
+        calc_brake(desired_acceleration);
 
         double max_thr = ((4.0 * 2.23694 * control_state.vx) / 8.0) + 25.0;
         double throttle_cmd = std::max(min_throttle_, std::min(control_state.throttle, max_thr));
@@ -52,7 +52,7 @@ namespace controller
         vehicle_cmd_msg_.brake_cmd_rear = static_cast<uint16_t>(std::round(brake_cmd_rear));
         vehicle_cmd_msg_.brake_cmd_count = rolling_counter;
 
-        uint8_t gear_cmd = get_gear_shift_cmd(inputs);
+        uint8_t gear_cmd = get_gear_shift_cmd();
         vehicle_cmd_msg_.gear_cmd = gear_cmd;
 
         vehicle_cmd_msg_.header.stamp = this->now();
@@ -112,15 +112,14 @@ namespace controller
         debug_msg_.output_throttle = throttle_cmd;
         debug_msg_.output_brake = brake_cmd_front;
         debug_msg_.max_throttle = max_thr;
-        debug_msg_.sim_step = inputs ? inputs->sim_step : 0;
 
         debug_pub_->publish(debug_msg_);
     }
 
-    void ControllerNode::lateral_control(SimControlInputs *inputs)
+    void ControllerNode::lateral_control()
     {
-        const bool control_position_received = inputs ? inputs->position_received : position_received;
-        const bool control_wheel_speed_received = inputs ? inputs->wheel_speed_received : wheel_speed_received;
+        const bool control_position_received = position_received;
+        const bool control_wheel_speed_received = wheel_speed_received;
 
         /**
          * @brief This function is called at a fixed rate to compute the steering angle
@@ -143,9 +142,7 @@ namespace controller
         double steering_cmd = steering_cmd_raw;
 
         // SIL can produce rapid sign flips; apply a steering slew-rate limiter in deg/s.
-        const double now_sec = this->simModeEnabled
-                       ? (inputs ? inputs->sim_time : static_cast<double>(this->sec) + static_cast<double>(this->nsec) * 1e-9)
-                                   : this->now().seconds();
+        const double now_sec = this->now().seconds();
         double dt = now_sec - prev_steer_time_;
         if (!std::isfinite(dt) || dt <= 1e-4) {
             dt = 0.01;
@@ -207,17 +204,15 @@ namespace controller
         }
     }
 
-    uint8_t ControllerNode::get_gear_shift_cmd(SimControlInputs *inputs)
+    uint8_t ControllerNode::get_gear_shift_cmd()
     {
-        const VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const int8_t control_current_gear = inputs ? inputs->current_gear : current_gear_;
-        const float control_engine_speed = inputs ? inputs->engine_rpm : engine_speed_;
-        const bool control_engine_running = inputs ? inputs->engine_running : engine_running_;
+        const VehicleState &control_state = vehicle_state_;
+        const int8_t control_current_gear = current_gear_;
+        const float control_engine_speed = engine_speed_;
+        const bool control_engine_running = engine_running_;
 
         // Sets command to current gear if engine is not on or shift attempts denied over the limit
-        int MS_PER_SHIFT_CALLBACK_CALL;
-        if (this->simModeEnabled){MS_PER_SHIFT_CALLBACK_CALL = 100;}
-        else {MS_PER_SHIFT_CALLBACK_CALL = 10;}
+        const int MS_PER_SHIFT_CALLBACK_CALL = 10;
 
         if (!control_engine_running || shifting_counter_ * MS_PER_SHIFT_CALLBACK_CALL >= shift_time_limit)
         {

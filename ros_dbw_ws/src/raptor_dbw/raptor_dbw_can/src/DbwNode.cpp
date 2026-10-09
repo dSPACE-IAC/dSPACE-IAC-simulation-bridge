@@ -30,8 +30,11 @@
 #include <iostream>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <string>
+
+#include <rclcpp/create_timer.hpp>
 
 namespace raptor_dbw_can
 {
@@ -119,11 +122,14 @@ DbwNode::DbwNode(const rclcpp::NodeOptions & options)
 
   // Set up Timer
   
-  timer_tire_report_ = this->create_wall_timer(
-    10ms, std::bind(&DbwNode::timerTireCallback, this));
+  // Node-clock timers: they follow /clock when use_sim_time is set, and wall time otherwise.
+  timer_tire_report_ = rclcpp::create_timer(
+    this->get_node_base_interface(), this->get_node_timers_interface(), this->get_clock(),
+    std::chrono::milliseconds(10), std::bind(&DbwNode::timerTireCallback, this));
 
-  timer_pt_report_ = this->create_wall_timer(
-    10ms, std::bind(&DbwNode::timerPtCallback, this));
+  timer_pt_report_ = rclcpp::create_timer(
+    this->get_node_base_interface(), this->get_node_timers_interface(), this->get_clock(),
+    std::chrono::milliseconds(10), std::bind(&DbwNode::timerPtCallback, this));
 
 }
 

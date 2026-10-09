@@ -11,8 +11,6 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <rclcpp/create_timer.hpp>
 
-#include "iac_sim_time/sim_clock_mode.hpp"
-
 using std::placeholders::_1;
 using namespace std::chrono_literals;
 
@@ -29,19 +27,6 @@ namespace {
       return default_value;
     }
     return static_cast<int>(value);
-  }
-
-  uint32_t sanitize_interval_value(int64_t value, uint32_t default_value, const rclcpp::Logger &logger, const std::string &description)
-  {
-    if (value < 0 || value > std::numeric_limits<uint32_t>::max()) {
-      RCLCPP_WARN(logger,
-                  "%s out of range (%lld); using default %u",
-                  description.c_str(),
-                  static_cast<long long>(value),
-                  default_value);
-      return default_value;
-    }
-    return static_cast<uint32_t>(value);
   }
 
   int16_t sanitize_retry_value(int64_t value, int16_t default_value, const rclcpp::Logger &logger, const std::string &description)
@@ -106,34 +91,36 @@ namespace asm_socketcan_bridge {
 
   void AsmSocketCanBridgeNode::configurePublisherTimers()
   {
-    RCLCPP_INFO(this->get_logger(), "Configuring publisher timers (milliseconds)");
+    RCLCPP_INFO(this->get_logger(), "Configuring publisher intervals (milliseconds)");
     publisher_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
     publisher_timers_.reserve(80);
-    auto register_timer = [&](const std::string &suffix, auto &&callable) {
+    registered_outputs_.reserve(80);
+    auto register_output = [&](const std::string &suffix, OutputKind kind, auto &&callable) {
       const std::string parameter_name = "publish_intervals." + suffix;
-      const int64_t raw_value = this->declare_parameter<int64_t>(parameter_name, 10);
-      const auto interval = sanitize_interval_value(raw_value,
-                                                    10U,
-                                                    this->get_logger(),
-                                                    parameter_name);
-      RCLCPP_INFO(this->get_logger(), "%s: %u ms", parameter_name.c_str(), interval);
-      auto timer = rclcpp::create_timer(
-        this->get_node_base_interface(),
-        this->get_node_timers_interface(),
-        this->get_clock(),
-        std::chrono::milliseconds(interval),
-        std::forward<decltype(callable)>(callable),
-        publisher_callback_group_);
-      publisher_timers_.push_back(timer);
+      const int64_t raw_value = this->declare_parameter<int64_t>(
+        parameter_name, static_cast<int64_t>(kDefaultOutputIntervalMs));
+      const auto interval = normalizeOutputInterval(raw_value);
+      if (!interval.valid) {
+        RCLCPP_WARN(this->get_logger(),
+                    "%s out of range (%lld); accepted are 0 (disabled) and 1-%u ms; using default %u",
+                    parameter_name.c_str(),
+                    static_cast<long long>(raw_value),
+                    kMaxOutputIntervalMs,
+                    interval.interval_ms);
+      }
+      if (interval.interval_ms == 0) {
+        RCLCPP_INFO(this->get_logger(), "%s: disabled", parameter_name.c_str());
+      } else {
+        RCLCPP_INFO(this->get_logger(), "%s: %u ms", parameter_name.c_str(), interval.interval_ms);
+      }
+      registered_outputs_.push_back(
+        {parameter_name, interval.interval_ms, kind, std::forward<decltype(callable)>(callable)});
+    };
+    auto register_timer = [&](const std::string &suffix, auto &&callable) {
+      register_output(suffix, OutputKind::Ros, std::forward<decltype(callable)>(callable));
     };
     auto register_can_timer = [&](const std::string &suffix, auto &&callable) {
-      register_timer(
-        suffix,
-        [this, callback = std::forward<decltype(callable)>(callable)]() {
-          if (!this->simModeEnabled) {
-            callback();
-          }
-        });
+      register_output(suffix, OutputKind::Can, std::forward<decltype(callable)>(callable));
     };
     register_timer("publish_map2d_ego_position_ms",
                    [this]() { this->publish_map2d_ego_position(); });
@@ -230,17 +217,9 @@ namespace asm_socketcan_bridge {
     register_can_timer("publish_novatel_report_ms",
                    [this]() { this->publish_novatel_report(); });
     register_timer("publish_novatel_bestpos1_ms",
-                   [this]() {
-                     if (!this->simModeEnabled) {
-                       this->publish_novatel_bestpos(1);
-                     }
-                   });
+                   [this]() { this->publish_novatel_bestpos(1); });
     register_timer("publish_novatel_bestpos2_ms",
-                   [this]() {
-                     if (!this->simModeEnabled) {
-                       this->publish_novatel_bestpos(2);
-                     }
-                   });
+                   [this]() { this->publish_novatel_bestpos(2); });
     register_timer("publish_novatel_bestgnsspos1_ms",
                    [this]() { this->publish_novatel_bestgnsspos(1); });
     register_timer("publish_novatel_bestgnsspos2_ms",
@@ -285,6 +264,45 @@ namespace asm_socketcan_bridge {
                    [this]() { this->publish_vectornav_time_group(); });
     register_timer("publishGroundTruthArray_ms",
                    [this]() { this->publishGroundTruthArray(); });
+  }
+
+  void AsmSocketCanBridgeNode::startOutputs()
+  {
+    if (this->simModeEnabled) {
+      // Sim mode: no publisher timers; outputs are published from the stepping context (F.3).
+      for (auto &output : registered_outputs_) {
+        auto &schedule = output.kind == OutputKind::Can ? canOutputSchedule_ : rosOutputSchedule_;
+        if (output.interval_ms != 0) {
+          enabledOutputIntervalsMs_.push_back(output.interval_ms);
+        }
+        schedule.add(output.name, output.interval_ms, std::move(output.action));
+      }
+      // With adaptation the step follows the output intervals, so none is shorter than the step.
+      for (const auto &schedule : {&canOutputSchedule_, &rosOutputSchedule_}) {
+        if (adaptationEnabled_ || replayActive_) {
+          break;
+        }
+        for (const auto &name : schedule->namesShorterThan(sim_step_ms_)) {
+          RCLCPP_WARN(this->get_logger(),
+                      "%s is shorter than the %u ms simulation step; it is published once per step.",
+                      name.c_str(), sim_step_ms_);
+        }
+      }
+    } else {
+      for (auto &output : registered_outputs_) {
+        if (output.interval_ms == 0) {
+          continue;
+        }
+        publisher_timers_.push_back(rclcpp::create_timer(
+          this->get_node_base_interface(),
+          this->get_node_timers_interface(),
+          this->get_clock(),
+          std::chrono::milliseconds(output.interval_ms),
+          std::move(output.action),
+          publisher_callback_group_));
+      }
+    }
+    registered_outputs_.clear();
   }
 
   void AsmSocketCanBridgeNode::configureRuntimeParameters()
@@ -344,25 +362,11 @@ namespace asm_socketcan_bridge {
       use_sim_time = false;
     }
 
-    if (const char *sim_clock_mode = std::getenv("SIM_CLOCK_MODE")) {
-      const auto environment_setting = iac_sim_time::parse_sim_clock_mode(sim_clock_mode);
-      if (environment_setting.has_value()) {
-        use_sim_time = environment_setting.value();
-        this->set_parameter(rclcpp::Parameter("use_sim_time", use_sim_time));
-        RCLCPP_INFO(this->get_logger(),
-                    "SIM_CLOCK_MODE environment override: %s",
-                    use_sim_time ? "true" : "false");
-      } else {
-        RCLCPP_WARN(this->get_logger(),
-                    "Ignoring invalid SIM_CLOCK_MODE value '%s'; using use_sim_time parameter",
-                    sim_clock_mode);
-      }
-    }
-
     this->simModeEnabled = use_sim_time;
     RCLCPP_INFO(this->get_logger(),
                 "Simulation clock mode %s",
                 this->simModeEnabled ? "enabled" : "disabled");
+    configureSimStepping();
   }
 
   bool AsmSocketCanBridgeNode::connectToSimulation()
@@ -456,6 +460,7 @@ namespace asm_socketcan_bridge {
     }
     can_message_info = initialize_messages();
     buildMessageLookup();
+    buildCommandCounterLookup();
     RCLCPP_INFO(get_logger(), "can message structure: %u", can_message_info[0].id);
 
     reader_thread1 = std::thread([this]() {
@@ -534,17 +539,18 @@ namespace asm_socketcan_bridge {
 
       this->useCustomRaceControlSource_ = this->create_subscription<std_msgs::msg::Bool>("use_custom_race_control", qos, std::bind(&AsmSocketCanBridgeNode::switchRaceControlSourceCallback, this, _1));
       initializeFeedback();
+      startOutputs();
 
       if(!shouldCreateWallClockAcquisitionTimer(this->simModeEnabled))
       {
         RCLCPP_INFO(get_logger(), "Use Simulated Clock.");
         this->simClockTimePublisher_ = this->create_publisher<rosgraph_msgs::msg::Clock>("clock", sim_qos);
-        this->simTimeIncrease_ = this->create_subscription<std_msgs::msg::UInt16>("sim_time_increase", sim_qos, std::bind(&AsmSocketCanBridgeNode::simTimeIncreaseCallback, this, _1));
         vesiCallback();
         this->simClockTime.clock = rclcpp::Time(
           this->simTime_.seconds(), this->simTime_.nanoseconds());
         sim_clock_publications_.fetch_add(1);
         this->simClockTimePublisher_->publish(this->simClockTime);
+        this->stepThread_ = std::thread([this]() { this->environmentStepLoop(); });
       }
       else
       {

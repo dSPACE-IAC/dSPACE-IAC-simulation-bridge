@@ -5,17 +5,17 @@
 namespace controller
 {
 
-    void ControllerNode::state_machine(SimControlInputs *inputs)
+    void ControllerNode::state_machine()
     {
-        VehicleState &control_state = inputs ? inputs->vehicle_state : vehicle_state_;
-        const bool control_position_received = inputs ? inputs->position_received : position_received;
-        const bool control_wheel_speed_received = inputs ? inputs->wheel_speed_received : wheel_speed_received;
-        Rc2TrackFlags &control_track_flag = inputs ? inputs->track_flag : track_flag_;
-        Rc2VehFlags &control_vehicle_flag = inputs ? inputs->vehicle_flag : vehicle_flag_;
-        SysState &control_sys_state = inputs ? inputs->sys_state : sys_state_;
-        int control_target_speed = inputs ? inputs->round_target_speed : target_speed_;
-        int &control_ct_input = inputs ? inputs->ct_input : ct_input_;
-        const bool control_estop = inputs ? inputs->estop : estop_;
+        VehicleState &control_state = vehicle_state_;
+        const bool control_position_received = position_received;
+        const bool control_wheel_speed_received = wheel_speed_received;
+        Rc2TrackFlags &control_track_flag = track_flag_;
+        Rc2VehFlags &control_vehicle_flag = vehicle_flag_;
+        SysState &control_sys_state = sys_state_;
+        int control_target_speed = target_speed_;
+        int &control_ct_input = ct_input_;
+        const bool control_estop = estop_;
 
         if (!control_position_received || !control_wheel_speed_received || !path_loaded)
         {
@@ -102,7 +102,7 @@ namespace controller
         }
         else
         {
-            current_path_ = &center_line_;
+            current_path_ = driveOnOptimalLine ? &optimal_line_ : &center_line_;
         }
 
         // Publish CT Report
