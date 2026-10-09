@@ -168,7 +168,7 @@ Alternatively use `adaptation.mode: off` to provide a static schedule instead (s
 | `logging.sim_observability` | `false` | Log the `SIM_OBS` step and timeout counters once per second (debugging). The shutdown summary is always logged. |
 | `logging.sim_steps` | `false` | Write `sim_steps.csv` (step records) and `sim_commands.csv` (per-step commands) to `logging.path`. |
 | `sim.replay_file` | `""` | Open-loop replay of a `sim_commands.csv`; needs no stack. |
-
+#
 ### Iterate
 To create an updated simulator image after touching the bridge sources, use `build_dspace_bridge.sh`.
 The script can build the dev image as well as the asm_socketcan, aurelion and foxglove/Lichtblick variants.
